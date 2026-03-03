@@ -1,0 +1,813 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+import 'package:rxdart/rxdart.dart';
+import 'package:uuid/uuid.dart';
+
+import '../../services/chat_service.dart';
+import '../../services/group_service.dart';
+import '../../services/user_service.dart';
+import '../../models/chat_model.dart';
+import '../../models/group_model.dart';
+import '../../models/user_model.dart';
+import '../../models/message_model.dart';
+
+class UnifiedStreamScreen extends StatefulWidget {
+  const UnifiedStreamScreen({super.key});
+
+  @override
+  State<UnifiedStreamScreen> createState() => _UnifiedStreamScreenState();
+}
+
+class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
+  final TextEditingController _commandController = TextEditingController();
+  final FocusNode _commandFocusNode = FocusNode();
+  
+  final _chatService = ChatService();
+  final _groupService = GroupService();
+  final _userService = UserService();
+  final _storage = FirebaseStorage.instance;
+  final currentUserId = FirebaseAuth.instance.currentUser!.uid;
+
+  List<UserModel> _allUsers = [];
+  bool _isUploading = false;
+
+  Map<String, dynamic>? _peekingItem;
+  List<MessageModel> _peekingMessages = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _userService.getAllUsers(currentUserId).listen((users) {
+      if (mounted) {
+        setState(() {
+          _allUsers = users;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _commandController.dispose();
+    _commandFocusNode.dispose();
+    super.dispose();
+  }
+
+  String _formatHandle(String name) {
+    return '@${name.replaceAll(' ', '').toLowerCase()}';
+  }
+  
+  String _formatGroupHandle(String name) {
+    return '#${name.replaceAll(' ', '').toLowerCase()}';
+  }
+
+  void _handleItemTap(String handle) {
+    _commandController.text = '$handle ';
+    _commandController.selection = TextSelection.fromPosition(
+      TextPosition(offset: _commandController.text.length),
+    );
+    _commandFocusNode.requestFocus();
+  }
+
+  void _handleLongPress(Map<String, dynamic> item) async {
+    setState(() {
+      _peekingItem = item;
+      _peekingMessages = [];
+    });
+
+    if (item['type'] == 'group') {
+      final messages = await _groupService.getGroupMessages(item['id']).first;
+      if (mounted && _peekingItem == item) {
+        setState(() => _peekingMessages = messages.take(3).toList());
+      }
+    } else {
+      final messages = await _chatService.getChatMessages(item['id']).first;
+      if (mounted && _peekingItem == item) {
+        setState(() => _peekingMessages = messages.take(3).toList());
+        // Mark as read optionally
+        _chatService.markMessagesAsRead(item['id'], currentUserId);
+      }
+    }
+  }
+
+  void _closePeek() {
+    setState(() {
+      _peekingItem = null;
+    });
+  }
+
+  void _pickAndSendImage() async {
+    final text = _commandController.text.trim();
+    if (text.isEmpty || (!text.startsWith('@') && !text.startsWith('#'))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Please select a target (@user or #group) before attaching image', style: GoogleFonts.jetBrainsMono()), backgroundColor: Colors.black),
+      );
+      return;
+    }
+
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    if (pickedFile == null) return;
+
+    setState(() => _isUploading = true);
+
+    try {
+      final file = File(pickedFile.path);
+      final fileName = const Uuid().v4();
+      final ref = _storage.ref().child('chat_images').child('$fileName.jpg');
+      await ref.putFile(file);
+      final downloadUrl = await ref.getDownloadURL();
+
+      await _processCommand(text, imageUrl: downloadUrl);
+      _commandController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Image upload failed.', style: GoogleFonts.jetBrainsMono()), backgroundColor: Colors.black),
+      );
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Future<void> _processCommand(String text, {String? imageUrl}) async {
+    final firstSpace = text.indexOf(' ');
+    final handle = (firstSpace > 1) ? text.substring(0, firstSpace).toLowerCase() : text.toLowerCase();
+    final msg = (firstSpace > 1) ? text.substring(firstSpace + 1).trim() : '';
+
+    if (msg.isEmpty && imageUrl == null) return;
+
+    final type = imageUrl != null ? MessageType.image : MessageType.text;
+    final content = imageUrl ?? msg;
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (handle.startsWith('@')) {
+      final tHandle = handle.substring(1);
+      final targetUser = _allUsers.cast<UserModel?>().firstWhere(
+        (u) => u!.displayName.replaceAll(' ', '').toLowerCase() == tHandle,
+        orElse: () => null,
+      );
+
+      if (targetUser != null) {
+         final chatId = await _chatService.getOrCreateChat(currentUserId, targetUser.uid);
+         await _chatService.sendMessage(
+             chatId: chatId,
+             senderId: currentUserId,
+             senderName: currentUser?.displayName ?? 'Me',
+             senderPhotoUrl: currentUser?.photoURL ?? '',
+             text: content,
+             type: type,
+         );
+         return;
+      }
+    } else if (handle.startsWith('#')) {
+      // Find group logic
+      final tHandle = handle.substring(1);
+      final groups = await _groupService.getUserGroups(currentUserId).first;
+      final targetGroup = groups.cast<GroupModel?>().firstWhere(
+        (g) => g!.name.replaceAll(' ', '').toLowerCase() == tHandle,
+        orElse: () => null
+      );
+
+      if (targetGroup != null) {
+         await _groupService.sendGroupMessage(
+           groupId: targetGroup.groupId,
+           senderId: currentUserId,
+           senderName: currentUser?.displayName ?? 'Me',
+           senderPhotoUrl: currentUser?.photoURL ?? '',
+           text: content,
+           type: type,
+         );
+         return;
+      }
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Target $handle not found.', style: GoogleFonts.jetBrainsMono()), backgroundColor: Colors.black, shape: Border.all(color: Colors.white)),
+    );
+  }
+
+  void _sendCommand(String input) async {
+    if (input.trim().isEmpty) return;
+    await _processCommand(input.trim());
+    _commandController.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      drawer: FilterDrawer(
+        users: _allUsers,
+        onUserTap: (user) {
+          Navigator.pop(context); // close drawer
+          _handleItemTap(_formatHandle(user.displayName));
+        },
+        createGroupAction: () {
+          Navigator.pop(context);
+          _showCreateGroupDialog();
+        },
+      ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                _buildStatusBar(),
+                Expanded(
+                  child: _buildCombinedStream(),
+                ),
+                _buildCommandBar(),
+              ],
+            ),
+          ),
+          if (_peekingItem != null) _buildContextPeekOverlay(),
+          if (_isUploading)
+             Container(
+               color: Colors.black54,
+               child: const Center(child: CircularProgressIndicator(color: Colors.white)),
+             )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.white12, width: 1)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Text(
+              '// UNIFIED STREAM',
+              style: GoogleFonts.jetBrainsMono(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: Colors.white, size: 20),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCombinedStream() {
+    final chatsStream = _chatService.getUserChats(currentUserId);
+    final groupsStream = _groupService.getUserGroups(currentUserId);
+
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: Rx.combineLatest2(chatsStream, groupsStream, (chats, groups) {
+        List<Map<String, dynamic>> merged = [];
+        
+        for (var chat in chats) {
+          if (chat.lastMessage.isEmpty) continue;
+          final otherUserId = chat.getOtherUserId(currentUserId);
+          final otherUser = _allUsers.cast<UserModel?>().firstWhere(
+            (u) => u?.uid == otherUserId, 
+            orElse: () => null
+          );
+          
+          merged.add({
+            'type': 'dm',
+            'id': chat.chatId,
+            'timeRaw': chat.lastMessageTime ?? DateTime.now(),
+            'handle': otherUser != null ? _formatHandle(otherUser.displayName) : '@unknown',
+            'content': chat.lastMessage,
+            'time': chat.lastMessageTime != null ? DateFormat('HH:mm').format(chat.lastMessageTime!) : '',
+            'isUnread': (chat.unreadCount[currentUserId] ?? 0) > 0,
+            'image': chat.lastMessage.contains('📷'),
+          });
+        }
+        
+        for (var group in groups) {
+          if (group.lastMessage.isEmpty) continue;
+          merged.add({
+            'type': 'group',
+            'id': group.groupId,
+            'timeRaw': group.lastMessageTime ?? DateTime.now(),
+            'handle': _formatGroupHandle(group.name),
+            'sender': group.lastMessageSenderName,
+            'content': group.lastMessage,
+            'time': group.lastMessageTime != null ? DateFormat('HH:mm').format(group.lastMessageTime!) : '',
+            'isUnread': false, // Requires group read receipts to handle unread states fully
+            'image': group.lastMessage.contains('📷'),
+          });
+        }
+
+        merged.sort((a, b) => (b['timeRaw'] as DateTime).compareTo(a['timeRaw'] as DateTime));
+        return merged;
+      }),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: Text('AWAITING SIGNAL...', style: GoogleFonts.spaceMono(color: Colors.white54, fontSize: 32)),
+          );
+        }
+
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return Center(
+            child: Text('NO SIGNAL', style: GoogleFonts.spaceMono(color: Colors.white54, fontSize: 32, letterSpacing: -1)),
+          );
+        }
+
+        return ListView.builder(
+          reverse: false,
+          physics: const BouncingScrollPhysics(),
+          itemCount: items.length + 1, 
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return const DateSeparator(dateText: 'LATEST');
+            }
+            final item = items[index - 1];
+
+            return StreamItemWidget(
+              item: item,
+              onTap: () => _handleItemTap(item['handle'] ?? ''),
+              onLongPress: () => _handleLongPress(item),
+            );
+          },
+        );
+      }
+    );
+  }
+
+  Widget _buildCommandBar() {
+    return Container(
+      width: double.infinity,
+      height: 64,
+      decoration: const BoxDecoration(
+        color: Colors.black,
+        border: Border(top: BorderSide(color: Colors.white, width: 2)),
+      ),
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 4),
+            child: Text(
+              '>',
+              style: GoogleFonts.jetBrainsMono(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add_photo_alternate, color: Colors.white),
+            onPressed: _pickAndSendImage,
+          ),
+          Expanded(
+            child: TextField(
+              controller: _commandController,
+              focusNode: _commandFocusNode,
+              style: GoogleFonts.jetBrainsMono(
+                color: Colors.white,
+                fontSize: 16,
+              ),
+              decoration: InputDecoration(
+                hintText: '@user or #group...',
+                hintStyle: GoogleFonts.jetBrainsMono(
+                  color: const Color(0xFF444444),
+                  fontSize: 16,
+                ),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                fillColor: Colors.transparent,
+              ),
+              cursorColor: const Color(0xFF00FF00),
+              onSubmitted: _sendCommand,
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.arrow_forward, color: Colors.white),
+            onPressed: () => _sendCommand(_commandController.text),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCreateGroupDialog() {
+    String grpName = '';
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.black,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero, side: BorderSide(color: Colors.white)),
+          title: Text('CREATE GROUP', style: GoogleFonts.spaceMono(color: Colors.white)),
+          content: TextField(
+            autofocus: true,
+            style: GoogleFonts.jetBrainsMono(color: Colors.white),
+            decoration: const InputDecoration(
+              hintText: 'Group Name',
+            ),
+            onChanged: (val) => grpName = val,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('[ CANCEL ]', style: GoogleFonts.jetBrainsMono(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (grpName.trim().isNotEmpty) {
+                  await _groupService.createGroup(
+                    name: grpName.trim(),
+                    description: '',
+                    createdBy: currentUserId,
+                    members: [],
+                  );
+                }
+                if (mounted) Navigator.pop(context);
+              },
+              child: Text('[ CREATE ]', style: GoogleFonts.jetBrainsMono(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      }
+    );
+  }
+
+  Widget _buildContextPeekOverlay() {
+    return GestureDetector(
+      onTap: _closePeek,
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.9),
+        width: double.infinity,
+        height: double.infinity,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_peekingMessages.isNotEmpty)
+              ..._peekingMessages.reversed.skip(1).map((msg) => 
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Opacity(
+                    opacity: 0.5,
+                    child: Text(
+                      '${msg.senderName} - ${msg.type == MessageType.image ? '📷 Image' : msg.text}',
+                      style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 14),
+                    ),
+                  ),
+                )
+              ),
+            
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: 1),
+                color: Colors.black,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                   Text(
+                    _peekingItem!['handle'] ?? 'ERROR',
+                    style: GoogleFonts.spaceMono(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _peekingItem!['content'] ?? '',
+                    style: GoogleFonts.spaceGrotesk(
+                      color: Colors.white,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Text(
+                  '>: ',
+                  style: GoogleFonts.jetBrainsMono(
+                    color: const Color(0xFF00FF00),
+                    fontSize: 16,
+                  ),
+                ),
+                Expanded(
+                  child: TextField(
+                    autofocus: true,
+                    style: GoogleFonts.jetBrainsMono(
+                      color: Colors.white,
+                      fontSize: 16,
+                    ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                      fillColor: Colors.transparent,
+                    ),
+                    cursorColor: const Color(0xFF00FF00),
+                    onSubmitted: (val) async {
+                      if (val.trim().isNotEmpty) {
+                         final combinedVal = '${_peekingItem!['handle']} $val';
+                         await _processCommand(combinedVal); // Handles DMs or Groups based on handle prefix!
+                      }
+                      _closePeek();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class DateSeparator extends StatelessWidget {
+  final String dateText;
+  const DateSeparator({super.key, required this.dateText});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Center(
+        child: Text(
+          '-------- [ $dateText ] --------',
+          style: GoogleFonts.jetBrainsMono(
+            color: const Color(0xFF666666),
+            fontSize: 12,
+            letterSpacing: 2,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+        ),
+      ),
+    );
+  }
+}
+
+class StreamItemWidget extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  const StreamItemWidget({
+    super.key,
+    required this.item,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final type = item['type'];
+    final isUnread = item['isUnread'] ?? false;
+    final isImage = item['image'] == true;
+    
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      splashColor: Colors.white24,
+      child: Container(
+        color: isUnread ? Colors.white12 : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              color: isUnread ? const Color(0xFF00FF00) : Colors.white,
+              child: Center(
+                child: Text(
+                  (item['handle'] ?? '?').replaceAll(RegExp(r'[@#]'), '').substring(0, 1).toUpperCase(),
+                  style: GoogleFonts.spaceMono(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        item['handle'] ?? '',
+                        style: GoogleFonts.spaceMono(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        item['time'] ?? '',
+                        style: GoogleFonts.jetBrainsMono(
+                          color: const Color(0xFF666666),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  if (type == 'group')
+                    RichText(
+                      text: TextSpan(
+                        style: GoogleFonts.spaceGrotesk(color: Colors.white, fontSize: 16, height: 1.4),
+                        children: [
+                           TextSpan(text: '[${item['sender']}]: ', style: const TextStyle(color: Colors.white54)),
+                           if (isImage) const WidgetSpan(child: Icon(Icons.image, color: Colors.white, size: 16)),
+                           TextSpan(text: item['content']),
+                        ]
+                      )
+                    )
+                  else
+                    Row(
+                      children: [
+                        if (isImage) const Icon(Icons.image, color: Colors.white, size: 16),
+                        if (isImage) const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            item['content'] ?? '',
+                            style: GoogleFonts.spaceGrotesk(
+                              color: Colors.white,
+                              fontSize: 16,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class FilterDrawer extends StatefulWidget {
+  final List<UserModel> users;
+  final Function(UserModel) onUserTap;
+  final VoidCallback createGroupAction;
+
+  const FilterDrawer({
+    super.key, 
+    required this.users, 
+    required this.onUserTap,
+    required this.createGroupAction,
+  });
+
+  @override
+  State<FilterDrawer> createState() => _FilterDrawerState();
+}
+
+class _FilterDrawerState extends State<FilterDrawer> {
+  String _searchQuery = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final filteredUsers = widget.users.where((u) {
+      return u.displayName.toLowerCase().contains(_searchQuery.toLowerCase()) || 
+             u.email.toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
+
+    return Container(
+      width: MediaQuery.of(context).size.width * 0.8,
+      decoration: const BoxDecoration(
+        color: Colors.black,
+        border: Border(right: BorderSide(color: Colors.white, width: 1)),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                   Text(
+                    '// NETWORK',
+                    style: GoogleFonts.spaceMono(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                     icon: const Icon(Icons.logout, color: Colors.white54),
+                     tooltip: 'Sign Out',
+                     onPressed: () => FirebaseAuth.instance.signOut(),
+                  )
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              // Search Box
+              TextField(
+                onChanged: (val) => setState(() => _searchQuery = val),
+                style: GoogleFonts.jetBrainsMono(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'SEARCH DIRECTORY...',
+                  prefixIcon: Icon(Icons.search, color: Colors.white54),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+              Expanded(
+                child: filteredUsers.isEmpty 
+                 ? Text("NO SIGNALS FOUND.", style: GoogleFonts.jetBrainsMono(color: Colors.white54))
+                 : ListView(
+                  children: filteredUsers.map((u) => _buildUserItem(u)).toList(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: widget.createGroupAction,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.white, width: 1),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+                  ),
+                  child: Text(
+                    '[ CREATE GROUP ]',
+                    style: GoogleFonts.jetBrainsMono(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserItem(UserModel user) {
+    final handle = '@${user.displayName.replaceAll(' ', '').toLowerCase()}';
+    
+    return InkWell(
+      onTap: () => widget.onUserTap(user),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.person, color: Colors.white54, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  handle,
+                  style: GoogleFonts.spaceMono(
+                    color: Colors.white,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+            if (user.isOnline)
+               Container(width: 8, height: 8, color: const Color(0xFF00FF00))
+          ],
+        ),
+      ),
+    );
+  }
+}

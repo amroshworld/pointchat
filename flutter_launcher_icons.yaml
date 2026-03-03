@@ -1,0 +1,16 @@
+flutter_launcher_icons:
+  image_path: "assets/icon.png"
+  android: "launcher_icon"
+  ios: true
+  web:
+    generate: true
+    image_path: "assets/icon.png"
+    background_color: "#161618"
+    theme_color: "#161618"
+  macos:
+    generate: true
+    image_path: "assets/icon.png"
+  windows:
+    generate: true
+    image_path: "assets/icon.png"
+    icon_size: 256

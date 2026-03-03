@@ -1,0 +1,333 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/user_service.dart';
+import '../../models/user_model.dart';
+import '../../widgets/user_avatar.dart';
+
+class ProfileScreen extends ConsumerStatefulWidget {
+  const ProfileScreen({super.key});
+
+  @override
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  final UserService _userService = UserService();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final authState = ref.watch(authProvider);
+    final authNotifier = ref.read(authProvider.notifier);
+    final user = authNotifier.currentUser;
+
+    if (user == null) return const SizedBox.shrink();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Profile')),
+      body: StreamBuilder<UserModel?>(
+        stream: _userService.getUserStream(user.uid),
+        builder: (context, snapshot) {
+          final userData = snapshot.data;
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                // Profile header
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        colorScheme.primaryContainer,
+                        colorScheme.tertiaryContainer,
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: Column(
+                    children: [
+                      UserAvatar(
+                        photoUrl: userData?.photoUrl ?? user.photoURL,
+                        name: userData?.displayName ?? user.displayName ?? '',
+                        radius: 48,
+                        isOnline: true,
+                        showOnlineIndicator: true,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        userData?.displayName ?? user.displayName ?? 'User',
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: colorScheme.onSurface,
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        userData?.email ?? user.email ?? '',
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surface.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          userData?.status ?? 'Hey there! I am using PointChat',
+                          style: TextStyle(
+                            color: colorScheme.onSurfaceVariant,
+                            fontSize: 13,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Settings cards
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.edit_outlined,
+                            color: colorScheme.onPrimaryContainer,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text('Edit Status'),
+                        subtitle: Text(
+                          userData?.status ?? 'Set your status',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () =>
+                            _editStatus(user.uid, userData?.status ?? ''),
+                      ),
+                      const Divider(height: 1, indent: 72),
+                      ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.dark_mode_outlined,
+                            color: colorScheme.onSecondaryContainer,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text('Theme'),
+                        subtitle: const Text('System default'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          // TODO: Theme selector
+                        },
+                      ),
+                      const Divider(height: 1, indent: 72),
+                      ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: colorScheme.tertiaryContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.notifications_outlined,
+                            color: colorScheme.onTertiaryContainer,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text('Notifications'),
+                        subtitle: const Text('Enabled'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          // TODO: Notification settings
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // About card
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.info_outline,
+                            color: colorScheme.onSurfaceVariant,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text('About PointChat'),
+                        subtitle: const Text('Version 1.0.0'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          showAboutDialog(
+                            context: context,
+                            applicationName: 'PointChat',
+                            applicationVersion: '1.0.0',
+                            applicationIcon: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.chat_rounded,
+                                color: colorScheme.onPrimary,
+                                size: 24,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Sign out
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    onPressed: authState.isLoading
+                        ? null
+                        : () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Sign out?'),
+                                content: const Text(
+                                  'You will need to sign in again to access your chats.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    child: const Text('Sign Out'),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (confirm == true) {
+                              await authNotifier.signOut();
+                            }
+                          },
+                    icon: authState.isLoading
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colorScheme.error,
+                            ),
+                          )
+                        : Icon(Icons.logout, color: colorScheme.error),
+                    label: Text(
+                      authState.isLoading ? 'Signing out...' : 'Sign Out',
+                      style: TextStyle(
+                        color: colorScheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: colorScheme.error),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 32),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _editStatus(String uid, String currentStatus) {
+    final controller = TextEditingController(text: currentStatus);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Edit Status'),
+          content: TextField(
+            controller: controller,
+            maxLength: 140,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              hintText: 'What\'s on your mind?',
+              prefixIcon: Icon(Icons.mood_outlined),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                await _userService.updateStatus(uid, controller.text.trim());
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
