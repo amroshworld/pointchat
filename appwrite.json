@@ -9,7 +9,20 @@
       "path": "appwrite_functions/delete_old_media",
       "entrypoint": "index.js",
       "commands": "npm install",
-      "scopes": ["documents.read", "documents.write", "files.read", "files.write"]
+      "scopes": [
+        "documents.read",
+        "documents.write",
+        "files.read",
+        "files.write"
+      ]
+    },
+    {
+      "$id": "chat_ai",
+      "name": "Chat AI",
+      "runtime": "node-18.0",
+      "path": "appwrite_functions/chat_ai",
+      "entrypoint": "index.js",
+      "commands": "npm install"
     }
   ]
 }
