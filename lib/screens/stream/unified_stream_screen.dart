@@ -10,6 +10,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../appwrite_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/cache_service.dart';
+import '../../services/ai_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:record/record.dart';
@@ -56,6 +57,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
   bool _isMentioning = false;
   List<dynamic> _mentionSuggestions = [];
+
+  // AI state
+  bool _isAiMode = false;
+  bool _isAiLoading = false;
+  final AiService _aiService = AiService();
 
   bool _showActions = false;
   bool _showEmojiPopup = false;
@@ -211,6 +217,22 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     final lastHash = textBeforeCursor.lastIndexOf('#');
     final lastSpace = textBeforeCursor.lastIndexOf(' ');
     final lastToken = textBeforeCursor.split(' ').last.toLowerCase();
+
+    // Detect /ai mode — check if text contains /
+    final slashIndex = text.indexOf('/');
+    if (slashIndex >= 0) {
+      // Check if there's at least one target before the /
+      final beforeSlash = text.substring(0, slashIndex).trim();
+      final hasTarget =
+          beforeSlash.startsWith('@') || beforeSlash.startsWith('#');
+      setState(() {
+        _isAiMode = hasTarget;
+      });
+    } else {
+      setState(() {
+        _isAiMode = false;
+      });
+    }
 
     if (lastAt > lastSpace && lastAt >= 0) {
       final query = textBeforeCursor.substring(lastAt + 1).toLowerCase();
@@ -841,6 +863,46 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
   void _sendCommand(String input) async {
     if (input.trim().isEmpty) return;
+
+    // Check for AI mode: if text contains /, extract the AI prompt
+    final slashIndex = input.indexOf('/');
+    if (slashIndex >= 0) {
+      final beforeSlash = input.substring(0, slashIndex).trim();
+      final aiPrompt = input.substring(slashIndex + 1).trim();
+
+      // Ensure there are @user or #group targets before the /
+      final hasTarget =
+          beforeSlash.startsWith('@') || beforeSlash.startsWith('#');
+
+      if (hasTarget && aiPrompt.isNotEmpty) {
+        setState(() => _isAiLoading = true);
+        _commandController.clear();
+
+        try {
+          // Send the user's prompt as a message first
+          await _processCommand('$beforeSlash 🤖 Prompt: $aiPrompt');
+
+          // Generate AI response
+          final aiResponse = await _aiService.generateResponse(aiPrompt);
+
+          // Send the AI response to the same targets
+          await _processCommand('$beforeSlash ✨ AI: $aiResponse');
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('AI error: $e', style: GoogleFonts.inter()),
+                backgroundColor: const Color(0xFF161618),
+              ),
+            );
+          }
+        } finally {
+          if (mounted) setState(() => _isAiLoading = false);
+        }
+        return;
+      }
+    }
+
     await _processCommand(input.trim());
     _commandController.clear();
   }
@@ -1256,7 +1318,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                     decoration: BoxDecoration(
                       color: AppTheme.surface,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white, width: 1.5),
+                      border: Border.all(
+                        color: _isAiMode ? AppTheme.purple : Colors.white,
+                        width: _isAiMode ? 2.0 : 1.5,
+                      ),
                     ),
                     child: Stack(
                       children: [
@@ -1273,9 +1338,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                   fontSize: 15,
                                 ),
                                 decoration: InputDecoration(
-                                  hintText: '@user or #group message...',
+                                  hintText: _isAiMode
+                                      ? '✨ Type your AI prompt...'
+                                      : '@user or #group message... ( / for AI)',
                                   hintStyle: GoogleFonts.inter(
-                                    color: AppTheme.muted,
+                                    color: _isAiMode
+                                        ? AppTheme.purpleLt
+                                        : AppTheme.muted,
                                     fontSize: 15,
                                   ),
                                   border: InputBorder.none,
@@ -1342,14 +1411,28 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                   return Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      if (hasText)
+                                      if (_isAiLoading)
+                                        const Padding(
+                                          padding: EdgeInsets.only(right: 12),
+                                          child: SizedBox(
+                                            width: 22,
+                                            height: 22,
+                                            child: CircularProgressIndicator(
+                                              color: AppTheme.purple,
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                        )
+                                      else if (hasText)
                                         Padding(
                                           padding: const EdgeInsets.only(
                                             right: 4,
                                           ),
                                           child: IconButton(
-                                            icon: const Icon(
-                                              Icons.arrow_forward_rounded,
+                                            icon: Icon(
+                                              _isAiMode
+                                                  ? Icons.auto_awesome_rounded
+                                                  : Icons.arrow_forward_rounded,
                                               color: AppTheme.purple,
                                               size: 26,
                                             ),

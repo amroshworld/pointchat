@@ -205,7 +205,11 @@ class AuthService {
       debugPrint('Error setting online status during sign out: $e');
     }
 
-    await _account.deleteSession(sessionId: 'current');
+    try {
+      await _account.deleteSession(sessionId: 'current');
+    } catch (e) {
+      debugPrint('Error deleting session during sign out: $e');
+    }
 
     cachedUserId = '';
     cachedUserName = '';

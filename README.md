@@ -1,4 +1,4 @@
-# focus_world
+# pointchat
 
 A new Flutter project.
 

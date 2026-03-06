@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.amrosh" "\0"
-            VALUE "FileDescription", "focus_world" "\0"
+            VALUE "FileDescription", "pointchat" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "focus_world" "\0"
+            VALUE "InternalName", "pointchat" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.amrosh. All rights reserved." "\0"
-            VALUE "OriginalFilename", "focus_world.exe" "\0"
-            VALUE "ProductName", "focus_world" "\0"
+            VALUE "OriginalFilename", "pointchat.exe" "\0"
+            VALUE "ProductName", "pointchat" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

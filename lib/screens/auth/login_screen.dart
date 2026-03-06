@@ -409,15 +409,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               width: 24,
                               height: 24,
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: Colors.transparent,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               alignment: Alignment.center,
                               child: Text(
                                 'G',
                                 style: GoogleFonts.inter(
-                                  color: const Color(0xFFDB4437),
-                                  fontSize: 14,
+                                  color: AppTheme.textPri,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),

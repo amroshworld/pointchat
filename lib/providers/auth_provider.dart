@@ -114,13 +114,17 @@ class AuthNotifier extends Notifier<AuthState> {
       state = state.copyWith(isLoading: false);
       return true;
     } on AppwriteException catch (e) {
+      final errorMessage = 'Appwrite Error: ${e.message} (Code: ${e.code}, Type: ${e.type})';
+      print(errorMessage);
       state = state.copyWith(
         isLoading: false,
-        error: e.message ?? e.toString(),
+        error: errorMessage,
       );
       return false;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      final errorMessage = 'General Error: ${e.toString()}';
+      print(errorMessage);
+      state = state.copyWith(isLoading: false, error: errorMessage);
       return false;
     }
   }

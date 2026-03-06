@@ -8,38 +8,36 @@ const sdk = require('node-appwrite');
     2. Update the message document to reflect that the media has expired.
 */
 
-module.exports = async function (context) {
+module.exports = async function ({ req, res, log, error }) {
+  log("HEADERS:", JSON.stringify(req.headers));
+
   const client = new sdk.Client();
   const storage = new sdk.Storage(client);
-  const tablesDB = new sdk.TablesDB(client);
+  const databases = new sdk.Databases(client);
 
   // Setup Client using Environment Variables
-  if (
-    !context.req.variables['APPWRITE_FUNCTION_ENDPOINT'] ||
-    !context.req.variables['APPWRITE_FUNCTION_API_KEY']
-  ) {
-    context.error("Environment variables are not set.");
-    return context.res.json({ success: false, message: "Missing environment variables" });
+  const endpoint = process.env.APPWRITE_FUNCTION_API_ENDPOINT;
+  const apiKey = req.headers['x-appwrite-key'] || process.env.APPWRITE_FUNCTION_API_KEY || process.env.APPWRITE_API_KEY;
+  
+  if (!endpoint || !apiKey) {
+    error("Environment variables are not set. API_KEY present: " + !!apiKey + " ENDPOINT present: " + !!endpoint);
+    return res.json({ success: false, message: "Missing environment variables" });
   }
 
   client
-    .setEndpoint(context.req.variables['APPWRITE_FUNCTION_ENDPOINT'])
-    .setProject(context.req.variables['APPWRITE_FUNCTION_PROJECT_ID'])
-    .setKey(context.req.variables['APPWRITE_FUNCTION_API_KEY']);
+    .setEndpoint(endpoint)
+    .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
+    .setKey(apiKey);
 
   // Add these as Environment Variables in the Appwrite Console
-  const DATABASE_ID = context.req.variables['DATABASE_ID'];
-  const MESSAGES_TABLE_ID =
-    context.req.variables['MESSAGES_TABLE_ID'] ||
-    context.req.variables['MESSAGES_COLLECTION_ID'];
-  const BUCKET_ID = context.req.variables['BUCKET_ID'];
-  const DAYS_TO_KEEP = parseInt(
-    context.req.variables['DAYS_TO_KEEP'] || '14',
-    10,
-  );
+  const DATABASE_ID = process.env.DATABASE_ID;
+  const MESSAGES_COLLECTION_ID =
+    process.env.MESSAGES_TABLE_ID || process.env.MESSAGES_COLLECTION_ID;
+  const BUCKET_ID = process.env.BUCKET_ID;
+  const DAYS_TO_KEEP = parseInt(process.env.DAYS_TO_KEEP || '14', 10);
 
-  if (!DATABASE_ID || !MESSAGES_TABLE_ID || !BUCKET_ID) {
-    return context.res.json({
+  if (!DATABASE_ID || !MESSAGES_COLLECTION_ID || !BUCKET_ID) {
+    return res.json({
       success: false,
       message:
         'Missing DATABASE_ID, MESSAGES_TABLE_ID (or MESSAGES_COLLECTION_ID), or BUCKET_ID variables.',
@@ -51,24 +49,24 @@ module.exports = async function (context) {
   cutoffDate.setDate(cutoffDate.getDate() - DAYS_TO_KEEP);
   const dateString = cutoffDate.toISOString();
 
-  context.log(`Starting media cleanup. Deleting media older than ${dateString}`);
+  log(`Starting media cleanup. Deleting media older than ${dateString}`);
 
   try {
     let hasMore = true;
     let queries = [sdk.Query.lessThan('$createdAt', dateString), sdk.Query.limit(100)];
 
     let deletedCount = 0;
-    let updatedRowsCount = 0;
+    let updatedDocsCount = 0;
 
     while (hasMore) {
-      const messages = await tablesDB.listRows(DATABASE_ID, MESSAGES_TABLE_ID, queries);
+      const messages = await databases.listDocuments(DATABASE_ID, MESSAGES_COLLECTION_ID, queries);
 
-      if (messages.rows.length === 0) {
+      if (messages.documents.length === 0) {
         hasMore = false;
         break;
       }
 
-      for (const msg of messages.rows) {
+      for (const msg of messages.documents) {
         // If message has file, audio, or image, delete from storage
         if (msg.type === 'file' || msg.type === 'audio' || msg.type === 'image') {
           // We extract the fileId from the Appwrite file URL stored in message text.
@@ -77,18 +75,18 @@ module.exports = async function (context) {
             const fileId = match[1];
             try {
               await storage.deleteFile(BUCKET_ID, fileId);
-              context.log(`Deleted file: ${fileId}`);
+              log(`Deleted file: ${fileId}`);
               deletedCount++;
             } catch (err) {
               // Ignore not found errors so old or manually deleted files do not fail the run.
               if (err.code !== 404) {
-                context.error(`Failed to delete file ${fileId}: ${err.message}`);
+                error(`Failed to delete file ${fileId}: ${err.message}`);
               }
             }
           }
 
-          // Update row to avoid repeated storage delete attempts on next schedule run.
-          await tablesDB.updateRow(DATABASE_ID, MESSAGES_TABLE_ID, msg.$id, {
+          // Update document to avoid repeated storage delete attempts on next schedule run.
+          await databases.updateDocument(DATABASE_ID, MESSAGES_COLLECTION_ID, msg.$id, {
             text: 'This media has expired and was removed from cloud storage.',
             type: 'system',
             fileName: null,
@@ -97,25 +95,25 @@ module.exports = async function (context) {
             latitude: null,
             longitude: null,
           });
-          updatedRowsCount++;
+          updatedDocsCount++;
         }
       }
 
-      const lastId = messages.rows[messages.rows.length - 1].$id;
+      const lastId = messages.documents[messages.documents.length - 1].$id;
       queries = [
         sdk.Query.lessThan('$createdAt', dateString),
         sdk.Query.cursorAfter(lastId),
         sdk.Query.limit(100),
       ];
     }
-    context.log(`Cleanup complete. Deleted ${deletedCount} files. Updated ${updatedRowsCount} rows.`);
-    return context.res.json({
+    log(`Cleanup complete. Deleted ${deletedCount} files. Updated ${updatedDocsCount} documents.`);
+    return res.json({
       success: true,
       deletedFiles: deletedCount,
-      updatedRows: updatedRowsCount,
+      updatedDocuments: updatedDocsCount,
     });
-  } catch (error) {
-    context.error(`Error during cleanup: ${error.message}`);
-    return context.res.json({ success: false, error: error.message });
+  } catch (err) {
+    error(`Error during cleanup: ${err.message}`);
+    return res.json({ success: false, error: err.message });
   }
 };
