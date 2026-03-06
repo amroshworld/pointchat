@@ -1,9 +1,12 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+import 'package:appwrite/appwrite.dart';
+import '../appwrite_client.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
 
 class GroupService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final TablesDB _databases = appwriteTablesDB;
+  final Realtime _realtime = appwriteRealtime;
 
   // Create a new group
   Future<String> createGroup({
@@ -14,13 +17,13 @@ class GroupService {
     String photoUrl = '',
     bool isPublic = false,
   }) async {
-    final groupDoc = _firestore.collection('groups').doc();
+    final groupId = ID.unique();
 
     // Include creator in members and admins
     final allMembers = {...members, createdBy}.toList();
 
     final group = GroupModel(
-      groupId: groupDoc.id,
+      groupId: groupId,
       name: name,
       description: description,
       photoUrl: photoUrl,
@@ -30,83 +33,184 @@ class GroupService {
       isPublic: isPublic,
     );
 
-    await groupDoc.set(group.toMap());
+    await _databases.createRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: group.toMap(),
+    );
 
     // Update all members' groupIds
-    final batch = _firestore.batch();
     for (final memberId in allMembers) {
-      batch.update(_firestore.collection('users').doc(memberId), {
-        'groupIds': FieldValue.arrayUnion([groupDoc.id]),
-      });
+      await _addToArray(
+        AppwriteConstants.usersCollection,
+        memberId,
+        'groupIds',
+        groupId,
+      );
     }
-    await batch.commit();
 
     // Send system message
     await sendGroupMessage(
-      groupId: groupDoc.id,
+      groupId: groupId,
       senderId: createdBy,
       senderName: 'System',
       text: 'Group "$name" created',
       type: MessageType.system,
     );
 
-    return groupDoc.id;
+    return groupId;
   }
 
   // Get user's groups stream
   Stream<List<GroupModel>> getUserGroups(String userId) {
-    return _firestore
-        .collection('groups')
-        .where('members', arrayContains: userId)
-        .orderBy('lastMessageTime', descending: true)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => GroupModel.fromMap(doc.data(), doc.id))
-              .toList();
-        });
-  }
+    final controller = StreamController<List<GroupModel>>.broadcast();
 
-  // Get group by ID
-  Stream<GroupModel?> getGroupStream(String groupId) {
-    return _firestore.collection('groups').doc(groupId).snapshots().map((doc) {
-      if (doc.exists && doc.data() != null) {
-        return GroupModel.fromMap(doc.data()!, doc.id);
+    Future<void> fetch() async {
+      try {
+        final result = await _databases.listRows(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.groupsCollection,
+          queries: [
+            Query.contains('members', [userId]),
+            Query.orderDesc('lastMessageTime'),
+            Query.limit(100),
+          ],
+        );
+        if (!controller.isClosed) {
+          controller.add(
+            result.rows
+                .map((doc) => GroupModel.fromMap(doc.data, doc.$id))
+                .toList(),
+          );
+        }
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
       }
-      return null;
-    });
+    }
+
+    fetch();
+
+    final sub = _realtime.subscribe([
+      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.groupsCollection}.documents',
+    ]);
+    sub.stream.listen((_) => fetch());
+    controller.onCancel = () => sub.close();
+
+    return controller.stream;
   }
 
-  // Get popular / public groups stream (ordered by member count desc)
+  // Get group by ID stream
+  Stream<GroupModel?> getGroupStream(String groupId) {
+    final controller = StreamController<GroupModel?>.broadcast();
+
+    Future<void> fetch() async {
+      try {
+        final doc = await _databases.getRow(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.groupsCollection,
+          rowId: groupId,
+        );
+        if (!controller.isClosed) {
+          controller.add(GroupModel.fromMap(doc.data, doc.$id));
+        }
+      } on AppwriteException catch (e) {
+        if (e.code == 404 && !controller.isClosed) {
+          controller.add(null);
+        } else if (!controller.isClosed) {
+          controller.addError(e);
+        }
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
+      }
+    }
+
+    fetch();
+
+    final sub = _realtime.subscribe([
+      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.groupsCollection}.documents.$groupId',
+    ]);
+    sub.stream.listen((_) => fetch());
+    controller.onCancel = () => sub.close();
+
+    return controller.stream;
+  }
+
+  // Get popular / public groups stream
   Stream<List<GroupModel>> getPopularGroups() {
-    return _firestore
-        .collection('groups')
-        .where('isPublic', isEqualTo: true)
-        .snapshots()
-        .map((snapshot) {
-          final groups = snapshot.docs
-              .map((doc) => GroupModel.fromMap(doc.data(), doc.id))
+    final controller = StreamController<List<GroupModel>>.broadcast();
+
+    Future<void> fetch() async {
+      try {
+        final result = await _databases.listRows(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.groupsCollection,
+          queries: [Query.equal('isPublic', true), Query.limit(100)],
+        );
+        if (!controller.isClosed) {
+          final groups = result.rows
+              .map((doc) => GroupModel.fromMap(doc.data, doc.$id))
               .toList();
-          // Sort by member count descending
           groups.sort((a, b) => b.memberCount.compareTo(a.memberCount));
-          return groups;
-        });
+          controller.add(groups);
+        }
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
+      }
+    }
+
+    fetch();
+
+    final sub = _realtime.subscribe([
+      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.groupsCollection}.documents',
+    ]);
+    sub.stream.listen((_) => fetch());
+    controller.onCancel = () => sub.close();
+
+    return controller.stream;
   }
 
   // Get messages stream for a group
   Stream<List<MessageModel>> getGroupMessages(String groupId) {
-    return _firestore
-        .collection('groups')
-        .doc(groupId)
-        .collection('messages')
-        .orderBy('timestamp', descending: true)
-        .limit(100)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => MessageModel.fromMap(doc.data(), doc.id))
-              .toList();
-        });
+    final controller = StreamController<List<MessageModel>>.broadcast();
+
+    Future<void> fetch() async {
+      try {
+        final result = await _databases.listRows(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.messagesCollection,
+          queries: [
+            Query.equal('groupId', groupId),
+            Query.orderDesc('\$createdAt'),
+            Query.limit(100),
+          ],
+        );
+        if (!controller.isClosed) {
+          controller.add(
+            result.rows
+                .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
+                .toList(),
+          );
+        }
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
+      }
+    }
+
+    fetch();
+
+    final sub = _realtime.subscribe([
+      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.messagesCollection}.documents',
+    ]);
+    sub.stream.listen((event) {
+      if (event.payload['groupId'] == groupId ||
+          event.events.any((e) => e.contains('.delete'))) {
+        fetch();
+      }
+    });
+    controller.onCancel = () => sub.close();
+
+    return controller.stream;
   }
 
   // Send a group message
@@ -123,14 +227,10 @@ class GroupService {
     double? latitude,
     double? longitude,
   }) async {
-    final messageDoc = _firestore
-        .collection('groups')
-        .doc(groupId)
-        .collection('messages')
-        .doc();
-
+    final messageId = ID.unique();
     final message = MessageModel(
-      messageId: messageDoc.id,
+      messageId: messageId,
+      groupId: groupId,
       senderId: senderId,
       senderName: senderName,
       senderPhotoUrl: senderPhotoUrl,
@@ -144,15 +244,32 @@ class GroupService {
       longitude: longitude,
     );
 
-    final batch = _firestore.batch();
-    batch.set(messageDoc, message.toMap());
-    batch.update(_firestore.collection('groups').doc(groupId), {
-      'lastMessage': message.preview,
-      'lastMessageTime': FieldValue.serverTimestamp(),
-      'lastMessageSenderId': senderId,
-      'lastMessageSenderName': senderName,
-    });
-    await batch.commit();
+    await _databases.createRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.messagesCollection,
+      rowId: messageId,
+      data: message.toMap(),
+    );
+
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: {
+        'lastMessage': message.preview,
+        'lastMessageTime': DateTime.now().toUtc().toIso8601String(),
+        'lastMessageSenderId': senderId,
+        'lastMessageSenderName': senderName,
+      },
+    );
+  }
+
+  Future<void> deleteMessage(String messageId) async {
+    await _databases.deleteRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.messagesCollection,
+      rowId: messageId,
+    );
   }
 
   // Add members to group
@@ -161,21 +278,33 @@ class GroupService {
     List<String> newMembers,
     String addedByName,
   ) async {
-    final batch = _firestore.batch();
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+    );
 
-    batch.update(_firestore.collection('groups').doc(groupId), {
-      'members': FieldValue.arrayUnion(newMembers),
-    });
-
-    for (final memberId in newMembers) {
-      batch.update(_firestore.collection('users').doc(memberId), {
-        'groupIds': FieldValue.arrayUnion([groupId]),
-      });
+    final members = List<String>.from(doc.data['members'] ?? []);
+    for (final m in newMembers) {
+      if (!members.contains(m)) members.add(m);
     }
 
-    await batch.commit();
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: {'members': members},
+    );
 
-    // Send system message about added members
+    for (final memberId in newMembers) {
+      await _addToArray(
+        AppwriteConstants.usersCollection,
+        memberId,
+        'groupIds',
+        groupId,
+      );
+    }
+
     await sendGroupMessage(
       groupId: groupId,
       senderId: 'system',
@@ -191,18 +320,30 @@ class GroupService {
     String memberId, {
     String? removedByName,
   }) async {
-    final batch = _firestore.batch();
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+    );
 
-    batch.update(_firestore.collection('groups').doc(groupId), {
-      'members': FieldValue.arrayRemove([memberId]),
-      'admins': FieldValue.arrayRemove([memberId]),
-    });
+    final members = List<String>.from(doc.data['members'] ?? []);
+    final admins = List<String>.from(doc.data['admins'] ?? []);
+    members.remove(memberId);
+    admins.remove(memberId);
 
-    batch.update(_firestore.collection('users').doc(memberId), {
-      'groupIds': FieldValue.arrayRemove([groupId]),
-    });
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: {'members': members, 'admins': admins},
+    );
 
-    await batch.commit();
+    await _removeFromArray(
+      AppwriteConstants.usersCollection,
+      memberId,
+      'groupIds',
+      groupId,
+    );
 
     if (removedByName != null) {
       await sendGroupMessage(
@@ -234,17 +375,28 @@ class GroupService {
 
   // Join a public group
   Future<void> joinGroup(String groupId, String userId, String userName) async {
-    final batch = _firestore.batch();
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+    );
 
-    batch.update(_firestore.collection('groups').doc(groupId), {
-      'members': FieldValue.arrayUnion([userId]),
-    });
+    final members = List<String>.from(doc.data['members'] ?? []);
+    if (!members.contains(userId)) members.add(userId);
 
-    batch.update(_firestore.collection('users').doc(userId), {
-      'groupIds': FieldValue.arrayUnion([groupId]),
-    });
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: {'members': members},
+    );
 
-    await batch.commit();
+    await _addToArray(
+      AppwriteConstants.usersCollection,
+      userId,
+      'groupIds',
+      groupId,
+    );
 
     await sendGroupMessage(
       groupId: groupId,
@@ -257,54 +409,134 @@ class GroupService {
 
   // Toggle group public/private
   Future<void> togglePublic(String groupId, bool isPublic) async {
-    await _firestore.collection('groups').doc(groupId).update({
-      'isPublic': isPublic,
-    });
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: {'isPublic': isPublic},
+    );
   }
 
   // Make admin
   Future<void> makeAdmin(String groupId, String userId) async {
-    await _firestore.collection('groups').doc(groupId).update({
-      'admins': FieldValue.arrayUnion([userId]),
-    });
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+    );
+    final admins = List<String>.from(doc.data['admins'] ?? []);
+    if (!admins.contains(userId)) admins.add(userId);
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: {'admins': admins},
+    );
   }
 
   // Remove admin
   Future<void> removeAdmin(String groupId, String userId) async {
-    await _firestore.collection('groups').doc(groupId).update({
-      'admins': FieldValue.arrayRemove([userId]),
-    });
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+    );
+    final admins = List<String>.from(doc.data['admins'] ?? []);
+    admins.remove(userId);
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: {'admins': admins},
+    );
   }
 
   // Update group info
   Future<void> updateGroup(String groupId, Map<String, dynamic> data) async {
-    await _firestore.collection('groups').doc(groupId).update(data);
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: data,
+    );
   }
 
   // Delete group
   Future<void> deleteGroup(String groupId, List<String> members) async {
-    // Delete all messages
-    final messages = await _firestore
-        .collection('groups')
-        .doc(groupId)
-        .collection('messages')
-        .get();
+    // Delete all messages for this group
+    final messages = await _databases.listRows(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.messagesCollection,
+      queries: [Query.equal('groupId', groupId), Query.limit(500)],
+    );
 
-    final batch = _firestore.batch();
-    for (final doc in messages.docs) {
-      batch.delete(doc.reference);
+    for (final doc in messages.rows) {
+      await _databases.deleteRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.messagesCollection,
+        rowId: doc.$id,
+      );
     }
 
     // Delete group
-    batch.delete(_firestore.collection('groups').doc(groupId));
+    await _databases.deleteRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+    );
 
     // Remove groupId from all members
     for (final memberId in members) {
-      batch.update(_firestore.collection('users').doc(memberId), {
-        'groupIds': FieldValue.arrayRemove([groupId]),
-      });
+      await _removeFromArray(
+        AppwriteConstants.usersCollection,
+        memberId,
+        'groupIds',
+        groupId,
+      );
     }
+  }
 
-    await batch.commit();
+  // ── Helpers ──
+
+  Future<void> _addToArray(
+    String collectionId,
+    String docId,
+    String field,
+    String value,
+  ) async {
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: collectionId,
+      rowId: docId,
+    );
+    final arr = List<String>.from(doc.data[field] ?? []);
+    if (!arr.contains(value)) arr.add(value);
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: collectionId,
+      rowId: docId,
+      data: {field: arr},
+    );
+  }
+
+  Future<void> _removeFromArray(
+    String collectionId,
+    String docId,
+    String field,
+    String value,
+  ) async {
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: collectionId,
+      rowId: docId,
+    );
+    final arr = List<String>.from(doc.data[field] ?? []);
+    arr.remove(value);
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: collectionId,
+      rowId: docId,
+      data: {field: arr},
+    );
   }
 }

@@ -1,4 +1,4 @@
-name: focus_world
+name: point_chat
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -52,6 +52,11 @@ dependencies:
   geolocator: ^14.0.2
   url_launcher: ^6.3.2
   appwrite: 21.1.0
+  path_provider: ^2.1.5
+  image_cropper: ^9.1.0
+  open_filex: ^4.7.0
+  audioplayers: ^6.6.0
+  flutter_cache_manager: ^3.4.1
 
 dev_dependencies:
   flutter_test:

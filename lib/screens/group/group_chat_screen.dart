@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../appwrite_client.dart';
 import '../../services/group_service.dart';
 import '../../models/message_model.dart';
 import '../../models/group_model.dart';
@@ -41,13 +41,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
     _messageController.clear();
 
-    final user = FirebaseAuth.instance.currentUser;
-
     await _groupService.sendGroupMessage(
       groupId: widget.groupId,
       senderId: widget.currentUserId,
-      senderName: user?.displayName ?? 'User',
-      senderPhotoUrl: user?.photoURL ?? '',
+      senderName: cachedUserName,
+      senderPhotoUrl: cachedUserPhotoUrl,
       text: text,
     );
   }
@@ -373,7 +371,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 await _groupService.leaveGroup(
                   widget.groupId,
                   widget.currentUserId,
-                  FirebaseAuth.instance.currentUser?.displayName ?? 'User',
+                  cachedUserName.isNotEmpty ? cachedUserName : 'User',
                 );
                 if (!context.mounted) return;
                 Navigator.pop(context);

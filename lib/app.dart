@@ -30,7 +30,7 @@ class AuthGate extends ConsumerWidget {
     return authState.when(
       data: (user) {
         if (user != null) {
-          return const UnifiedStreamScreen();
+          return UnifiedStreamScreen(currentUserId: user.$id);
         }
         return const LoginScreen();
       },

@@ -1,9 +1,13 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:appwrite/appwrite.dart';
+import '../appwrite_client.dart';
 import '../models/chat_model.dart';
 import '../models/message_model.dart';
 
 class ChatService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final TablesDB _databases = appwriteTablesDB;
+  final Realtime _realtime = appwriteRealtime;
 
   // Get or create a chat between two users
   Future<String> getOrCreateChat(
@@ -11,77 +15,169 @@ class ChatService {
     String otherUserId,
   ) async {
     // Check if chat already exists
-    final existingChats = await _firestore
-        .collection('chats')
-        .where('participants', arrayContains: currentUserId)
-        .get();
+    final result = await _databases.listRows(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      queries: [
+        Query.contains('participants', [currentUserId]),
+        Query.limit(500),
+      ],
+    );
 
-    for (final doc in existingChats.docs) {
-      final participants = List<String>.from(doc.data()['participants'] ?? []);
+    for (final doc in result.rows) {
+      final participants = List<String>.from(doc.data['participants'] ?? []);
       if (participants.contains(otherUserId) && participants.length == 2) {
-        return doc.id;
+        return doc.$id;
       }
     }
 
-    // Create new chat with default seen settings (both users have seen enabled)
-    final chatDoc = _firestore.collection('chats').doc();
+    // Create new chat with default seen settings
+    final chatId = ID.unique();
     final chat = ChatModel(
-      chatId: chatDoc.id,
+      chatId: chatId,
       participants: [currentUserId, otherUserId],
       seenEnabled: {currentUserId: true, otherUserId: true},
       notifyOnSeen: {currentUserId: false, otherUserId: false},
     );
-    await chatDoc.set(chat.toMap());
+    await _databases.createRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+      data: chat.toMap(),
+    );
 
     // Update both users' chatIds
-    await _firestore.collection('users').doc(currentUserId).update({
-      'chatIds': FieldValue.arrayUnion([chatDoc.id]),
-    });
-    await _firestore.collection('users').doc(otherUserId).update({
-      'chatIds': FieldValue.arrayUnion([chatDoc.id]),
-    });
+    await _addToArray(
+      AppwriteConstants.usersCollection,
+      currentUserId,
+      'chatIds',
+      chatId,
+    );
+    await _addToArray(
+      AppwriteConstants.usersCollection,
+      otherUserId,
+      'chatIds',
+      chatId,
+    );
 
-    return chatDoc.id;
+    return chatId;
   }
 
   // Get user's chats stream
   Stream<List<ChatModel>> getUserChats(String userId) {
-    return _firestore
-        .collection('chats')
-        .where('participants', arrayContains: userId)
-        .orderBy('lastMessageTime', descending: true)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => ChatModel.fromMap(doc.data(), doc.id))
-              .toList();
-        });
+    final controller = StreamController<List<ChatModel>>.broadcast();
+
+    Future<void> fetch() async {
+      try {
+        final result = await _databases.listRows(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.chatsCollection,
+          queries: [
+            Query.contains('participants', [userId]),
+            Query.orderDesc('lastMessageTime'),
+            Query.limit(100),
+          ],
+        );
+        if (!controller.isClosed) {
+          controller.add(
+            result.rows
+                .map((doc) => ChatModel.fromMap(doc.data, doc.$id))
+                .toList(),
+          );
+        }
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
+      }
+    }
+
+    fetch();
+
+    final sub = _realtime.subscribe([
+      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.chatsCollection}.documents',
+    ]);
+    sub.stream.listen((_) => fetch());
+    controller.onCancel = () => sub.close();
+
+    return controller.stream;
   }
 
   // Get a single chat stream
   Stream<ChatModel?> getChatStream(String chatId) {
-    return _firestore.collection('chats').doc(chatId).snapshots().map((doc) {
-      if (doc.exists && doc.data() != null) {
-        return ChatModel.fromMap(doc.data()!, doc.id);
+    final controller = StreamController<ChatModel?>.broadcast();
+
+    Future<void> fetch() async {
+      try {
+        final doc = await _databases.getRow(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.chatsCollection,
+          rowId: chatId,
+        );
+        if (!controller.isClosed) {
+          controller.add(ChatModel.fromMap(doc.data, doc.$id));
+        }
+      } on AppwriteException catch (e) {
+        if (e.code == 404 && !controller.isClosed) {
+          controller.add(null);
+        } else if (!controller.isClosed) {
+          controller.addError(e);
+        }
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
       }
-      return null;
-    });
+    }
+
+    fetch();
+
+    final sub = _realtime.subscribe([
+      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.chatsCollection}.documents.$chatId',
+    ]);
+    sub.stream.listen((_) => fetch());
+    controller.onCancel = () => sub.close();
+
+    return controller.stream;
   }
 
   // Get messages stream for a chat
   Stream<List<MessageModel>> getChatMessages(String chatId) {
-    return _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .orderBy('timestamp', descending: true)
-        .limit(100)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => MessageModel.fromMap(doc.data(), doc.id))
-              .toList();
-        });
+    final controller = StreamController<List<MessageModel>>.broadcast();
+
+    Future<void> fetch() async {
+      try {
+        final result = await _databases.listRows(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.messagesCollection,
+          queries: [
+            Query.equal('chatId', chatId),
+            Query.orderDesc('\$createdAt'),
+            Query.limit(100),
+          ],
+        );
+        if (!controller.isClosed) {
+          controller.add(
+            result.rows
+                .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
+                .toList(),
+          );
+        }
+      } catch (e) {
+        if (!controller.isClosed) controller.addError(e);
+      }
+    }
+
+    fetch();
+
+    final sub = _realtime.subscribe([
+      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.messagesCollection}.documents',
+    ]);
+    sub.stream.listen((event) {
+      if (event.payload['chatId'] == chatId ||
+          event.events.any((e) => e.contains('.delete'))) {
+        fetch();
+      }
+    });
+    controller.onCancel = () => sub.close();
+
+    return controller.stream;
   }
 
   // Send a message
@@ -98,14 +194,10 @@ class ChatService {
     double? latitude,
     double? longitude,
   }) async {
-    final messageDoc = _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .doc();
-
+    final messageId = ID.unique();
     final message = MessageModel(
-      messageId: messageDoc.id,
+      messageId: messageId,
+      chatId: chatId,
       senderId: senderId,
       senderName: senderName,
       senderPhotoUrl: senderPhotoUrl,
@@ -119,137 +211,289 @@ class ChatService {
       longitude: longitude,
     );
 
-    // Write message and update chat's last message in a batch
-    final batch = _firestore.batch();
-    batch.set(messageDoc, message.toMap());
-    batch.update(_firestore.collection('chats').doc(chatId), {
-      'lastMessage': message.preview,
-      'lastMessageTime': FieldValue.serverTimestamp(),
-      'lastMessageSenderId': senderId,
-    });
-    await batch.commit();
+    await _databases.createRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.messagesCollection,
+      rowId: messageId,
+      data: message.toMap(),
+    );
+
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+      data: {
+        'lastMessage': message.preview,
+        'lastMessageTime': DateTime.now().toUtc().toIso8601String(),
+        'lastMessageSenderId': senderId,
+      },
+    );
   }
 
-  // Mark messages as read AND update seen status
+  // Mark messages as read
   Future<void> markMessagesAsRead(String chatId, String userId) async {
-    final unreadMessages = await _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .where('senderId', isNotEqualTo: userId)
-        .where('isRead', isEqualTo: false)
-        .get();
+    final result = await _databases.listRows(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.messagesCollection,
+      queries: [
+        Query.equal('chatId', chatId),
+        Query.notEqual('senderId', userId),
+        Query.equal('isRead', false),
+        Query.limit(100),
+      ],
+    );
 
-    final batch = _firestore.batch();
-    for (final doc in unreadMessages.docs) {
-      batch.update(doc.reference, {'isRead': true, 'readBy.$userId': true});
+    for (final doc in result.rows) {
+      final readBy = _decodeJsonMap(doc.data['readBy']);
+      readBy[userId] = true;
+
+      await _databases.updateRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.messagesCollection,
+        rowId: doc.$id,
+        data: {'isRead': true, 'readBy': jsonEncode(readBy)},
+      );
     }
 
-    // Reset unread count
-    batch.update(_firestore.collection('chats').doc(chatId), {
-      'unreadCount.$userId': 0,
-    });
+    // Reset unread count for user
+    final chatDoc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+    );
+    final unreadCount = _decodeJsonMap(chatDoc.data['unreadCount']);
+    unreadCount[userId] = 0;
 
-    await batch.commit();
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+      data: {'unreadCount': jsonEncode(unreadCount)},
+    );
   }
 
   // ── Seen Status Management ──
 
-  /// Toggle seen status for current user in a chat
   Future<void> toggleSeenEnabled(
     String chatId,
     String userId,
     bool enabled,
   ) async {
-    await _firestore.collection('chats').doc(chatId).update({
-      'seenEnabled.$userId': enabled,
-    });
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+    );
+    final seenEnabled = _decodeJsonMap(doc.data['seenEnabled']);
+    seenEnabled[userId] = enabled;
+
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+      data: {'seenEnabled': jsonEncode(seenEnabled)},
+    );
   }
 
-  /// Request seen access from another user
-  /// Amr wants to see Sara's read receipts → sends request to Sara
   Future<void> requestSeenAccess({
     required String chatId,
     required String requesterId,
     required String targetId,
   }) async {
-    await _firestore.collection('chats').doc(chatId).update({
-      'seenRequests': FieldValue.arrayUnion([
-        {'from': requesterId, 'to': targetId},
-      ]),
-    });
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+    );
+    final requests = _decodeJsonList(doc.data['seenRequests']);
+    requests.add({'from': requesterId, 'to': targetId});
+
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+      data: {'seenRequests': jsonEncode(requests)},
+    );
   }
 
-  /// Approve a seen request
   Future<void> approveSeenRequest({
     required String chatId,
     required String approverId,
     required String requesterId,
   }) async {
-    final batch = _firestore.batch();
-    final chatRef = _firestore.collection('chats').doc(chatId);
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+    );
 
-    // Remove the request
-    batch.update(chatRef, {
-      'seenRequests': FieldValue.arrayRemove([
-        {'from': requesterId, 'to': approverId},
-      ]),
-    });
+    final requests = _decodeJsonList(doc.data['seenRequests']);
+    requests.removeWhere(
+      (r) => r['from'] == requesterId && r['to'] == approverId,
+    );
 
-    // Enable seen for the approver (so requester can see their read receipts)
-    batch.update(chatRef, {'seenEnabled.$approverId': true});
+    final seenEnabled = _decodeJsonMap(doc.data['seenEnabled']);
+    seenEnabled[approverId] = true;
 
-    await batch.commit();
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+      data: {
+        'seenRequests': jsonEncode(requests),
+        'seenEnabled': jsonEncode(seenEnabled),
+      },
+    );
   }
 
-  /// Deny / cancel a seen request
   Future<void> denySeenRequest({
     required String chatId,
     required String requesterId,
     required String targetId,
   }) async {
-    await _firestore.collection('chats').doc(chatId).update({
-      'seenRequests': FieldValue.arrayRemove([
-        {'from': requesterId, 'to': targetId},
-      ]),
-    });
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+    );
+    final requests = _decodeJsonList(doc.data['seenRequests']);
+    requests.removeWhere(
+      (r) => r['from'] == requesterId && r['to'] == targetId,
+    );
+
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+      data: {'seenRequests': jsonEncode(requests)},
+    );
   }
 
-  /// Toggle "notify on seen" — get notified when your message is read
   Future<void> toggleNotifyOnSeen(
     String chatId,
     String userId,
     bool enabled,
   ) async {
-    await _firestore.collection('chats').doc(chatId).update({
-      'notifyOnSeen.$userId': enabled,
-    });
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+    );
+    final notifyOnSeen = _decodeJsonMap(doc.data['notifyOnSeen']);
+    notifyOnSeen[userId] = enabled;
+
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+      data: {'notifyOnSeen': jsonEncode(notifyOnSeen)},
+    );
+  }
+
+  Future<void> deleteMessage(String messageId) async {
+    await _databases.deleteRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.messagesCollection,
+      rowId: messageId,
+    );
   }
 
   // Delete a chat
   Future<void> deleteChat(String chatId, List<String> participants) async {
-    // Delete all messages
-    final messages = await _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .get();
+    // Delete all messages for this chat
+    final messages = await _databases.listRows(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.messagesCollection,
+      queries: [Query.equal('chatId', chatId), Query.limit(500)],
+    );
 
-    final batch = _firestore.batch();
-    for (final doc in messages.docs) {
-      batch.delete(doc.reference);
+    for (final doc in messages.rows) {
+      await _databases.deleteRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.messagesCollection,
+        rowId: doc.$id,
+      );
     }
 
     // Delete chat document
-    batch.delete(_firestore.collection('chats').doc(chatId));
+    await _databases.deleteRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+    );
 
     // Remove chatId from users
     for (final userId in participants) {
-      batch.update(_firestore.collection('users').doc(userId), {
-        'chatIds': FieldValue.arrayRemove([chatId]),
-      });
+      await _removeFromArray(
+        AppwriteConstants.usersCollection,
+        userId,
+        'chatIds',
+        chatId,
+      );
     }
+  }
 
-    await batch.commit();
+  // ── Helpers ──
+
+  Map<String, dynamic> _decodeJsonMap(dynamic value) {
+    if (value == null || value == '') return {};
+    if (value is Map) return Map<String, dynamic>.from(value);
+    try {
+      return Map<String, dynamic>.from(jsonDecode(value));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  List<Map<String, dynamic>> _decodeJsonList(dynamic value) {
+    if (value == null || value == '') return [];
+    if (value is List) return List<Map<String, dynamic>>.from(value);
+    try {
+      return List<Map<String, dynamic>>.from(jsonDecode(value));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _addToArray(
+    String collectionId,
+    String docId,
+    String field,
+    String value,
+  ) async {
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: collectionId,
+      rowId: docId,
+    );
+    final arr = List<String>.from(doc.data[field] ?? []);
+    if (!arr.contains(value)) arr.add(value);
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: collectionId,
+      rowId: docId,
+      data: {field: arr},
+    );
+  }
+
+  Future<void> _removeFromArray(
+    String collectionId,
+    String docId,
+    String field,
+    String value,
+  ) async {
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: collectionId,
+      rowId: docId,
+    );
+    final arr = List<String>.from(doc.data[field] ?? []);
+    arr.remove(value);
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: collectionId,
+      rowId: docId,
+      data: {field: arr},
+    );
   }
 }

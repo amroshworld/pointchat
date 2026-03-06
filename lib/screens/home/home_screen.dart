@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../appwrite_client.dart';
 import '../chat/chat_list_screen.dart';
 import '../group/group_list_screen.dart';
@@ -15,7 +14,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
-  final String _currentUserId = FirebaseAuth.instance.currentUser!.uid;
+  final String _currentUserId = cachedUserId;
 
   final List<Widget> _screens = [];
 
@@ -70,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
           try {
-            await client.ping();
+            await appwriteClient.ping();
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Appwrite Ping Successful!')),

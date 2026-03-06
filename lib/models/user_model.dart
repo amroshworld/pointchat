@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class UserModel {
   final String uid;
   final String displayName;
@@ -27,13 +25,13 @@ class UserModel {
 
   factory UserModel.fromMap(Map<String, dynamic> map) {
     return UserModel(
-      uid: map['uid'] ?? '',
+      uid: map['\$id'] ?? map['uid'] ?? '',
       displayName: map['displayName'] ?? '',
       email: map['email'] ?? '',
       photoUrl: map['photoUrl'] ?? '',
       status: map['status'] ?? 'Hey there! I am using PointChat',
       lastSeen: map['lastSeen'] != null
-          ? (map['lastSeen'] as Timestamp).toDate()
+          ? DateTime.tryParse(map['lastSeen'])
           : null,
       isOnline: map['isOnline'] ?? false,
       chatIds: List<String>.from(map['chatIds'] ?? []),
@@ -44,14 +42,11 @@ class UserModel {
 
   Map<String, dynamic> toMap() {
     return {
-      'uid': uid,
       'displayName': displayName,
       'email': email,
       'photoUrl': photoUrl,
       'status': status,
-      'lastSeen': lastSeen != null
-          ? Timestamp.fromDate(lastSeen!)
-          : FieldValue.serverTimestamp(),
+      'lastSeen': lastSeen?.toUtc().toIso8601String(),
       'isOnline': isOnline,
       'chatIds': chatIds,
       'groupIds': groupIds,

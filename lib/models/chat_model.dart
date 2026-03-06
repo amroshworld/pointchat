@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 
 class ChatModel {
   final String chatId;
@@ -7,16 +7,8 @@ class ChatModel {
   final DateTime? lastMessageTime;
   final String lastMessageSenderId;
   final Map<String, int> unreadCount;
-
-  /// Per-chat seen settings: each participant can enable/disable seen for this chat
-  /// Key: userId, Value: true if that user allows seen status to be shown
   final Map<String, bool> seenEnabled;
-
-  /// Pending seen requests: userId who requested → userId they requested from
-  /// e.g. { 'amrId': 'saraId' } means Amr requested seen access from Sara
   final List<Map<String, String>> seenRequests;
-
-  /// Whether to notify when the message is seen (per user setting)
   final Map<String, bool> notifyOnSeen;
 
   ChatModel({
@@ -32,22 +24,52 @@ class ChatModel {
   });
 
   factory ChatModel.fromMap(Map<String, dynamic> map, String id) {
+    // unreadCount, seenEnabled, notifyOnSeen are stored as JSON strings in Appwrite
+    Map<String, int> parseUnreadCount(dynamic val) {
+      if (val is Map) return Map<String, int>.from(val);
+      if (val is String && val.isNotEmpty) {
+        try {
+          return Map<String, int>.from(jsonDecode(val));
+        } catch (_) {}
+      }
+      return {};
+    }
+
+    Map<String, bool> parseBoolMap(dynamic val) {
+      if (val is Map) return Map<String, bool>.from(val);
+      if (val is String && val.isNotEmpty) {
+        try {
+          return Map<String, bool>.from(jsonDecode(val));
+        } catch (_) {}
+      }
+      return {};
+    }
+
+    List<Map<String, String>> parseSeenRequests(dynamic val) {
+      if (val is List) {
+        return val.map((e) => Map<String, String>.from(e as Map)).toList();
+      }
+      if (val is String && val.isNotEmpty) {
+        try {
+          final list = jsonDecode(val) as List;
+          return list.map((e) => Map<String, String>.from(e)).toList();
+        } catch (_) {}
+      }
+      return [];
+    }
+
     return ChatModel(
       chatId: id,
       participants: List<String>.from(map['participants'] ?? []),
       lastMessage: map['lastMessage'] ?? '',
       lastMessageTime: map['lastMessageTime'] != null
-          ? (map['lastMessageTime'] as Timestamp).toDate()
+          ? DateTime.tryParse(map['lastMessageTime'])
           : null,
       lastMessageSenderId: map['lastMessageSenderId'] ?? '',
-      unreadCount: Map<String, int>.from(map['unreadCount'] ?? {}),
-      seenEnabled: Map<String, bool>.from(map['seenEnabled'] ?? {}),
-      seenRequests:
-          (map['seenRequests'] as List<dynamic>?)
-              ?.map((e) => Map<String, String>.from(e))
-              .toList() ??
-          [],
-      notifyOnSeen: Map<String, bool>.from(map['notifyOnSeen'] ?? {}),
+      unreadCount: parseUnreadCount(map['unreadCount']),
+      seenEnabled: parseBoolMap(map['seenEnabled']),
+      seenRequests: parseSeenRequests(map['seenRequests']),
+      notifyOnSeen: parseBoolMap(map['notifyOnSeen']),
     );
   }
 
@@ -55,16 +77,17 @@ class ChatModel {
     return {
       'participants': participants,
       'lastMessage': lastMessage,
-      'lastMessageTime': FieldValue.serverTimestamp(),
+      'lastMessageTime':
+          lastMessageTime?.toUtc().toIso8601String() ??
+          DateTime.now().toUtc().toIso8601String(),
       'lastMessageSenderId': lastMessageSenderId,
-      'unreadCount': unreadCount,
-      'seenEnabled': seenEnabled,
-      'seenRequests': seenRequests,
-      'notifyOnSeen': notifyOnSeen,
+      'unreadCount': jsonEncode(unreadCount),
+      'seenEnabled': jsonEncode(seenEnabled),
+      'seenRequests': jsonEncode(seenRequests),
+      'notifyOnSeen': jsonEncode(notifyOnSeen),
     };
   }
 
-  /// Get the other participant's UID in a 1-to-1 chat
   String getOtherUserId(String currentUserId) {
     return participants.firstWhere(
       (id) => id != currentUserId,

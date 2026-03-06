@@ -1,12 +1,19 @@
-// import 'dart:io'; (Removed to support web)
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:appwrite/appwrite.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../appwrite_client.dart';
+import '../../services/auth_service.dart';
+import '../../services/cache_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
@@ -21,9 +28,11 @@ import '../../models/chat_model.dart';
 import '../../models/user_model.dart';
 import '../../models/message_model.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/voice_message_player.dart';
 
 class UnifiedStreamScreen extends StatefulWidget {
-  const UnifiedStreamScreen({super.key});
+  final String currentUserId;
+  const UnifiedStreamScreen({super.key, required this.currentUserId});
 
   @override
   State<UnifiedStreamScreen> createState() => _UnifiedStreamScreenState();
@@ -36,8 +45,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   final _chatService = ChatService();
   final _groupService = GroupService();
   final _userService = UserService();
-  final _storage = FirebaseStorage.instance;
-  final currentUserId = FirebaseAuth.instance.currentUser!.uid;
+  late final String currentUserId = widget.currentUserId;
 
   List<UserModel> _allUsers = [];
   List<GroupModel> _allGroups = [];
@@ -51,16 +59,121 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
   bool _showActions = false;
   bool _showEmojiPopup = false;
-  bool _isRecording = false;
+  final ValueNotifier<bool> _isRecordingNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<int> _recordingSecondsNotifier = ValueNotifier<int>(0);
   double _recordingDragOffset = 0;
-  int _recordingSeconds = 0;
+  static const int _recordingMaxSeconds = 60; // Reduced to 60s for budget control
   bool _recordingCancelled = false;
   final AudioRecorder _audioRecorder = AudioRecorder();
+
+  // Reply state
+  MessageModel? _replyingToMessage;
+
+  late final Stream<List<UserModel>> _allUsersStream;
+  late final Stream<List<ChatModel>> _chatsStream;
+  late final Stream<List<GroupModel>> _groupsStream;
+  late final Stream<List<Map<String, dynamic>>> _combinedStream;
 
   @override
   void initState() {
     super.initState();
-    _userService.getAllUsers(currentUserId).listen((users) {
+    
+    _allUsersStream = _userService.getAllUsers(currentUserId);
+    _chatsStream = _chatService.getUserChats(currentUserId);
+    _groupsStream = _groupService.getUserGroups(currentUserId);
+
+    _combinedStream = Rx.combineLatest3(
+      _chatsStream,
+      _groupsStream,
+      _allUsersStream,
+      (chats, groups, users) {
+        List<Map<String, dynamic>> merged = [];
+
+        for (var chat in chats) {
+          if (chat.lastMessage.isEmpty) continue;
+          final otherUserId = chat.getOtherUserId(currentUserId);
+          final otherUser = users.cast<UserModel?>().firstWhere(
+            (u) => u?.uid == otherUserId,
+            orElse: () => null,
+          );
+
+          final isOnline = otherUser?.isOnline ?? false;
+          final photoUrl = otherUser?.photoUrl;
+
+          merged.add({
+            'type': 'dm',
+            'id': chat.chatId,
+            'otherUserId': otherUserId,
+            'timeRaw': chat.lastMessageTime ?? DateTime.now(),
+            'handle': otherUser != null
+                ? _formatHandle(otherUser.displayName)
+                : '@unknown',
+            'sender': chat.lastMessageSenderId == currentUserId
+                ? 'me'
+                : (otherUser?.displayName ?? ''),
+            'content': chat.lastMessage,
+            'time': chat.lastMessageTime != null
+                ? DateFormat('HH:mm').format(chat.lastMessageTime!)
+                : '',
+            'isUnread': (chat.unreadCount[currentUserId] ?? 0) > 0,
+            'image': chat.lastMessage.contains('📷'),
+            'photoUrl': photoUrl,
+            'isOnline': isOnline,
+            'onlinePercentage': isOnline ? 1.0 : 0.0,
+          });
+        }
+
+        for (var group in groups) {
+          if (group.lastMessage.isEmpty) continue;
+
+          int onlineCount = 0;
+          for (var uid in group.members) {
+            if (uid == currentUserId) {
+              if (_currentUserModel?.isOnline == true) onlineCount++;
+            } else {
+              final member = users.cast<UserModel?>().firstWhere(
+                (u) => u?.uid == uid,
+                orElse: () => null,
+              );
+              if (member != null && member.isOnline) onlineCount++;
+            }
+          }
+          final double percentage = group.members.isEmpty
+              ? 0.0
+              : onlineCount / group.members.length;
+
+          merged.add({
+            'type': 'group',
+            'id': group.groupId,
+            'timeRaw': group.lastMessageTime ?? DateTime.now(),
+            'handle': _formatGroupHandle(group.name),
+            'sender': group.lastMessageSenderId == currentUserId
+                ? 'me'
+                : group.lastMessageSenderName,
+            'content': group.lastMessage,
+            'time': group.lastMessageTime != null
+                ? DateFormat('HH:mm').format(group.lastMessageTime!)
+                : '',
+            'isUnread': false,
+            'image': group.lastMessage.contains('📷'),
+            'photoUrl': group.photoUrl,
+            'isOnline': onlineCount > 0,
+            'onlinePercentage': percentage,
+            'groupMembers': group.members,
+            'groupAdmins': group.admins,
+            'groupDescription': group.description,
+          });
+        }
+
+        merged.sort(
+          (a, b) =>
+              (b['timeRaw'] as DateTime).compareTo(a['timeRaw'] as DateTime),
+        );
+        return merged;
+      },
+    );
+
+    _allUsersStream.listen((users) {
       if (mounted) {
         setState(() {
           _allUsers = users;
@@ -76,7 +189,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       }
     });
 
-    _groupService.getUserGroups(currentUserId).listen((groups) {
+    _groupsStream.listen((groups) {
       if (mounted) {
         setState(() {
           _allGroups = groups;
@@ -96,6 +209,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     final lastAt = textBeforeCursor.lastIndexOf('@');
     final lastHash = textBeforeCursor.lastIndexOf('#');
     final lastSpace = textBeforeCursor.lastIndexOf(' ');
+    final lastToken = textBeforeCursor.split(' ').last.toLowerCase();
 
     if (lastAt > lastSpace && lastAt >= 0) {
       final query = textBeforeCursor.substring(lastAt + 1).toLowerCase();
@@ -119,6 +233,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
               (g) => g.name.toLowerCase().replaceAll(' ', '').contains(query),
             )
             .toList();
+      });
+    } else if ('location'.startsWith(lastToken) && lastToken.length >= 2) {
+      setState(() {
+        _isMentioning = true;
+        _mentionSuggestions = ['Share current location'];
       });
     } else {
       setState(() {
@@ -178,20 +297,42 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     );
     if (pickedFile == null) return;
 
+    final CroppedFile? croppedFile = await ImageCropper().cropImage(
+      sourcePath: pickedFile.path,
+      compressQuality: 80,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop Photo',
+          toolbarColor: const Color(0xFF161618),
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.original,
+          lockAspectRatio: false,
+        ),
+        IOSUiSettings(title: 'Crop Photo'),
+      ],
+    );
+    if (croppedFile == null) return;
+
+    final imageNote = await _promptImageNote();
+    if (imageNote == null) return;
+
     setState(() => _isUploading = true);
 
     try {
       final fileName = const Uuid().v4();
-      final ref = _storage.ref().child('chat_images').child('$fileName.jpg');
-
-      final imageBytes = await pickedFile.readAsBytes();
-      await ref.putData(
-        imageBytes,
-        SettableMetadata(contentType: 'image/jpeg'),
+      final imageBytes = await XFile(croppedFile.path).readAsBytes();
+      final file = await appwriteStorage.createFile(
+        bucketId: AppwriteConstants.chatFilesBucket,
+        fileId: ID.unique(),
+        file: InputFile.fromBytes(bytes: imageBytes, filename: '$fileName.jpg'),
       );
-      final downloadUrl = await ref.getDownloadURL();
+      final downloadUrl =
+          '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${file.$id}/view?project=${AppwriteConstants.projectId}';
 
       await _processCommand(text, imageUrl: downloadUrl);
+      if (imageNote.trim().isNotEmpty) {
+        await _processCommand('$text ${imageNote.trim()}');
+      }
       _commandController.clear();
     } catch (e) {
       if (!mounted) return;
@@ -239,13 +380,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     try {
       final fileId = const Uuid().v4();
       final ext = file.extension ?? 'bin';
-      final ref = _storage.ref().child('chat_files').child('$fileId.$ext');
-
-      await ref.putData(
-        bytes,
-        SettableMetadata(contentType: 'application/octet-stream'),
+      final uploadedFile = await appwriteStorage.createFile(
+        bucketId: AppwriteConstants.chatFilesBucket,
+        fileId: ID.unique(),
+        file: InputFile.fromBytes(bytes: bytes, filename: '$fileId.$ext'),
       );
-      final downloadUrl = await ref.getDownloadURL();
+      final downloadUrl =
+          '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${uploadedFile.$id}/view?project=${AppwriteConstants.projectId}';
 
       await _processCommand(
         text,
@@ -275,6 +416,51 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
   Timer? _recordingTimer;
 
+  Future<String?> _promptImageNote() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E20),
+        title: Text(
+          'Add note (optional)',
+          style: GoogleFonts.inter(color: AppTheme.textPri),
+        ),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          style: GoogleFonts.inter(color: AppTheme.textPri),
+          decoration: InputDecoration(
+            hintText: 'Write a note for this photo...',
+            hintStyle: GoogleFonts.inter(color: AppTheme.muted),
+            enabledBorder: const OutlineInputBorder(
+              borderSide: BorderSide(color: AppTheme.border),
+            ),
+            focusedBorder: const OutlineInputBorder(
+              borderSide: BorderSide(color: AppTheme.purple),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppTheme.muted),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: Text(
+              'Send',
+              style: GoogleFonts.inter(color: AppTheme.purpleLt),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Start recording ──
   Future<void> _startRecording() async {
     final text = _commandController.text.trim();
@@ -294,26 +480,31 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     }
 
     if (await _audioRecorder.hasPermission()) {
+      final path = kIsWeb
+          ? ''
+          : '${(await getTemporaryDirectory()).path}/temp_record_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
       await _audioRecorder.start(
         const RecordConfig(
           encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
+          bitRate: 64000,
           sampleRate: 44100,
-          numChannels: 2, // Stereo
-          autoGain: true,
-          echoCancel: true,
-          noiseSuppress: true,
+          numChannels: 1,
         ),
-        path: '',
+        path: path,
       );
-      setState(() {
-        _isRecording = true;
-        _recordingSeconds = 0;
-        _recordingDragOffset = 0;
-        _recordingCancelled = false;
-      });
+      
+      _isRecordingNotifier.value = true;
+      _recordingSecondsNotifier.value = 0;
+      _recordingDragOffset = 0;
+      _recordingCancelled = false;
+
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() => _recordingSeconds++);
+        if (!mounted) return;
+        _recordingSecondsNotifier.value++;
+        if (_recordingSecondsNotifier.value >= _recordingMaxSeconds) {
+          _stopAndSendRecording(showLimitReachedToast: true);
+        }
       });
     } else {
       if (!mounted) return;
@@ -330,15 +521,31 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   }
 
   // ── Stop & send recording ──
-  Future<void> _stopAndSendRecording() async {
+  Future<void> _stopAndSendRecording({
+    bool showLimitReachedToast = false,
+  }) async {
+    if (!_isRecordingNotifier.value) return;
     _recordingTimer?.cancel();
     _recordingTimer = null;
     final path = await _audioRecorder.stop();
-    setState(() => _isRecording = false);
+    final duration = _recordingSecondsNotifier.value;
+    _isRecordingNotifier.value = false;
+
+    if (showLimitReachedToast && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Max recording length reached ($_recordingMaxSeconds s)',
+            style: GoogleFonts.jetBrainsMono(),
+          ),
+          backgroundColor: const Color(0xFF161618),
+        ),
+      );
+    }
 
     if (path == null || _recordingCancelled) return;
     // Minimum 1 second to avoid accidental taps
-    if (_recordingSeconds < 1) {
+    if (duration < 1) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -360,9 +567,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       final audioBytes = await xFile.readAsBytes();
 
       final audioId = const Uuid().v4();
-      final ref = _storage.ref().child('chat_audio').child('$audioId.m4a');
-      await ref.putData(audioBytes, SettableMetadata(contentType: 'audio/mp4'));
-      final downloadUrl = await ref.getDownloadURL();
+      final uploadedAudio = await appwriteStorage.createFile(
+        bucketId: AppwriteConstants.chatFilesBucket,
+        fileId: ID.unique(),
+        file: InputFile.fromBytes(bytes: audioBytes, filename: '$audioId.m4a'),
+      );
+      final downloadUrl =
+          '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${uploadedAudio.$id}/view?project=${AppwriteConstants.projectId}';
 
       await _processCommand(
         _commandController.text.trim(),
@@ -370,7 +581,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           'url': downloadUrl,
           'type': MessageType.audio,
           'fileName': '$audioId.m4a',
-          'audioDuration': _recordingSeconds,
+          'audioDuration': duration,
         },
       );
       _commandController.clear();
@@ -392,16 +603,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
   // ── Cancel recording (drag-to-delete) ──
   void _cancelRecording() async {
+    if (!_isRecordingNotifier.value) return;
     _recordingTimer?.cancel();
     _recordingTimer = null;
     _recordingCancelled = true;
     await _audioRecorder.stop();
     if (mounted) {
-      setState(() {
-        _isRecording = false;
-        _recordingDragOffset = 0;
-        _recordingSeconds = 0;
-      });
+      _isRecordingNotifier.value = false;
+      _recordingDragOffset = 0;
+      _recordingSecondsNotifier.value = 0;
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -411,15 +622,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           backgroundColor: const Color(0xFF161618),
         ),
       );
-    }
-  }
-
-  // ── Legacy toggle (used by button tap) ──
-  void _toggleRecordAudio() {
-    if (_isRecording) {
-      _stopAndSendRecording();
-    } else {
-      _startRecording();
     }
   }
 
@@ -535,7 +737,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
     if (content.isEmpty && type == MessageType.text) return;
 
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final currentUserName = cachedUserName;
+    final currentUserPhoto = cachedUserPhotoUrl;
     bool sentAtLeastOne = false;
 
     for (var handle in handles) {
@@ -554,8 +757,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           await _chatService.sendMessage(
             chatId: chatId,
             senderId: currentUserId,
-            senderName: currentUser?.displayName ?? 'Me',
-            senderPhotoUrl: currentUser?.photoURL ?? '',
+            senderName: currentUserName,
+            senderPhotoUrl: currentUserPhoto,
             text: content,
             type: type,
             fileName: fileName,
@@ -578,8 +781,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           await _groupService.sendGroupMessage(
             groupId: targetGroup.groupId,
             senderId: currentUserId,
-            senderName: currentUser?.displayName ?? 'Me',
-            senderPhotoUrl: currentUser?.photoURL ?? '',
+            senderName: currentUserName,
+            senderPhotoUrl: currentUserPhoto,
             text: content,
             type: type,
             fileName: fileName,
@@ -614,67 +817,32 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     _commandController.clear();
   }
 
-  void _onToggleFavorite(String targetUid, bool isFavorite) async {
-    await _userService.toggleFavorite(currentUserId, targetUid, !isFavorite);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      body: Builder(
-        builder: (context) => GestureDetector(
-          // Swipe UP from bottom edge to open the network bottom sheet
-          onVerticalDragEnd: (details) {
-            if (details.primaryVelocity != null &&
-                details.primaryVelocity! < -600) {
-              _showNetworkBottomSheet(context);
-            }
-          },
-          child: Stack(
-            children: [
-              SafeArea(
-                child: Column(
-                  children: [
-                    _buildStatusBar(),
-                    Expanded(child: _buildCombinedStream()),
-                    _buildCommandBar(),
-                  ],
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                _buildStatusBar(),
+                Expanded(child: _buildCombinedStream()),
+                _buildCommandBar(),
+              ],
+            ),
+          ),
+          if (_isUploading)
+            Container(
+              color: AppTheme.bg.withValues(alpha: 0.7),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  color: AppTheme.purple,
+                  strokeWidth: 2,
                 ),
               ),
-              if (_isUploading)
-                Container(
-                  color: AppTheme.bg.withValues(alpha: 0.7),
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      color: AppTheme.purple,
-                      strokeWidth: 2,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showNetworkBottomSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: NetworkBottomSheet(
-          users: _allUsers,
-          currentUserModel: _currentUserModel,
-          onUserTap: (user) {
-            Navigator.pop(ctx);
-            _handleItemTap(_formatHandle(user.displayName));
-          },
-          onToggleFavorite: _onToggleFavorite,
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -713,16 +881,19 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
               ),
             ],
           ),
-          // Only logout — no menu icon (drawer via swipe-up)
-          IconButton(
-            icon: const Icon(
-              Icons.logout_rounded,
-              color: AppTheme.muted,
-              size: 18,
-            ),
-            onPressed: () => FirebaseAuth.instance.signOut(),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(
+                  Icons.logout_rounded,
+                  color: AppTheme.muted,
+                  size: 20,
+                ),
+                onPressed: () => AuthService().signOut(),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
           ),
         ],
       ),
@@ -730,95 +901,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   }
 
   Widget _buildCombinedStream() {
-    final chatsStream = _chatService.getUserChats(currentUserId);
-    final groupsStream = _groupService.getUserGroups(currentUserId);
-
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: Rx.combineLatest2(chatsStream, groupsStream, (chats, groups) {
-        List<Map<String, dynamic>> merged = [];
-
-        for (var chat in chats) {
-          if (chat.lastMessage.isEmpty) continue;
-          final otherUserId = chat.getOtherUserId(currentUserId);
-          final otherUser = _allUsers.cast<UserModel?>().firstWhere(
-            (u) => u?.uid == otherUserId,
-            orElse: () => null,
-          );
-
-          final isOnline = otherUser?.isOnline ?? false;
-          final photoUrl = otherUser?.photoUrl;
-
-          merged.add({
-            'type': 'dm',
-            'id': chat.chatId,
-            'otherUserId': otherUserId,
-            'timeRaw': chat.lastMessageTime ?? DateTime.now(),
-            'handle': otherUser != null
-                ? _formatHandle(otherUser.displayName)
-                : '@unknown',
-            'sender': chat.lastMessageSenderId == currentUserId
-                ? 'me'
-                : (otherUser?.displayName ?? ''),
-            'content': chat.lastMessage,
-            'time': chat.lastMessageTime != null
-                ? DateFormat('HH:mm').format(chat.lastMessageTime!)
-                : '',
-            'isUnread': (chat.unreadCount[currentUserId] ?? 0) > 0,
-            'image': chat.lastMessage.contains('📷'),
-            'photoUrl': photoUrl,
-            'isOnline': isOnline,
-            'onlinePercentage': isOnline ? 1.0 : 0.0,
-          });
-        }
-
-        for (var group in groups) {
-          if (group.lastMessage.isEmpty) continue;
-
-          int onlineCount = 0;
-          for (var uid in group.members) {
-            if (uid == currentUserId) {
-              if (_currentUserModel?.isOnline == true) onlineCount++;
-            } else {
-              final member = _allUsers.cast<UserModel?>().firstWhere(
-                (u) => u?.uid == uid,
-                orElse: () => null,
-              );
-              if (member != null && member.isOnline) onlineCount++;
-            }
-          }
-          final double percentage = group.members.isEmpty
-              ? 0.0
-              : onlineCount / group.members.length;
-
-          merged.add({
-            'type': 'group',
-            'id': group.groupId,
-            'timeRaw': group.lastMessageTime ?? DateTime.now(),
-            'handle': _formatGroupHandle(group.name),
-            'sender': group.lastMessageSenderId == currentUserId
-                ? 'me'
-                : group.lastMessageSenderName,
-            'content': group.lastMessage,
-            'time': group.lastMessageTime != null
-                ? DateFormat('HH:mm').format(group.lastMessageTime!)
-                : '',
-            'isUnread': false,
-            'image': group.lastMessage.contains('📷'),
-            'photoUrl': group.photoUrl,
-            'isOnline': onlineCount > 0,
-            'onlinePercentage': percentage,
-            'groupMembers': group.members,
-            'groupAdmins': group.admins,
-            'groupDescription': group.description,
-          });
-        }
-
-        merged.sort(
-          (a, b) =>
-              (b['timeRaw'] as DateTime).compareTo(a['timeRaw'] as DateTime),
-        );
-        return merged;
-      }),
+      stream: _combinedStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           debugPrint('Stream error: ${snapshot.error}');
@@ -885,8 +969,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
               chatService: _chatService,
               groupService: _groupService,
               userService: _userService,
-              onTap: () => _handleItemTap(item['handle'] ?? ''),
-              onLongPress: () {
+              onTap: () {
                 setState(() {
                   _expandedItemId = isExpanded ? null : item['id'];
                 });
@@ -894,6 +977,14 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   _chatService.markMessagesAsRead(item['id'], currentUserId);
                 }
               },
+              onReply: (replyText) {
+                _commandController.text = replyText;
+                _commandController.selection = TextSelection.fromPosition(
+                  TextPosition(offset: replyText.length),
+                );
+                _commandFocusNode.requestFocus();
+              },
+              onLongPress: () => _handleItemTap(item['handle'] ?? ''),
             );
           },
         );
@@ -968,28 +1059,51 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
               itemBuilder: (context, index) {
                 final suggestion = _mentionSuggestions[index];
                 final isUser = suggestion is UserModel;
+                final isGroup = suggestion is GroupModel;
+                final isAction = suggestion is String;
                 final name = isUser
                     ? suggestion.displayName
-                    : (suggestion as GroupModel).name;
+                    : isGroup
+                    ? suggestion.name
+                    : suggestion.toString();
                 final handle = isUser
                     ? _formatHandle(name)
-                    : _formatGroupHandle(name);
+                    : isGroup
+                    ? _formatGroupHandle(name)
+                    : name;
 
                 return ListTile(
                   dense: true,
                   leading: Icon(
-                    isUser ? Icons.person_outline_rounded : Icons.tag_rounded,
-                    color: isUser ? AppTheme.purple : AppTheme.green,
-                    size: 16,
+                    isUser
+                        ? Icons.person_outline_rounded
+                        : isGroup
+                        ? Icons.tag_rounded
+                        : Icons.location_on_outlined,
+                    color: isUser
+                        ? AppTheme.purple
+                        : isGroup
+                        ? AppTheme.green
+                        : AppTheme.accent,
+                    size: 20, // larger
                   ),
                   title: Text(
                     handle,
                     style: GoogleFonts.inter(
                       color: AppTheme.textPri,
-                      fontSize: 13,
+                      fontSize: 14, // larger
                     ),
                   ),
                   onTap: () {
+                    if (isAction) {
+                      setState(() {
+                        _isMentioning = false;
+                        _mentionSuggestions = [];
+                      });
+                      _sendLocation();
+                      return;
+                    }
+
                     final text = _commandController.text;
                     final selection = _commandController.selection;
                     final textBeforeCursor = text.substring(
@@ -1024,199 +1138,241 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
         if (_showEmojiPopup) _buildEmojiPopup(),
 
-        GestureDetector(
-          onHorizontalDragUpdate: (details) {
-            if (details.primaryDelta! < -5) {
-              setState(() => _showActions = true);
-            } else if (details.primaryDelta! > 5) {
-              setState(() {
-                _showActions = false;
-                _showEmojiPopup = false;
-              });
-            }
-          },
-          child: Container(
-            width: double.infinity,
-            margin: const EdgeInsets.fromLTRB(12, 4, 12, 16),
-            height: 54,
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppTheme.border, width: 1),
-            ),
-            child: _isRecording
-                ? Row(
-                    children: [
-                      const SizedBox(width: 14),
-                      Icon(Icons.mic, color: AppTheme.red, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${(_recordingSeconds ~/ 60).toString().padLeft(2, '0')}:${(_recordingSeconds % 60).toString().padLeft(2, '0')}',
-                        style: GoogleFonts.inter(
-                          color: AppTheme.textPri,
-                          fontSize: 14,
-                        ),
-                      ),
-                      Transform.translate(
-                        offset: Offset(
-                          _recordingDragOffset.clamp(-100.0, 0.0),
-                          0,
-                        ),
-                        child: const Expanded(
-                          child: Center(
-                            child: Text(
-                              '< Slide to cancel',
-                              style: TextStyle(
-                                color: AppTheme.textSec,
-                                fontSize: 13,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onHorizontalDragUpdate: (details) {
+                    if (details.primaryDelta! < -5) {
+                      setState(() => _showActions = true);
+                    } else if (details.primaryDelta! > 5) {
+                      setState(() {
+                        _showActions = false;
+                        _showEmojiPopup = false;
+                      });
+                    }
+                  },
+                  child: Container(
+                    height: 54,
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Stack(
+                      children: [
+                        // The normal text input field (always in tree to maintain keyboard focus)
+                        Row(
+                          children: [
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: TextField(
+                                controller: _commandController,
+                                focusNode: _commandFocusNode,
+                                style: GoogleFonts.inter(
+                                  color: AppTheme.textPri,
+                                  fontSize: 15,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: '@user or #group message...',
+                                  hintStyle: GoogleFonts.inter(
+                                    color: AppTheme.muted,
+                                    fontSize: 15,
+                                  ),
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  contentPadding: EdgeInsets.zero,
+                                  fillColor: Colors.transparent,
+                                ),
+                                cursorColor: AppTheme.purple,
+                                onSubmitted: _sendCommand,
                               ),
                             ),
-                          ),
+                            if (_showActions) ...[
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.emoji_emotions_outlined,
+                                  color: AppTheme.textSec,
+                                  size: 24,
+                                ),
+                                onPressed: () {
+                                  setState(
+                                    () => _showEmojiPopup = !_showEmojiPopup,
+                                  );
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.add_photo_alternate_outlined,
+                                  color: AppTheme.textSec,
+                                  size: 24,
+                                ),
+                                onPressed: _pickAndSendImage,
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.attach_file_outlined,
+                                  color: AppTheme.textSec,
+                                  size: 24,
+                                ),
+                                onPressed: _pickAndSendFile,
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.location_on_outlined,
+                                  color: AppTheme.textSec,
+                                  size: 24,
+                                ),
+                                onPressed: _sendLocation,
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.group_add_outlined,
+                                  color: AppTheme.textSec,
+                                  size: 24, 
+                                ),
+                                onPressed: _showCreateGroupDialog,
+                              ),
+                            ],
+                            if (!_showActions)
+                              ValueListenableBuilder<TextEditingValue>(
+                                valueListenable: _commandController,
+                                builder: (context, value, child) {
+                                  final hasText = value.text.trim().isNotEmpty;
+                                  return Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (hasText)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            right: 4,
+                                          ),
+                                          child: IconButton(
+                                            icon: const Icon(
+                                              Icons.arrow_forward_rounded,
+                                              color: AppTheme.purple,
+                                              size: 26, 
+                                            ),
+                                            onPressed: () => _sendCommand(
+                                              _commandController.text,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                          ],
                         ),
-                      ),
-                      GestureDetector(
-                        onLongPressMoveUpdate: (details) {
-                          setState(() {
-                            _recordingDragOffset =
-                                details.localOffsetFromOrigin.dx;
-                          });
-                          if (_recordingDragOffset < -80) {
-                            _cancelRecording();
-                          }
-                        },
-                        onLongPressEnd: (_) => _stopAndSendRecording(),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          child: Icon(
-                            Icons.send,
-                            color: AppTheme.purple,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : Row(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 14, right: 8),
-                        child: Text(
-                          '>',
-                          style: GoogleFonts.inter(
-                            color: AppTheme.purple,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: _commandController,
-                          focusNode: _commandFocusNode,
-                          style: GoogleFonts.inter(
-                            color: AppTheme.textPri,
-                            fontSize: 14,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: '@user or #group  message...',
-                            hintStyle: GoogleFonts.inter(
-                              color: AppTheme.muted,
-                              fontSize: 14,
-                            ),
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            contentPadding: EdgeInsets.zero,
-                            fillColor: Colors.transparent,
-                          ),
-                          cursorColor: AppTheme.purple,
-                          onSubmitted: _sendCommand,
-                        ),
-                      ),
-                      if (_showActions) ...[
-                        IconButton(
-                          icon: const Icon(
-                            Icons.emoji_emotions_outlined,
-                            color: AppTheme.textSec,
-                            size: 20,
-                          ),
-                          onPressed: () {
-                            setState(() => _showEmojiPopup = !_showEmojiPopup);
+                        // The recording overlay (covers text field while recording)
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _isRecordingNotifier,
+                          builder: (context, isRecording, _) {
+                            if (!isRecording) return const SizedBox.shrink();
+                            return Container(
+                              color: AppTheme.surface,
+                              child: Row(
+                                children: [
+                                  const SizedBox(width: 14),
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 300),
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.red.withValues(alpha: 0.2),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.mic,
+                                      color: AppTheme.red,
+                                      size: 24,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ValueListenableBuilder<int>(
+                                    valueListenable: _recordingSecondsNotifier,
+                                    builder: (context, seconds, _) {
+                                      return Text(
+                                        '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}',
+                                        style: GoogleFonts.inter(
+                                          color: AppTheme.textPri,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  Expanded(
+                                    child: Transform.translate(
+                                      offset: Offset(
+                                        _recordingDragOffset.clamp(-100.0, 0.0),
+                                        0,
+                                      ),
+                                      child: const Center(
+                                        child: Text(
+                                          '< Slide to cancel',
+                                          style: TextStyle(
+                                            color: AppTheme.textSec,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: AnimatedScale(
+                                      scale: _recordingDragOffset < -50 ? 1.4 : 1.0,
+                                      duration: const Duration(milliseconds: 150),
+                                      child: Icon(
+                                        Icons.delete_outline_rounded,
+                                        color: _recordingDragOffset < -50
+                                            ? AppTheme.red
+                                            : AppTheme.textSec,
+                                        size: 26,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
                           },
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.add_photo_alternate_outlined,
-                            color: AppTheme.textSec,
-                            size: 20,
-                          ),
-                          onPressed: _pickAndSendImage,
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.attach_file_outlined,
-                            color: AppTheme.textSec,
-                            size: 20,
-                          ),
-                          onPressed: _pickAndSendFile,
-                        ),
-                        GestureDetector(
-                          onLongPressStart: (_) => _startRecording(),
-                          onLongPressMoveUpdate: (details) {
-                            setState(() {
-                              _recordingDragOffset =
-                                  details.localOffsetFromOrigin.dx;
-                            });
-                            if (_recordingDragOffset < -80) {
-                              _cancelRecording();
-                            }
-                          },
-                          onLongPressEnd: (_) => _stopAndSendRecording(),
-                          child: IconButton(
-                            icon: Icon(
-                              _isRecording
-                                  ? Icons.stop_circle
-                                  : Icons.mic_outlined,
-                              color: _isRecording
-                                  ? AppTheme.red
-                                  : AppTheme.textSec,
-                              size: 20,
-                            ),
-                            onPressed: _toggleRecordAudio,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.location_on_outlined,
-                            color: AppTheme.textSec,
-                            size: 20,
-                          ),
-                          onPressed: _sendLocation,
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.group_add_outlined,
-                            color: AppTheme.textSec,
-                            size: 20,
-                          ),
-                          onPressed: _showCreateGroupDialog,
                         ),
                       ],
-                      if (!_showActions)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.arrow_forward_rounded,
-                              color: AppTheme.purple,
-                              size: 20,
-                            ),
-                            onPressed: () =>
-                                _sendCommand(_commandController.text),
-                          ),
-                        ),
-                    ],
+                    ),
                   ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (!_showActions)
+                GestureDetector(
+                  onLongPressStart: (_) => _startRecording(),
+                  onLongPressMoveUpdate: (details) {
+                    setState(() {
+                      _recordingDragOffset = details.localOffsetFromOrigin.dx;
+                    });
+                    if (_recordingDragOffset < -80) {
+                      _cancelRecording();
+                    }
+                  },
+                  onLongPressEnd: (_) => _stopAndSendRecording(),
+                  child: Container(
+                    height: 54,
+                    width: 54,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5F5F5), // offwhite
+                      borderRadius: BorderRadius.circular(16), // Soft corner square
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: const Icon(Icons.mic, color: Colors.black, size: 24),
+                  ),
+                ),
+            ],
           ),
         ),
       ],
@@ -1366,6 +1522,7 @@ class StreamItemWidget extends StatefulWidget {
   final GroupService groupService;
   final UserService userService;
   final VoidCallback onTap;
+  final void Function(String) onReply;
   final VoidCallback onLongPress;
 
   const StreamItemWidget({
@@ -1377,6 +1534,7 @@ class StreamItemWidget extends StatefulWidget {
     required this.groupService,
     required this.userService,
     required this.onTap,
+    required this.onReply,
     required this.onLongPress,
   });
 
@@ -2113,74 +2271,152 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                mainAxisAlignment: isMe
-                    ? MainAxisAlignment.end
-                    : MainAxisAlignment.start,
-                children: [
-                  Flexible(
-                    child: Container(
-                      constraints: BoxConstraints(
-                        maxWidth: MediaQuery.of(context).size.width * 0.65,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isMe
-                            ? const Color(0xFF2A2A2E)
-                            : const Color(0xFF1E1E20),
-                        borderRadius: BorderRadius.only(
-                          topLeft: const Radius.circular(12),
-                          topRight: const Radius.circular(12),
-                          bottomLeft: Radius.circular(isMe ? 12 : 2),
-                          bottomRight: Radius.circular(isMe ? 2 : 12),
+              child: Dismissible(
+                key: Key(msg.messageId),
+                direction: DismissDirection.horizontal,
+                confirmDismiss: (direction) async {
+                  if (direction == DismissDirection.endToStart &&
+                      isMe &&
+                      !msg.isRead) {
+                    // Swipe left to delete
+                    return await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: AppTheme.surface,
+                        title: Text(
+                          'Delete message?',
+                          style: TextStyle(color: AppTheme.textPri),
                         ),
-                        border: Border.all(
-                          color: isMe
-                              ? const Color(0xFF3A3A3E)
-                              : AppTheme.border,
-                          width: 1,
+                        content: Text(
+                          'This message will be deleted for everyone.',
+                          style: TextStyle(color: AppTheme.textSec),
                         ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Show sender name in a box for group chats only
-                          if (isGroup && !isMe)
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 4),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppTheme.purple.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: AppTheme.purple.withValues(
-                                    alpha: 0.25,
-                                  ),
-                                  width: 0.5,
-                                ),
-                              ),
-                              child: Text(
-                                msg.senderName,
-                                style: GoogleFonts.inter(
-                                  color: AppTheme.purpleLt,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Cancel'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text(
+                              'Delete',
+                              style: TextStyle(color: AppTheme.red),
                             ),
-                          // ── Message content based on type ──
-                          _buildMessageContent(msg, isMe),
+                          ),
                         ],
                       ),
-                    ),
+                    );
+                  } else if (direction == DismissDirection.endToStart) {
+                    return false; // Cannot delete if read or not me
+                  } else if (direction == DismissDirection.startToEnd) {
+                    // Swipe right to reply
+                    final originalText = msg.text.replaceAll('\n', ' ');
+                    final replyText = '> Reply: $originalText\n';
+                    widget.onReply(replyText);
+                    return false;
+                  }
+                  return false;
+                },
+                onDismissed: (direction) {
+                  if (direction == DismissDirection.endToStart) {
+                    if (isGroup) {
+                      widget.groupService.deleteMessage(msg.messageId);
+                    } else {
+                      widget.chatService.deleteMessage(msg.messageId);
+                    }
+                  }
+                },
+                background: Container(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.only(left: 16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.purple.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ],
+                  child: const Icon(Icons.reply, color: AppTheme.purple),
+                ),
+                secondaryBackground: (isMe && !msg.isRead)
+                    ? Container(
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 16),
+                        decoration: BoxDecoration(
+                          color: AppTheme.red.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.delete, color: AppTheme.red),
+                      )
+                    : Container(),
+                child: Row(
+                  mainAxisAlignment: isMe
+                      ? MainAxisAlignment.end
+                      : MainAxisAlignment.start,
+                  children: [
+                    Flexible(
+                      child: Container(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.65,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isMe
+                              ? const Color(0xFF2A2A2E)
+                              : const Color(0xFF1E1E20),
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(12),
+                            topRight: const Radius.circular(12),
+                            bottomLeft: Radius.circular(isMe ? 12 : 2),
+                            bottomRight: Radius.circular(isMe ? 2 : 12),
+                          ),
+                          border: Border.all(
+                            color: isMe
+                                ? const Color(0xFF3A3A3E)
+                                : AppTheme.border,
+                            width: 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Show sender name in a box for group chats only
+                            if (isGroup && !isMe)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.purple.withValues(
+                                    alpha: 0.12,
+                                  ),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: AppTheme.purple.withValues(
+                                      alpha: 0.25,
+                                    ),
+                                    width: 0.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  msg.senderName,
+                                  style: GoogleFonts.inter(
+                                    color: AppTheme.purpleLt,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            // ── Message content based on type ──
+                            _buildMessageContent(msg, isMe),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -2201,32 +2437,30 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     switch (msg.type) {
       case MessageType.image:
         return GestureDetector(
-          onTap: () => launchUrl(Uri.parse(msg.text)),
+          onTap: () => _showImagePreview(msg.text),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  msg.text,
+                child: CachedNetworkImage(
+                  imageUrl: msg.text,
                   width: 200,
                   height: 150,
                   fit: BoxFit.cover,
-                  loadingBuilder: (_, child, progress) {
-                    if (progress == null) return child;
-                    return Container(
-                      width: 200,
-                      height: 150,
-                      color: AppTheme.surface,
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          color: AppTheme.purple,
-                          strokeWidth: 2,
-                        ),
+                  cacheManager: MediaCacheManager.instance,
+                  placeholder: (context, url) => Container(
+                    width: 200,
+                    height: 150,
+                    color: AppTheme.surface,
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: AppTheme.purple,
+                        strokeWidth: 2,
                       ),
-                    );
-                  },
-                  errorBuilder: (_, _, _) => Container(
+                    ),
+                  ),
+                  errorWidget: (context, url, error) => Container(
                     width: 200,
                     height: 150,
                     color: AppTheme.surface,
@@ -2240,7 +2474,8 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
 
       case MessageType.file:
         return GestureDetector(
-          onTap: () => launchUrl(Uri.parse(msg.text)),
+          onTap: () =>
+              _openAttachmentLocally(msg.text, msg.fileName ?? 'file.bin'),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2289,56 +2524,28 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         );
 
       case MessageType.audio:
-        return GestureDetector(
-          onTap: () => launchUrl(Uri.parse(msg.text)),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppTheme.green.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Icon(Icons.mic, color: AppTheme.green, size: 16),
-              ),
-              const SizedBox(width: 8),
-              // Waveform bars
-              ...List.generate(12, (i) {
-                final h = (4 + (i % 3 == 0 ? 10 : (i % 2 == 0 ? 6 : 3)))
-                    .toDouble();
-                return Container(
-                  width: 3,
-                  height: h,
-                  margin: const EdgeInsets.only(right: 2),
-                  decoration: BoxDecoration(
-                    color: AppTheme.green.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                );
-              }),
-              const SizedBox(width: 4),
-              if (msg.audioDuration != null)
-                Text(
-                  '${msg.audioDuration}s',
-                  style: GoogleFonts.inter(color: AppTheme.muted, fontSize: 11),
-                ),
-              const SizedBox(width: 4),
-              Icon(Icons.play_circle_filled, color: AppTheme.green, size: 20),
-            ],
-          ),
+        return VoiceMessagePlayer(
+          audioUrl: msg.text,
+          isMe: isMe,
         );
 
       case MessageType.location:
         return GestureDetector(
-          onTap: () {
+          onTap: () async {
             final lat = msg.latitude;
             final lng = msg.longitude;
             if (lat != null && lng != null) {
-              launchUrl(
-                Uri.parse('https://www.google.com/maps?q=$lat,$lng'),
+              final geoUri = Uri.parse('geo:$lat,$lng?q=$lat,$lng');
+              final opened = await launchUrl(
+                geoUri,
                 mode: LaunchMode.externalApplication,
               );
+              if (!opened) {
+                await launchUrl(
+                  Uri.parse('https://www.google.com/maps?q=$lat,$lng'),
+                  mode: LaunchMode.externalApplication,
+                );
+              }
             }
           },
           child: Row(
@@ -2394,6 +2601,34 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         );
 
       case MessageType.text:
+        if (msg.text.startsWith('> Reply:')) {
+          final parts = msg.text.split('\n');
+          final replyLine = parts.first;
+          final rest = parts.length > 1 ? parts.sublist(1).join('\n') : '';
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.only(left: 8, top: 4, bottom: 4),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: AppTheme.purple, width: 3),
+                  ),
+                ),
+                child: Text(
+                  replyLine.replaceAll('> Reply:', 'Reply').trim(),
+                  style: GoogleFonts.inter(
+                    color: AppTheme.textSec,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+              if (rest.isNotEmpty) Text(rest, style: textStyle),
+            ],
+          );
+        }
         return Text(msg.text, style: textStyle);
     }
   }
@@ -2402,6 +2637,103 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  Future<void> _showImagePreview(String imageUrl) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.92),
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        backgroundColor: Colors.transparent,
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const SizedBox(
+                    height: 180,
+                    child: Center(
+                      child: Icon(
+                        Icons.broken_image,
+                        color: Colors.white70,
+                        size: 42,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.of(ctx).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String? _extractAppwriteFileId(String fileUrl) {
+    final match = RegExp(r'/files/([^/]+)/').firstMatch(fileUrl);
+    return match?.group(1);
+  }
+
+  Future<void> _openAttachmentLocally(
+    String fileUrl,
+    String preferredName,
+  ) async {
+    if (kIsWeb) {
+      await launchUrl(Uri.parse(fileUrl), mode: LaunchMode.platformDefault);
+      return;
+    }
+
+    try {
+      final fileId = _extractAppwriteFileId(fileUrl);
+      if (fileId == null) {
+        await launchUrl(
+          Uri.parse(fileUrl),
+          mode: LaunchMode.externalApplication,
+        );
+        return;
+      }
+
+      final bytes = await appwriteStorage.getFileDownload(
+        bucketId: AppwriteConstants.chatFilesBucket,
+        fileId: fileId,
+      );
+      final tempDir = await getTemporaryDirectory();
+      final cleanName = preferredName.replaceAll(
+        RegExp(r'[^a-zA-Z0-9._-]'),
+        '_',
+      );
+      final localPath = '${tempDir.path}/$cleanName';
+      final outFile = File(localPath);
+      await outFile.writeAsBytes(bytes, flush: true);
+
+      await OpenFilex.open(localPath);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not open file locally.',
+            style: GoogleFonts.jetBrainsMono(),
+          ),
+          backgroundColor: const Color(0xFF161618),
+        ),
+      );
+    }
   }
 
   // ── Helper Widgets ──
@@ -2599,8 +2931,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                           await widget.groupService.addMembers(
                             groupId,
                             selected.toList(),
-                            FirebaseAuth.instance.currentUser?.displayName ??
-                                'Admin',
+                            cachedUserName.isNotEmpty
+                                ? cachedUserName
+                                : 'Admin',
                           );
                         },
                   child: Text(
@@ -2652,7 +2985,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                 await widget.groupService.leaveGroup(
                   groupId,
                   widget.currentUserId,
-                  FirebaseAuth.instance.currentUser?.displayName ?? 'User',
+                  cachedUserName.isNotEmpty ? cachedUserName : 'User',
                 );
               },
               child: Text(

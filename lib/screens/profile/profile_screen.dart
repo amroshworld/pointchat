@@ -4,6 +4,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/user_service.dart';
 import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
+import '../../appwrite_client.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -20,14 +21,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final authState = ref.watch(authProvider);
     final authNotifier = ref.read(authProvider.notifier);
-    final user = authNotifier.currentUser;
 
-    if (user == null) return const SizedBox.shrink();
+    if (cachedUserId.isEmpty) return const SizedBox.shrink();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: StreamBuilder<UserModel?>(
-        stream: _userService.getUserStream(user.uid),
+        stream: _userService.getUserStream(cachedUserId),
         builder: (context, snapshot) {
           final userData = snapshot.data;
 
@@ -53,15 +53,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   child: Column(
                     children: [
                       UserAvatar(
-                        photoUrl: userData?.photoUrl ?? user.photoURL,
-                        name: userData?.displayName ?? user.displayName ?? '',
+                        photoUrl: userData?.photoUrl ?? cachedUserPhotoUrl,
+                        name: userData?.displayName ?? cachedUserName,
                         radius: 48,
                         isOnline: true,
                         showOnlineIndicator: true,
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        userData?.displayName ?? user.displayName ?? 'User',
+                        userData?.displayName ?? cachedUserName,
                         style: Theme.of(context).textTheme.headlineSmall
                             ?.copyWith(
                               fontWeight: FontWeight.w700,
@@ -70,7 +70,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        userData?.email ?? user.email ?? '',
+                        userData?.email ?? cachedUserEmail,
                         style: TextStyle(
                           color: colorScheme.onSurfaceVariant,
                           fontSize: 14,
@@ -127,7 +127,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () =>
-                            _editStatus(user.uid, userData?.status ?? ''),
+                            _editStatus(cachedUserId, userData?.status ?? ''),
                       ),
                       const Divider(height: 1, indent: 72),
                       ListTile(

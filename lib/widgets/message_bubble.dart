@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../models/message_model.dart';
+import 'voice_message_player.dart';
 
 class MessageBubble extends StatelessWidget {
   final String message;
   final String senderName;
   final String? senderPhotoUrl;
   final DateTime? timestamp;
+  final MessageType type;
   final bool isMe;
   final bool isGroup;
   final bool isSystem;
@@ -18,6 +21,7 @@ class MessageBubble extends StatelessWidget {
     required this.senderName,
     this.senderPhotoUrl,
     this.timestamp,
+    this.type = MessageType.text,
     required this.isMe,
     this.isGroup = false,
     this.isSystem = false,
@@ -87,17 +91,23 @@ class MessageBubble extends StatelessWidget {
                   ),
                 ),
 
-              // Message text
-              Text(
-                message,
-                style: TextStyle(
-                  color: isMe
-                      ? colorScheme.onPrimaryContainer
-                      : colorScheme.onSurface,
-                  fontSize: 15,
-                  height: 1.4,
+              // Message Content
+              if (type == MessageType.audio)
+                VoiceMessagePlayer(
+                  audioUrl: message, // assuming message contains the URL for the audio
+                  isMe: isMe,
+                )
+              else
+                Text(
+                  message,
+                  style: TextStyle(
+                    color: isMe
+                        ? colorScheme.onPrimaryContainer
+                        : colorScheme.onSurface,
+                    fontSize: 15,
+                    height: 1.4,
+                  ),
                 ),
-              ),
 
               const SizedBox(height: 4),
 

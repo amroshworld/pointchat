@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:focus_world/app.dart';
+import 'package:point_chat/app.dart';
 
 void main() {
   testWidgets('App starts', (WidgetTester tester) async {

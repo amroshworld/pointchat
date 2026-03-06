@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 
 enum MessageType { text, image, file, audio, location, system }
 
@@ -12,11 +12,12 @@ class MessageModel {
   final DateTime? timestamp;
   final bool isRead;
   final Map<String, bool> readBy;
+  final String? chatId;
+  final String? groupId;
 
-  // Extra metadata for rich messages
   final String? fileName;
   final int? fileSize;
-  final int? audioDuration; // seconds
+  final int? audioDuration;
   final double? latitude;
   final double? longitude;
 
@@ -30,6 +31,8 @@ class MessageModel {
     this.timestamp,
     this.isRead = false,
     this.readBy = const {},
+    this.chatId,
+    this.groupId,
     this.fileName,
     this.fileSize,
     this.audioDuration,
@@ -38,6 +41,16 @@ class MessageModel {
   });
 
   factory MessageModel.fromMap(Map<String, dynamic> map, String id) {
+    Map<String, bool> parseReadBy(dynamic val) {
+      if (val is Map) return Map<String, bool>.from(val);
+      if (val is String && val.isNotEmpty) {
+        try {
+          return Map<String, bool>.from(jsonDecode(val));
+        } catch (_) {}
+      }
+      return {};
+    }
+
     return MessageModel(
       messageId: id,
       senderId: map['senderId'] ?? '',
@@ -48,11 +61,13 @@ class MessageModel {
         (e) => e.name == (map['type'] ?? 'text'),
         orElse: () => MessageType.text,
       ),
-      timestamp: map['timestamp'] != null
-          ? (map['timestamp'] as Timestamp).toDate()
+      timestamp: map['\$createdAt'] != null
+          ? DateTime.tryParse(map['\$createdAt'])
           : null,
       isRead: map['isRead'] ?? false,
-      readBy: Map<String, bool>.from(map['readBy'] ?? {}),
+      readBy: parseReadBy(map['readBy']),
+      chatId: map['chatId'],
+      groupId: map['groupId'],
       fileName: map['fileName'],
       fileSize: map['fileSize'],
       audioDuration: map['audioDuration'],
@@ -68,9 +83,10 @@ class MessageModel {
       'senderPhotoUrl': senderPhotoUrl,
       'text': text,
       'type': type.name,
-      'timestamp': FieldValue.serverTimestamp(),
       'isRead': isRead,
-      'readBy': readBy,
+      'readBy': jsonEncode(readBy),
+      if (chatId != null) 'chatId': chatId,
+      if (groupId != null) 'groupId': groupId,
       if (fileName != null) 'fileName': fileName,
       if (fileSize != null) 'fileSize': fileSize,
       if (audioDuration != null) 'audioDuration': audioDuration,
@@ -79,7 +95,6 @@ class MessageModel {
     };
   }
 
-  /// Preview string for conversation list
   String get preview {
     switch (type) {
       case MessageType.image:

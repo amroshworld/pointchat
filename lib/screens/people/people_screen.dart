@@ -20,7 +20,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
   final UserService _userService = UserService();
   final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
+  final String _searchQuery = '';
 
   @override
   void dispose() {
@@ -115,35 +115,6 @@ class _PeopleScreenState extends State<PeopleScreen> {
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.4,
-                    ),
-                  ),
-                  bottom: PreferredSize(
-                    preferredSize: const Size.fromHeight(64),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: TextField(
-                        controller: _searchController,
-                        style: GoogleFonts.inter(color: AppTheme.textPri, fontSize: 14),
-                        onChanged: (val) =>
-                            setState(() => _searchQuery = val.toLowerCase()),
-                        decoration: InputDecoration(
-                          hintText: 'Search by name or email...',
-                          prefixIcon: const Icon(Icons.search, color: AppTheme.muted),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(
-                                    Icons.close,
-                                    color: AppTheme.muted,
-                                    size: 18,
-                                  ),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _searchQuery = '');
-                                  },
-                                )
-                              : null,
-                        ),
-                      ),
                     ),
                   ),
                 ),

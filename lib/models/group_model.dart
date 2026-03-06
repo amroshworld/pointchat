@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 class GroupModel {
   final String groupId;
   final String name;
@@ -42,12 +40,12 @@ class GroupModel {
       createdBy: map['createdBy'] ?? '',
       members: List<String>.from(map['members'] ?? []),
       admins: List<String>.from(map['admins'] ?? []),
-      createdAt: map['createdAt'] != null
-          ? (map['createdAt'] as Timestamp).toDate()
+      createdAt: map['\$createdAt'] != null
+          ? DateTime.tryParse(map['\$createdAt'])
           : null,
       lastMessage: map['lastMessage'] ?? '',
       lastMessageTime: map['lastMessageTime'] != null
-          ? (map['lastMessageTime'] as Timestamp).toDate()
+          ? DateTime.tryParse(map['lastMessageTime'])
           : null,
       lastMessageSenderId: map['lastMessageSenderId'] ?? '',
       lastMessageSenderName: map['lastMessageSenderName'] ?? '',
@@ -63,13 +61,8 @@ class GroupModel {
       'createdBy': createdBy,
       'members': members,
       'admins': admins,
-      'createdAt': createdAt != null
-          ? Timestamp.fromDate(createdAt!)
-          : FieldValue.serverTimestamp(),
       'lastMessage': lastMessage,
-      'lastMessageTime': lastMessageTime != null
-          ? Timestamp.fromDate(lastMessageTime!)
-          : null,
+      'lastMessageTime': lastMessageTime?.toUtc().toIso8601String(),
       'lastMessageSenderId': lastMessageSenderId,
       'lastMessageSenderName': lastMessageSenderName,
       'isPublic': isPublic,

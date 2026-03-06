@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../appwrite_client.dart';
 import '../../services/chat_service.dart';
 import '../../services/user_service.dart';
 import '../../models/message_model.dart';
@@ -34,10 +34,18 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
 
+  bool _isComposing = false;
+  bool _isRecording = false;
+
   @override
   void initState() {
     super.initState();
     _chatService.markMessagesAsRead(widget.chatId, widget.currentUserId);
+    _messageController.addListener(() {
+      setState(() {
+        _isComposing = _messageController.text.trim().isNotEmpty;
+      });
+    });
   }
 
   @override
@@ -50,17 +58,26 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && !_isRecording) return;
+
+    if (_isRecording) {
+      setState(() {
+        _isRecording = false;
+      });
+      // TODO: Implement actual voice note sending
+      return;
+    }
 
     _messageController.clear();
 
-    final user = FirebaseAuth.instance.currentUser;
+    final userName = cachedUserName;
+    final userPhoto = cachedUserPhotoUrl;
 
     await _chatService.sendMessage(
       chatId: widget.chatId,
       senderId: widget.currentUserId,
-      senderName: user?.displayName ?? 'User',
-      senderPhotoUrl: user?.photoURL ?? '',
+      senderName: userName,
+      senderPhotoUrl: userPhoto,
       text: text,
     );
   }
@@ -171,6 +188,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           message: message.text,
                           senderName: message.senderName,
                           timestamp: message.timestamp,
+                          type: message.type,
                           isMe: isMe,
                           isSystem: message.type == MessageType.system,
                           isRead: message.isRead,
@@ -222,44 +240,100 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
 
-          // Text field
+          // Text field or Recording Indicator
           Expanded(
             child: Container(
               constraints: const BoxConstraints(maxHeight: 120),
-              child: TextField(
-                controller: _messageController,
-                focusNode: _focusNode,
-                maxLines: null,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  hintText: 'Type a message...',
-                  filled: true,
-                  fillColor: colorScheme.surfaceContainerHighest,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onSubmitted: (_) => _sendMessage(),
-              ),
+              child: _isRecording
+                  ? Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      padding: const EdgeInsets.only(left: 16, right: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'select target',
+                              style: TextStyle(
+                                color: colorScheme.onErrorContainer,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.send_rounded,
+                              color: colorScheme.onErrorContainer,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _isRecording = false;
+                              });
+                              // TODO: Implement actual voice note sending
+                            },
+                          ),
+                        ],
+                      ),
+                    )
+                  : TextField(
+                      controller: _messageController,
+                      focusNode: _focusNode,
+                      maxLines: null,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        hintText: 'Type a message...',
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerHighest,
+                        contentPadding: const EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          top: 10,
+                          bottom: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      onSubmitted: (_) => _sendMessage(),
+                    ),
             ),
           ),
 
           const SizedBox(width: 4),
 
-          // Send button
+          // Action button ALWAYS visible outside
           Container(
             decoration: BoxDecoration(
-              color: colorScheme.primary,
+              color: _isRecording ? colorScheme.error : colorScheme.primary,
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              icon: Icon(Icons.send_rounded, color: colorScheme.onPrimary),
-              onPressed: _sendMessage,
+              icon: Icon(
+                _isRecording
+                    ? Icons.stop
+                    : (_isComposing ? Icons.send_rounded : Icons.mic),
+                color: _isRecording
+                    ? colorScheme.onError
+                    : colorScheme.onPrimary,
+              ),
+              onPressed: () {
+                if (_isRecording) {
+                  setState(() {
+                    _isRecording = false;
+                  });
+                  // TODO: stop recording and send voice note
+                } else if (_isComposing) {
+                  _sendMessage();
+                } else {
+                  setState(() {
+                    _isRecording = true;
+                  });
+                }
+              },
             ),
           ),
         ],

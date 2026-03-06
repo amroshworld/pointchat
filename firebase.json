@@ -12,7 +12,7 @@
     "providers": {
       "emailPassword": true,
       "googleSignIn": {
-        "oAuthBrandDisplayName": "Focus World Chat",
+        "oAuthBrandDisplayName": "Point Chat",
         "supportEmail": "amrosh.world@gmail.com"
       }
     }

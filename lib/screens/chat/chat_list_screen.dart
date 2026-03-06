@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../appwrite_client.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -82,9 +82,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
-    final user = FirebaseAuth.instance.currentUser;
-    final senderName = user?.displayName ?? 'User';
-    final senderPhoto = user?.photoURL ?? '';
+    final senderName = cachedUserName;
+    final senderPhoto = cachedUserPhotoUrl;
 
     _messageController.clear();
 
