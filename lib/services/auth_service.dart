@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:appwrite/appwrite.dart';
 import 'package:appwrite/enums.dart';
@@ -8,6 +10,9 @@ import '../models/user_model.dart';
 class AuthService {
   final Account _account = appwriteAccount;
   final TablesDB _databases = appwriteTablesDB;
+
+  String get _oauthCallbackUrl =>
+      'appwrite-callback-${AppwriteConstants.projectId}://auth';
 
   // Get current user (async)
   Future<models.User?> getCurrentUser() async {
@@ -57,7 +62,7 @@ class AuthService {
     );
 
     await _account.createEmailPasswordSession(email: email, password: password);
-    
+
     // Send email verification (URL should be your app's deep link or website)
     try {
       await _account.createVerification(url: 'https://pointchat.app/verify');
@@ -77,11 +82,30 @@ class AuthService {
       await _account.deleteSession(sessionId: 'current');
     } catch (_) {}
 
-    await _account.createOAuth2Session(provider: OAuthProvider.google);
+    await _account.createOAuth2Session(
+      provider: OAuthProvider.google,
+      success: _oauthCallbackUrl,
+      failure: _oauthCallbackUrl,
+    );
 
-    final user = await _account.get();
+    final user = await _waitForOAuthSessionUser();
     await _saveUserToDatabase(user);
     _cacheCurrentUser(user);
+  }
+
+  Future<models.User> _waitForOAuthSessionUser() async {
+    AppwriteException? lastException;
+    for (var attempt = 0; attempt < 12; attempt++) {
+      try {
+        return await _account.get();
+      } on AppwriteException catch (e) {
+        lastException = e;
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+    }
+
+    throw lastException ??
+        AppwriteException('Google sign-in failed to create a session.');
   }
 
   // Cache the current user info in globals

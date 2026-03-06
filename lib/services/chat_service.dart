@@ -390,11 +390,52 @@ class ChatService {
     );
   }
 
-  Future<void> deleteMessage(String messageId) async {
+  Future<void> deleteMessage(String messageId, {String? chatId}) async {
     await _databases.deleteRow(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.messagesCollection,
       rowId: messageId,
+    );
+
+    if (chatId != null && chatId.isNotEmpty) {
+      await _refreshChatLastMessage(chatId);
+    }
+  }
+
+  Future<void> _refreshChatLastMessage(String chatId) async {
+    final latest = await _databases.listRows(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.messagesCollection,
+      queries: [
+        Query.equal('chatId', chatId),
+        Query.orderDesc('\$createdAt'),
+        Query.limit(1),
+      ],
+    );
+
+    if (latest.rows.isEmpty) {
+      await _databases.updateRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.chatsCollection,
+        rowId: chatId,
+        data: {'lastMessage': '', 'lastMessageSenderId': ''},
+      );
+      return;
+    }
+
+    final msg = MessageModel.fromMap(
+      latest.rows.first.data,
+      latest.rows.first.$id,
+    );
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+      data: {
+        'lastMessage': msg.preview,
+        'lastMessageTime': DateTime.now().toUtc().toIso8601String(),
+        'lastMessageSenderId': msg.senderId,
+      },
     );
   }
 

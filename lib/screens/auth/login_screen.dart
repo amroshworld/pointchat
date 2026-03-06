@@ -59,12 +59,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 80),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Column(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppTheme.bg,
+                      const Color(0xFF120F1B),
+                      AppTheme.bg,
+                    ],
+                    stops: const [0, 0.45, 1],
+                  ),
+                ),
+              ),
+            ),
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 430),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // ── Logo mark ──
@@ -353,10 +378,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           : () => ref
                                 .read(authProvider.notifier)
                                 .signInWithGoogle(),
-                      icon: const Icon(
-                        Icons.g_mobiledata,
-                        size: 28,
-                        color: AppTheme.textPri,
+                      icon: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          'G',
+                          style: GoogleFonts.inter(
+                            color: const Color(0xFFDB4437),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
                       label: Text(
                         'Continue with Google',
@@ -383,7 +420,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
       ),
-    );
+    ],
+  ),
+),
+);
   }
 
   Widget _label(String text) => Text(

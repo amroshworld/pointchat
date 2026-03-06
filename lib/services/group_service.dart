@@ -264,11 +264,57 @@ class GroupService {
     );
   }
 
-  Future<void> deleteMessage(String messageId) async {
+  Future<void> deleteMessage(String messageId, {String? groupId}) async {
     await _databases.deleteRow(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.messagesCollection,
       rowId: messageId,
+    );
+
+    if (groupId != null && groupId.isNotEmpty) {
+      await _refreshGroupLastMessage(groupId);
+    }
+  }
+
+  Future<void> _refreshGroupLastMessage(String groupId) async {
+    final latest = await _databases.listRows(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.messagesCollection,
+      queries: [
+        Query.equal('groupId', groupId),
+        Query.orderDesc('\$createdAt'),
+        Query.limit(1),
+      ],
+    );
+
+    if (latest.rows.isEmpty) {
+      await _databases.updateRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.groupsCollection,
+        rowId: groupId,
+        data: {
+          'lastMessage': '',
+          'lastMessageSenderId': '',
+          'lastMessageSenderName': '',
+        },
+      );
+      return;
+    }
+
+    final msg = MessageModel.fromMap(
+      latest.rows.first.data,
+      latest.rows.first.$id,
+    );
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: {
+        'lastMessage': msg.preview,
+        'lastMessageTime': DateTime.now().toUtc().toIso8601String(),
+        'lastMessageSenderId': msg.senderId,
+        'lastMessageSenderName': msg.senderName,
+      },
     );
   }
 

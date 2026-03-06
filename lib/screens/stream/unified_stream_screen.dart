@@ -62,7 +62,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   final ValueNotifier<bool> _isRecordingNotifier = ValueNotifier<bool>(false);
   final ValueNotifier<int> _recordingSecondsNotifier = ValueNotifier<int>(0);
   double _recordingDragOffset = 0;
-  static const int _recordingMaxSeconds = 60; // Reduced to 60s for budget control
+  static const int _recordingMaxSeconds =
+      60; // Reduced to 60s for budget control
   bool _recordingCancelled = false;
   final AudioRecorder _audioRecorder = AudioRecorder();
 
@@ -77,7 +78,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   @override
   void initState() {
     super.initState();
-    
+
     _allUsersStream = _userService.getAllUsers(currentUserId);
     _chatsStream = _chatService.getUserChats(currentUserId);
     _groupsStream = _groupService.getUserGroups(currentUserId);
@@ -493,7 +494,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         ),
         path: path,
       );
-      
+
       _isRecordingNotifier.value = true;
       _recordingSecondsNotifier.value = 0;
       _recordingDragOffset = 0;
@@ -612,7 +613,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       _isRecordingNotifier.value = false;
       _recordingDragOffset = 0;
       _recordingSecondsNotifier.value = 0;
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -735,6 +736,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       content = msg;
     }
 
+    if (type == MessageType.text && _replyingToMessage != null) {
+      content = '> Reply: ${_replyPreview(_replyingToMessage!)}\n$content';
+    }
+
     if (content.isEmpty && type == MessageType.text) return;
 
     final currentUserName = cachedUserName;
@@ -808,6 +813,29 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
+    } else if (_replyingToMessage != null) {
+      setState(() {
+        _replyingToMessage = null;
+      });
+    }
+  }
+
+  String _replyPreview(MessageModel message) {
+    switch (message.type) {
+      case MessageType.image:
+        return 'Photo';
+      case MessageType.file:
+        return message.fileName?.isNotEmpty == true
+            ? message.fileName!
+            : 'File';
+      case MessageType.audio:
+        return 'Voice message';
+      case MessageType.location:
+        return 'Location';
+      case MessageType.system:
+      case MessageType.text:
+        final text = message.text.replaceAll('\n', ' ').trim();
+        return text.isEmpty ? 'Message' : text;
     }
   }
 
@@ -977,11 +1005,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   _chatService.markMessagesAsRead(item['id'], currentUserId);
                 }
               },
-              onReply: (replyText) {
-                _commandController.text = replyText;
+              onReply: (replyData) {
+                final targetHandle = replyData['targetHandle'] as String;
+                final replyMessage = replyData['message'] as MessageModel;
+                _commandController.text = '$targetHandle ';
                 _commandController.selection = TextSelection.fromPosition(
-                  TextPosition(offset: replyText.length),
+                  TextPosition(offset: _commandController.text.length),
                 );
+                setState(() {
+                  _replyingToMessage = replyMessage;
+                });
                 _commandFocusNode.requestFocus();
               },
               onLongPress: () => _handleItemTap(item['handle'] ?? ''),
@@ -1044,6 +1077,69 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_replyingToMessage != null)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.surface2,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 3,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: AppTheme.purple,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Replying to ${_replyingToMessage!.senderName}',
+                        style: GoogleFonts.inter(
+                          color: AppTheme.purpleLt,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _replyPreview(_replyingToMessage!),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: AppTheme.textSec,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _replyingToMessage = null;
+                    });
+                  },
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: AppTheme.muted,
+                    size: 18,
+                  ),
+                  constraints: const BoxConstraints(),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          ),
+
         if (_isMentioning && _mentionSuggestions.isNotEmpty)
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1233,7 +1329,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 icon: const Icon(
                                   Icons.group_add_outlined,
                                   color: AppTheme.textSec,
-                                  size: 24, 
+                                  size: 24,
                                 ),
                                 onPressed: _showCreateGroupDialog,
                               ),
@@ -1255,7 +1351,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                             icon: const Icon(
                                               Icons.arrow_forward_rounded,
                                               color: AppTheme.purple,
-                                              size: 26, 
+                                              size: 26,
                                             ),
                                             onPressed: () => _sendCommand(
                                               _commandController.text,
@@ -1282,7 +1378,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                     duration: const Duration(milliseconds: 300),
                                     padding: const EdgeInsets.all(6),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.red.withValues(alpha: 0.2),
+                                      color: AppTheme.red.withValues(
+                                        alpha: 0.2,
+                                      ),
                                       shape: BoxShape.circle,
                                     ),
                                     child: Icon(
@@ -1327,8 +1425,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                       horizontal: 12,
                                     ),
                                     child: AnimatedScale(
-                                      scale: _recordingDragOffset < -50 ? 1.4 : 1.0,
-                                      duration: const Duration(milliseconds: 150),
+                                      scale: _recordingDragOffset < -50
+                                          ? 1.4
+                                          : 1.0,
+                                      duration: const Duration(
+                                        milliseconds: 150,
+                                      ),
                                       child: Icon(
                                         Icons.delete_outline_rounded,
                                         color: _recordingDragOffset < -50
@@ -1366,7 +1468,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                     width: 54,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF5F5F5), // offwhite
-                      borderRadius: BorderRadius.circular(16), // Soft corner square
+                      borderRadius: BorderRadius.circular(
+                        16,
+                      ), // Soft corner square
                       border: Border.all(color: Colors.white, width: 1.5),
                     ),
                     child: const Icon(Icons.mic, color: Colors.black, size: 24),
@@ -1522,7 +1626,7 @@ class StreamItemWidget extends StatefulWidget {
   final GroupService groupService;
   final UserService userService;
   final VoidCallback onTap;
-  final void Function(String) onReply;
+  final void Function(Map<String, dynamic>) onReply;
   final VoidCallback onLongPress;
 
   const StreamItemWidget({
@@ -2275,9 +2379,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                 key: Key(msg.messageId),
                 direction: DismissDirection.horizontal,
                 confirmDismiss: (direction) async {
-                  if (direction == DismissDirection.endToStart &&
-                      isMe &&
-                      !msg.isRead) {
+                  if (direction == DismissDirection.endToStart && isMe) {
                     // Swipe left to delete
                     return await showDialog<bool>(
                       context: context,
@@ -2307,12 +2409,13 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                       ),
                     );
                   } else if (direction == DismissDirection.endToStart) {
-                    return false; // Cannot delete if read or not me
+                    return false; // Cannot delete when not sent by me
                   } else if (direction == DismissDirection.startToEnd) {
                     // Swipe right to reply
-                    final originalText = msg.text.replaceAll('\n', ' ');
-                    final replyText = '> Reply: $originalText\n';
-                    widget.onReply(replyText);
+                    widget.onReply({
+                      'targetHandle': widget.item['handle'] as String,
+                      'message': msg,
+                    });
                     return false;
                   }
                   return false;
@@ -2320,9 +2423,15 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                 onDismissed: (direction) {
                   if (direction == DismissDirection.endToStart) {
                     if (isGroup) {
-                      widget.groupService.deleteMessage(msg.messageId);
+                      widget.groupService.deleteMessage(
+                        msg.messageId,
+                        groupId: widget.item['id'] as String,
+                      );
                     } else {
-                      widget.chatService.deleteMessage(msg.messageId);
+                      widget.chatService.deleteMessage(
+                        msg.messageId,
+                        chatId: widget.item['id'] as String,
+                      );
                     }
                   }
                 },
@@ -2335,7 +2444,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   ),
                   child: const Icon(Icons.reply, color: AppTheme.purple),
                 ),
-                secondaryBackground: (isMe && !msg.isRead)
+                secondaryBackground: isMe
                     ? Container(
                         alignment: Alignment.centerRight,
                         padding: const EdgeInsets.only(right: 16),
@@ -2524,10 +2633,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         );
 
       case MessageType.audio:
-        return VoiceMessagePlayer(
-          audioUrl: msg.text,
-          isMe: isMe,
-        );
+        return VoiceMessagePlayer(audioUrl: msg.text, isMe: isMe);
 
       case MessageType.location:
         return GestureDetector(
