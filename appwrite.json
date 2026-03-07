@@ -22,7 +22,8 @@
       "runtime": "node-18.0",
       "path": "appwrite_functions/chat_ai",
       "entrypoint": "index.js",
-      "commands": "npm install"
+      "commands": "npm install",
+      "execute": ["users"]
     }
   ]
 }

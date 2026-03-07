@@ -65,7 +65,9 @@ class AuthService {
 
     // Send email verification (URL should be your app's deep link or website)
     try {
-      await _account.createVerification(url: 'https://pointchat.app/verify');
+      await _account.createEmailVerification(
+        url: 'https://pointchat.app/verify',
+      );
     } catch (e) {
       debugPrint('Failed to send verification email: $e');
     }

@@ -27,6 +27,7 @@ final Databases appwriteDatabases = Databases(appwriteClient);
 final TablesDB appwriteTablesDB = TablesDB(appwriteClient);
 final Storage appwriteStorage = Storage(appwriteClient);
 final Realtime appwriteRealtime = Realtime(appwriteClient);
+final Functions appwriteFunctions = Functions(appwriteClient);
 
 // Cached current user info (populated after login)
 String cachedUserId = '';

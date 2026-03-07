@@ -1,6 +1,5 @@
 const sdk = require('node-appwrite');
 const { generateText } = require('ai');
-const { createOpenAI } = require('@ai-sdk/openai');
 
 module.exports = async function ({ req, res, log, error }) {
   // Setup Client using Environment Variables
@@ -13,14 +12,8 @@ module.exports = async function ({ req, res, log, error }) {
     return res.json({ success: false, message: "Missing environment variables" });
   }
 
-  // Set up OpenAI instance routing through Vercel AI Gateway
-  const openai = createOpenAI({
-    baseURL: 'https://gateway.ai.vercel.com/v1',
-    apiKey: 'dummy-api-key-for-vercel-proxy', // Requires a key even if we proxy
-    headers: {
-      'Authorization': `Bearer ${vercelAiToken}`,
-    },
-  });
+  // Set the AI Gateway key for the ai SDK to use
+  process.env.AI_GATEWAY_API_KEY = vercelAiToken;
 
   try {
     let promptText = "Hello!";
@@ -36,7 +29,7 @@ module.exports = async function ({ req, res, log, error }) {
     log(`Generating response for prompt: ${promptText}`);
 
     const result = await generateText({
-      model: openai('openai/gpt-5.2'),
+      model: 'google/gemini-2.5-flash-lite',
       prompt: promptText,
     });
 

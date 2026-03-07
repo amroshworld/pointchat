@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:appwrite/appwrite.dart';
@@ -114,16 +115,14 @@ class AuthNotifier extends Notifier<AuthState> {
       state = state.copyWith(isLoading: false);
       return true;
     } on AppwriteException catch (e) {
-      final errorMessage = 'Appwrite Error: ${e.message} (Code: ${e.code}, Type: ${e.type})';
-      print(errorMessage);
-      state = state.copyWith(
-        isLoading: false,
-        error: errorMessage,
-      );
+      final errorMessage =
+          'Appwrite Error: ${e.message} (Code: ${e.code}, Type: ${e.type})';
+      debugPrint(errorMessage);
+      state = state.copyWith(isLoading: false, error: errorMessage);
       return false;
     } catch (e) {
       final errorMessage = 'General Error: ${e.toString()}';
-      print(errorMessage);
+      debugPrint(errorMessage);
       state = state.copyWith(isLoading: false, error: errorMessage);
       return false;
     }
