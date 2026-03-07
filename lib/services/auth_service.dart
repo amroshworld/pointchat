@@ -86,8 +86,8 @@ class AuthService {
 
     await _account.createOAuth2Session(
       provider: OAuthProvider.google,
-      success: _oauthCallbackUrl,
-      failure: _oauthCallbackUrl,
+      success: kIsWeb ? null : _oauthCallbackUrl,
+      failure: kIsWeb ? null : _oauthCallbackUrl,
     );
 
     final user = await _waitForOAuthSessionUser();

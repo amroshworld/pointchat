@@ -54,17 +54,21 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
       }
     });
 
-    _playerStateChangeSubscription = _audioPlayer.onPlayerStateChanged.listen((state) {
+    _playerStateChangeSubscription = _audioPlayer.onPlayerStateChanged.listen((
+      state,
+    ) {
       if (mounted) {
         setState(() {
           _isPlaying = state == PlayerState.playing;
         });
       }
     });
-    
+
     // Cache the audio file locally
     try {
-      final fileInfo = await MediaCacheManager.instance.downloadFile(widget.audioUrl);
+      final fileInfo = await MediaCacheManager.instance.downloadFile(
+        widget.audioUrl,
+      );
       if (mounted) {
         _localAudioPath = fileInfo.file.path;
         _audioPlayer.setSourceDeviceFile(_localAudioPath!);
@@ -100,14 +104,16 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
 
   void _onDragUpdate(DragUpdateDetails details, BoxConstraints constraints) {
     if (_duration == Duration.zero) return;
-    
+
     final percent = details.delta.dx / constraints.maxWidth;
     final change = _duration.inMilliseconds * percent;
-    
+
     int newPosition = _position.inMilliseconds + change.toInt();
     if (newPosition < 0) newPosition = 0;
-    if (newPosition > _duration.inMilliseconds) newPosition = _duration.inMilliseconds;
-    
+    if (newPosition > _duration.inMilliseconds) {
+      newPosition = _duration.inMilliseconds;
+    }
+
     _audioPlayer.seek(Duration(milliseconds: newPosition));
   }
 
@@ -121,7 +127,9 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final fgColor = widget.isMe ? colorScheme.onPrimaryContainer : colorScheme.onSurface;
+    final fgColor = widget.isMe
+        ? colorScheme.onPrimaryContainer
+        : colorScheme.onSurface;
 
     return Container(
       width: 220,
@@ -141,7 +149,8 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 return GestureDetector(
-                  onHorizontalDragUpdate: (details) => _onDragUpdate(details, constraints),
+                  onHorizontalDragUpdate: (details) =>
+                      _onDragUpdate(details, constraints),
                   child: Container(
                     height: 36,
                     color: Colors.transparent, // to catch drags
@@ -149,7 +158,8 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                       painter: _WaveformPainter(
                         progress: _duration.inMilliseconds == 0
                             ? 0.0
-                            : _position.inMilliseconds / _duration.inMilliseconds,
+                            : _position.inMilliseconds /
+                                  _duration.inMilliseconds,
                         color: fgColor.withValues(alpha: 0.3),
                         progressColor: fgColor,
                       ),
@@ -192,11 +202,38 @@ class _WaveformPainter extends CustomPainter {
 
     final barCount = 30;
     final spacing = size.width / barCount;
-    
+
     final heights = [
-      0.3, 0.5, 0.8, 0.4, 0.6, 0.9, 0.7, 0.5, 0.3, 0.4,
-      0.6, 0.8, 1.0, 0.7, 0.5, 0.4, 0.6, 0.8, 0.5, 0.3,
-      0.4, 0.6, 0.7, 0.5, 0.4, 0.3, 0.5, 0.7, 0.4, 0.3,
+      0.3,
+      0.5,
+      0.8,
+      0.4,
+      0.6,
+      0.9,
+      0.7,
+      0.5,
+      0.3,
+      0.4,
+      0.6,
+      0.8,
+      1.0,
+      0.7,
+      0.5,
+      0.4,
+      0.6,
+      0.8,
+      0.5,
+      0.3,
+      0.4,
+      0.6,
+      0.7,
+      0.5,
+      0.4,
+      0.3,
+      0.5,
+      0.7,
+      0.4,
+      0.3,
     ];
 
     for (int i = 0; i < barCount; i++) {
@@ -207,11 +244,7 @@ class _WaveformPainter extends CustomPainter {
       final isPast = (i / barCount) <= progress;
       paint.color = isPast ? progressColor : color;
 
-      canvas.drawLine(
-        Offset(x, yOffset),
-        Offset(x, yOffset + height),
-        paint,
-      );
+      canvas.drawLine(Offset(x, yOffset), Offset(x, yOffset + height), paint);
     }
   }
 

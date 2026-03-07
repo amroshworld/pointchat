@@ -69,7 +69,11 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.error_outline, size: 64, color: colorScheme.error),
+                    Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: colorScheme.error,
+                    ),
                     const SizedBox(height: 16),
                     Text(
                       'Error loading users',
@@ -97,7 +101,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 : allUsers
                       .where(
                         (u) =>
-                            u.displayName.toLowerCase().contains(_searchQuery) ||
+                            u.displayName.toLowerCase().contains(
+                              _searchQuery,
+                            ) ||
                             u.email.toLowerCase().contains(_searchQuery),
                       )
                       .toList();
@@ -182,7 +188,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
                           Icon(
                             Icons.people_outline,
                             size: 80,
-                            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                            color: colorScheme.onSurfaceVariant.withValues(
+                              alpha: 0.5,
+                            ),
                           ),
                           const SizedBox(height: 16),
                           Text(
@@ -216,12 +224,16 @@ class _PeopleScreenState extends State<PeopleScreen> {
                           Icon(
                             Icons.person_search_outlined,
                             size: 64,
-                            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                            color: colorScheme.onSurfaceVariant.withValues(
+                              alpha: 0.5,
+                            ),
                           ),
                           const SizedBox(height: 16),
                           Text(
                             'No users match "$_searchQuery"',
-                            style: TextStyle(color: colorScheme.onSurfaceVariant),
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ],
                       ),
@@ -231,74 +243,71 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
                     sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final user = users[index];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.surface,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: AppTheme.border),
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final user = users[index];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppTheme.border),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
                             ),
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 8,
+                            leading: UserAvatar(
+                              photoUrl: user.photoUrl,
+                              name: user.displayName,
+                              radius: 24,
+                              isOnline: user.isOnline,
+                              showOnlineIndicator: true,
+                            ),
+                            title: Text(
+                              user.displayName,
+                              style: GoogleFonts.inter(
+                                color: AppTheme.textPri,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
                               ),
-                              leading: UserAvatar(
-                                photoUrl: user.photoUrl,
-                                name: user.displayName,
-                                radius: 24,
-                                isOnline: user.isOnline,
-                                showOnlineIndicator: true,
+                            ),
+                            subtitle: Text(
+                              user.email,
+                              style: GoogleFonts.inter(
+                                color: AppTheme.textSec,
+                                fontSize: 12,
                               ),
-                              title: Text(
-                                user.displayName,
+                            ),
+                            trailing: TextButton.icon(
+                              onPressed: () => _openChat(user),
+                              icon: const Icon(
+                                Icons.chat_bubble_outline,
+                                size: 14,
+                                color: AppTheme.purpleLt,
+                              ),
+                              label: Text(
+                                'Chat',
                                 style: GoogleFonts.inter(
-                                  color: AppTheme.textPri,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              subtitle: Text(
-                                user.email,
-                                style: GoogleFonts.inter(
-                                  color: AppTheme.textSec,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              trailing: TextButton.icon(
-                                onPressed: () => _openChat(user),
-                                icon: const Icon(
-                                  Icons.chat_bubble_outline,
-                                  size: 14,
                                   color: AppTheme.purpleLt,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
                                 ),
-                                label: Text(
-                                  'Chat',
-                                  style: GoogleFonts.inter(
-                                    color: AppTheme.purpleLt,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                              ),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
                                 ),
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  backgroundColor: AppTheme.purpleGlow,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
+                                backgroundColor: AppTheme.purpleGlow,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
                             ),
-                          );
-                        },
-                        childCount: users.length,
-                      ),
+                          ),
+                        );
+                      }, childCount: users.length),
                     ),
                   ),
               ],

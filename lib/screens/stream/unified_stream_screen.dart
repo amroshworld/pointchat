@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:appwrite/appwrite.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -24,6 +25,7 @@ import 'package:uuid/uuid.dart';
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
 import '../../services/user_service.dart';
+import '../../services/bot_service.dart';
 import '../../models/group_model.dart';
 import '../../models/chat_model.dart';
 import '../../models/user_model.dart';
@@ -46,6 +48,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   final _chatService = ChatService();
   final _groupService = GroupService();
   final _userService = UserService();
+  final _botService = BotService();
   late final String currentUserId = widget.currentUserId;
 
   List<UserModel> _allUsers = [];
@@ -795,6 +798,45 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             longitude: longitude,
           );
           sentAtLeastOne = true;
+
+          // ── Bot Auto-Reply Logic ──
+          if (targetUser.isBot && type == MessageType.text) {
+            final botConfig = await _botService.getBotByName(
+              targetUser.displayName,
+            );
+            if (botConfig != null) {
+              String botPrompt = content;
+              String systemPrompt = botConfig.instructions;
+
+              // Check if owner wants a summary
+              if (currentUserId == botConfig.ownerId &&
+                  content.toLowerCase().contains('summarize')) {
+                // Fetch interactions with this bot from all users?
+                // For now, let's just fetch recent messages in this specific chat.
+                final history = await _chatService.getUnreadMessages(
+                  chatId,
+                  currentUserId,
+                );
+                if (history.isNotEmpty) {
+                  botPrompt =
+                      'Context of recent messages:\n${history.reversed.map((m) => '${m.senderName}: ${m.text}').join('\n')}\n\nPrompt: $content';
+                }
+              }
+
+              // Run AI in background
+              _aiService
+                  .generateResponse(botPrompt, systemPrompt: systemPrompt)
+                  .then((reply) {
+                    _chatService.sendMessage(
+                      chatId: chatId,
+                      senderId: targetUser.uid,
+                      senderName: targetUser.displayName,
+                      senderPhotoUrl: targetUser.photoUrl,
+                      text: reply,
+                    );
+                  });
+            }
+          }
         }
       } else if (handle.startsWith('#')) {
         final tHandle = handle.substring(1);
@@ -864,6 +906,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   void _sendCommand(String input) async {
     if (input.trim().isEmpty) return;
 
+    // Check for @bot creation command
+    if (input.toLowerCase().startsWith('@bot ')) {
+      final botName = input.substring(5).trim();
+      if (botName.isNotEmpty) {
+        _showBotConfigDialog(botName);
+        _commandController.clear();
+        return;
+      }
+    }
+
     // Check for AI mode: if text contains /, extract the AI prompt
     final slashIndex = input.indexOf('/');
     if (slashIndex >= 0) {
@@ -879,14 +931,122 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         _commandController.clear();
 
         try {
+          String finalPrompt = aiPrompt;
+          final aiPromptLower = aiPrompt.toLowerCase();
+
+          if (aiPromptLower.contains('summarize') &&
+              (aiPromptLower.contains('unread') ||
+                  aiPromptLower.contains('conversation'))) {
+            final words = beforeSlash.split(' ');
+            final handles = words
+                .where((w) => w.startsWith('@') || w.startsWith('#'))
+                .toList();
+
+            String contextText = '';
+            final onlyUnread = aiPromptLower.contains('unread');
+
+            for (var handle in handles) {
+              if (handle.startsWith('@')) {
+                final tHandle = handle.substring(1).toLowerCase();
+                final targetUser = _allUsers.cast<UserModel?>().firstWhere(
+                  (u) =>
+                      u!.displayName.replaceAll(' ', '').toLowerCase() ==
+                      tHandle,
+                  orElse: () => null,
+                );
+                if (targetUser != null) {
+                  final chatId = await _chatService.getOrCreateChat(
+                    currentUserId,
+                    targetUser.uid,
+                  );
+                  List<MessageModel> msgs = [];
+                  if (onlyUnread) {
+                    msgs = await _chatService.getUnreadMessages(
+                      chatId,
+                      currentUserId,
+                    );
+                  } else {
+                    // Fetch last 50 messages for general summary
+                    final result = await appwriteTablesDB.listRows(
+                      databaseId: AppwriteConstants.databaseId,
+                      tableId: AppwriteConstants.messagesCollection,
+                      queries: [
+                        Query.equal('chatId', chatId),
+                        Query.orderDesc('\$createdAt'),
+                        Query.limit(50),
+                      ],
+                    );
+                    msgs = result.rows
+                        .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
+                        .toList();
+                  }
+
+                  if (msgs.isNotEmpty) {
+                    contextText +=
+                        '\nMessages with @${targetUser.displayName}:\n';
+                    for (var msg in msgs.reversed) {
+                      contextText += '${msg.senderName}: ${msg.text}\n';
+                    }
+                  }
+                }
+              } else if (handle.startsWith('#')) {
+                final tHandle = handle.substring(1).toLowerCase();
+                final targetGroup = _allGroups.cast<GroupModel?>().firstWhere(
+                  (g) => g!.name.replaceAll(' ', '').toLowerCase() == tHandle,
+                  orElse: () => null,
+                );
+                if (targetGroup != null) {
+                  List<MessageModel> msgs = [];
+                  if (onlyUnread) {
+                    msgs = await _groupService.getUnreadGroupMessages(
+                      targetGroup.groupId,
+                      currentUserId,
+                    );
+                  } else {
+                    // Fetch last 50 messages for general summary
+                    final result = await appwriteTablesDB.listRows(
+                      databaseId: AppwriteConstants.databaseId,
+                      tableId: AppwriteConstants.messagesCollection,
+                      queries: [
+                        Query.equal('groupId', targetGroup.groupId),
+                        Query.orderDesc('\$createdAt'),
+                        Query.limit(50),
+                      ],
+                    );
+                    msgs = result.rows
+                        .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
+                        .toList();
+                  }
+                  if (msgs.isNotEmpty) {
+                    contextText += '\nMessages in #${targetGroup.name}:\n';
+                    for (var msg in msgs.reversed) {
+                      contextText += '${msg.senderName}: ${msg.text}\n';
+                    }
+                  }
+                }
+              }
+            }
+
+            if (contextText.isNotEmpty) {
+              finalPrompt =
+                  'Context:\n$contextText\n\nPrompt: $aiPrompt\nRespond professionally without any weird markers or asterisks before the text. Format cleanly.';
+            } else {
+              finalPrompt = '$aiPrompt (Note: No messages found to summarize)';
+            }
+          } else {
+            // Normal prompt - tell AI not to use markers
+            finalPrompt =
+                '$aiPrompt\nRespond professionally without any weird markers or asterisks before the text. Format cleanly.';
+          }
+
           // Send the user's prompt as a message first
-          await _processCommand('$beforeSlash 🤖 Prompt: $aiPrompt');
+          await _processCommand('$beforeSlash Prompt: $aiPrompt');
 
           // Generate AI response
-          final aiResponse = await _aiService.generateResponse(aiPrompt);
+          final aiResponse = await _aiService.generateResponse(finalPrompt);
 
-          // Send the AI response to the same targets
-          await _processCommand('$beforeSlash ✨ AI: $aiResponse');
+          // Send the AI response to the same targets without any markers
+          await _processCommand('$beforeSlash $aiResponse');
         } catch (e) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1078,6 +1238,20 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   _replyingToMessage = replyMessage;
                 });
                 _commandFocusNode.requestFocus();
+              },
+              onForward: (msg) {
+                _commandController.text = ' Forwarded: ${msg.text} ';
+                _commandController.selection = TextSelection.fromPosition(
+                  TextPosition(offset: 0),
+                );
+                _commandFocusNode.requestFocus();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Type @user or #group to forward this message',
+                    ),
+                  ),
+                );
               },
               onLongPress: () => _handleItemTap(item['handle'] ?? ''),
             );
@@ -1566,6 +1740,121 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     );
   }
 
+  void _showBotConfigDialog(String botName) async {
+    final existingBot = await _botService.getBotByName(botName);
+    final isOwner = existingBot == null || existingBot.ownerId == currentUserId;
+
+    if (!isOwner) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You are not the owner of this bot.')),
+        );
+      }
+      return;
+    }
+
+    final instructionsController = TextEditingController(
+      text: existingBot?.instructions ?? '',
+    );
+
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.surface,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+          left: 20,
+          right: 20,
+          top: 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  existingBot == null ? 'CREATE BOT' : 'EDIT BOT',
+                  style: GoogleFonts.outfit(
+                    color: AppTheme.textPri,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: AppTheme.muted),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '@$botName',
+              style: GoogleFonts.outfit(color: AppTheme.purpleLt, fontSize: 16),
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: instructionsController,
+              maxLines: 5,
+              style: GoogleFonts.inter(color: AppTheme.textPri),
+              decoration: const InputDecoration(
+                labelText: 'Instructions / System Prompt',
+                hintText:
+                    'e.g. You are a business assistant for Dr. Amrh. Help users schedule appointments...',
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () async {
+                  final instructions = instructionsController.text.trim();
+                  if (instructions.isEmpty) return;
+
+                  Navigator.pop(context);
+                  setState(() => _isAiLoading = true);
+
+                  try {
+                    if (existingBot == null) {
+                      await _botService.createBot(
+                        name: botName,
+                        ownerId: currentUserId,
+                        instructions: instructions,
+                      );
+                    } else {
+                      await _botService.updateBot(existingBot.botId, {
+                        'instructions': instructions,
+                      });
+                    }
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Bot @$botName configured!')),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                    }
+                  } finally {
+                    if (mounted) setState(() => _isAiLoading = false);
+                  }
+                },
+                child: Text(existingBot == null ? 'CREATE' : 'SAVE'),
+              ),
+            ),
+            const SizedBox(height: 30),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showCreateGroupDialog() {
     String grpName = '';
     bool isCreating = false;
@@ -1710,6 +1999,7 @@ class StreamItemWidget extends StatefulWidget {
   final UserService userService;
   final VoidCallback onTap;
   final void Function(Map<String, dynamic>) onReply;
+  final void Function(MessageModel) onForward;
   final VoidCallback onLongPress;
 
   const StreamItemWidget({
@@ -1722,6 +2012,7 @@ class StreamItemWidget extends StatefulWidget {
     required this.userService,
     required this.onTap,
     required this.onReply,
+    required this.onForward,
     required this.onLongPress,
   });
 
@@ -2544,66 +2835,157 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                       : MainAxisAlignment.start,
                   children: [
                     Flexible(
-                      child: Container(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.65,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isMe
-                              ? const Color(0xFF2A2A2E)
-                              : const Color(0xFF1E1E20),
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(12),
-                            topRight: const Radius.circular(12),
-                            bottomLeft: Radius.circular(isMe ? 12 : 2),
-                            bottomRight: Radius.circular(isMe ? 2 : 12),
-                          ),
-                          border: Border.all(
-                            color: isMe
-                                ? const Color(0xFF3A3A3E)
-                                : AppTheme.border,
-                            width: 1,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Show sender name in a box for group chats only
-                            if (isGroup && !isMe)
-                              Container(
-                                margin: const EdgeInsets.only(bottom: 4),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.purple.withValues(
-                                    alpha: 0.12,
-                                  ),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(
-                                    color: AppTheme.purple.withValues(
-                                      alpha: 0.25,
+                      child: GestureDetector(
+                        onLongPress: () {
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: AppTheme.surface,
+                            builder: (context) => SafeArea(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ListTile(
+                                    leading: const Icon(
+                                      Icons.reply,
+                                      color: AppTheme.textPri,
                                     ),
-                                    width: 0.5,
+                                    title: Text(
+                                      'Reply',
+                                      style: GoogleFonts.outfit(
+                                        color: AppTheme.textPri,
+                                      ),
+                                    ),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      widget.onReply({
+                                        'targetHandle':
+                                            widget.item['handle'] as String,
+                                        'message': msg,
+                                      });
+                                    },
                                   ),
-                                ),
-                                child: Text(
-                                  msg.senderName,
-                                  style: GoogleFonts.inter(
-                                    color: AppTheme.purpleLt,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
+                                  ListTile(
+                                    leading: const Icon(
+                                      Icons.forward,
+                                      color: AppTheme.textPri,
+                                    ),
+                                    title: Text(
+                                      'Forward',
+                                      style: GoogleFonts.outfit(
+                                        color: AppTheme.textPri,
+                                      ),
+                                    ),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      // Just copy text to clipboard for now or fill the input field
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Forward functionality coming soon!',
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                ),
+                                  if (isMe)
+                                    ListTile(
+                                      leading: const Icon(
+                                        Icons.delete,
+                                        color: AppTheme.red,
+                                      ),
+                                      title: Text(
+                                        'Delete',
+                                        style: GoogleFonts.outfit(
+                                          color: AppTheme.red,
+                                        ),
+                                      ),
+                                      onTap: () async {
+                                        Navigator.pop(context);
+                                        if (isGroup) {
+                                          await widget.groupService
+                                              .deleteMessage(
+                                                msg.messageId,
+                                                groupId:
+                                                    widget.item['id'] as String,
+                                              );
+                                        } else {
+                                          await widget.chatService
+                                              .deleteMessage(
+                                                msg.messageId,
+                                                chatId:
+                                                    widget.item['id'] as String,
+                                              );
+                                        }
+                                      },
+                                    ),
+                                ],
                               ),
-                            // ── Message content based on type ──
-                            _buildMessageContent(msg, isMe),
-                          ],
+                            ),
+                          );
+                        },
+                        child: Container(
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.of(context).size.width * 0.65,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isMe
+                                ? const Color(0xFF2A2A2E)
+                                : const Color(0xFF1E1E20),
+                            borderRadius: BorderRadius.only(
+                              topLeft: const Radius.circular(12),
+                              topRight: const Radius.circular(12),
+                              bottomLeft: Radius.circular(isMe ? 12 : 2),
+                              bottomRight: Radius.circular(isMe ? 2 : 12),
+                            ),
+                            border: Border.all(
+                              color: isMe
+                                  ? const Color(0xFF3A3A3E)
+                                  : AppTheme.border,
+                              width: 1,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Show sender name in a box for group chats only
+                              if (isGroup && !isMe)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.purple.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: AppTheme.purple.withValues(
+                                        alpha: 0.25,
+                                      ),
+                                      width: 0.5,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    msg.senderName,
+                                    style: GoogleFonts.inter(
+                                      color: AppTheme.purpleLt,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              // ── Message content based on type ──
+                              _buildMessageContent(msg, isMe),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -2814,11 +3196,26 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   ),
                 ),
               ),
-              if (rest.isNotEmpty) Text(rest, style: textStyle),
+              if (rest.isNotEmpty)
+                MarkdownBody(
+                  data: rest,
+                  styleSheet: MarkdownStyleSheet(
+                    p: textStyle,
+                    listBullet: textStyle,
+                    strong: textStyle.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
             ],
           );
         }
-        return Text(msg.text, style: textStyle);
+        return MarkdownBody(
+          data: msg.text,
+          styleSheet: MarkdownStyleSheet(
+            p: textStyle,
+            listBullet: textStyle,
+            strong: textStyle.copyWith(fontWeight: FontWeight.bold),
+          ),
+        );
     }
   }
 

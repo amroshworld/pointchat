@@ -94,7 +94,8 @@ class MessageBubble extends StatelessWidget {
               // Message Content
               if (type == MessageType.audio)
                 VoiceMessagePlayer(
-                  audioUrl: message, // assuming message contains the URL for the audio
+                  audioUrl:
+                      message, // assuming message contains the URL for the audio
                   isMe: isMe,
                 )
               else

@@ -15,9 +15,7 @@ class UserInfoScreen extends StatelessWidget {
     final userService = UserService();
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('User Info', style: GoogleFonts.spaceMono()),
-      ),
+      appBar: AppBar(title: Text('User Info', style: GoogleFonts.spaceMono())),
       body: StreamBuilder<UserModel?>(
         stream: userService.getUserStream(userId),
         builder: (context, snapshot) {
@@ -28,7 +26,10 @@ class UserInfoScreen extends StatelessWidget {
           final user = snapshot.data;
           if (user == null) {
             return Center(
-              child: Text('User not found', style: GoogleFonts.jetBrainsMono(color: colorScheme.onSurface)),
+              child: Text(
+                'User not found',
+                style: GoogleFonts.jetBrainsMono(color: colorScheme.onSurface),
+              ),
             );
           }
 
@@ -42,7 +43,10 @@ class UserInfoScreen extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: const Color(0xFF1E1E20),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: colorScheme.onSurface.withValues(alpha: 0.1), width: 1),
+                    border: Border.all(
+                      color: colorScheme.onSurface.withValues(alpha: 0.1),
+                      width: 1,
+                    ),
                   ),
                   child: Column(
                     children: [
@@ -79,7 +83,9 @@ class UserInfoScreen extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: colorScheme.surface,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: colorScheme.onSurface.withValues(alpha: 0.1)),
+                          border: Border.all(
+                            color: colorScheme.onSurface.withValues(alpha: 0.1),
+                          ),
                         ),
                         child: Text(
                           user.status,

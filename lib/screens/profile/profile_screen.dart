@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:appwrite/appwrite.dart';
+import 'package:uuid/uuid.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/user_service.dart';
 import '../../models/user_model.dart';
@@ -15,6 +19,60 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final UserService _userService = UserService();
+  bool _isUploading = false;
+
+  Future<void> _updateProfilePicture(String uid) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+    );
+    if (pickedFile == null) return;
+
+    final CroppedFile? croppedFile = await ImageCropper().cropImage(
+      sourcePath: pickedFile.path,
+      compressQuality: 80,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop Photo',
+          toolbarColor: const Color(0xFF161618),
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+        ),
+        IOSUiSettings(title: 'Crop Photo', aspectRatioLockEnabled: true),
+      ],
+    );
+    if (croppedFile == null) return;
+
+    setState(() => _isUploading = true);
+
+    try {
+      final fileName = const Uuid().v4();
+      final imageBytes = await pickedFile.readAsBytes();
+
+      final file = await appwriteStorage.createFile(
+        bucketId:
+            AppwriteConstants.chatFilesBucket, // or a specific profile bucket
+        fileId: ID.unique(),
+        file: InputFile.fromBytes(bytes: imageBytes, filename: '$fileName.jpg'),
+      );
+
+      final photoUrl =
+          '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${file.$id}/view?project=${AppwriteConstants.projectId}';
+
+      await _userService.updateUserPhotoUrl(uid, photoUrl);
+      cachedUserPhotoUrl = photoUrl;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update picture: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,12 +110,41 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   child: Column(
                     children: [
-                      UserAvatar(
-                        photoUrl: userData?.photoUrl ?? cachedUserPhotoUrl,
-                        name: userData?.displayName ?? cachedUserName,
-                        radius: 48,
-                        isOnline: true,
-                        showOnlineIndicator: true,
+                      GestureDetector(
+                        onTap: () => _updateProfilePicture(cachedUserId),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            UserAvatar(
+                              photoUrl:
+                                  userData?.photoUrl ?? cachedUserPhotoUrl,
+                              name: userData?.displayName ?? cachedUserName,
+                              radius: 48,
+                              isOnline: true,
+                              showOnlineIndicator: true,
+                            ),
+                            if (_isUploading)
+                              const CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.camera_alt,
+                                  size: 16,
+                                  color: colorScheme.onPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
                       Text(

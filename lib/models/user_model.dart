@@ -9,6 +9,7 @@ class UserModel {
   final List<String> chatIds;
   final List<String> groupIds;
   final List<String> favorites;
+  final bool isBot;
 
   UserModel({
     required this.uid,
@@ -21,6 +22,7 @@ class UserModel {
     this.chatIds = const [],
     this.groupIds = const [],
     this.favorites = const [],
+    this.isBot = false,
   });
 
   factory UserModel.fromMap(Map<String, dynamic> map) {
@@ -37,6 +39,7 @@ class UserModel {
       chatIds: List<String>.from(map['chatIds'] ?? []),
       groupIds: List<String>.from(map['groupIds'] ?? []),
       favorites: List<String>.from(map['favorites'] ?? []),
+      isBot: map['isBot'] ?? false,
     );
   }
 
@@ -51,6 +54,7 @@ class UserModel {
       'chatIds': chatIds,
       'groupIds': groupIds,
       'favorites': favorites,
+      'isBot': isBot,
     };
   }
 
@@ -65,6 +69,7 @@ class UserModel {
     List<String>? chatIds,
     List<String>? groupIds,
     List<String>? favorites,
+    bool? isBot,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -77,6 +82,7 @@ class UserModel {
       chatIds: chatIds ?? this.chatIds,
       groupIds: groupIds ?? this.groupIds,
       favorites: favorites ?? this.favorites,
+      isBot: isBot ?? this.isBot,
     );
   }
 }

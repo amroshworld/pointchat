@@ -213,6 +213,35 @@ class GroupService {
     return controller.stream;
   }
 
+  // Get recent unread messages for AI summary
+  Future<List<MessageModel>> getUnreadGroupMessages(
+    String groupId,
+    String userId,
+  ) async {
+    try {
+      final result = await _databases.listRows(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.messagesCollection,
+        queries: [
+          Query.equal('groupId', groupId),
+          Query.orderDesc('\$createdAt'),
+          Query.limit(50),
+        ],
+      );
+
+      final allMessages = result.rows
+          .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
+          .toList();
+
+      return allMessages.where((msg) {
+        final readBy = msg.readBy;
+        return !(readBy[userId] ?? false);
+      }).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
   // Send a group message
   Future<void> sendGroupMessage({
     required String groupId,

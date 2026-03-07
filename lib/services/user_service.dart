@@ -157,4 +157,14 @@ class UserService {
       data: {'favorites': favorites},
     );
   }
+
+  // Update user photo URL
+  Future<void> updateUserPhotoUrl(String uid, String photoUrl) async {
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.usersCollection,
+      rowId: uid,
+      data: {'photoUrl': photoUrl},
+    );
+  }
 }

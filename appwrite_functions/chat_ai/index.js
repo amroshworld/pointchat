@@ -30,6 +30,7 @@ module.exports = async function ({ req, res, log, error }) {
 
     const result = await generateText({
       model: 'google/gemini-2.5-flash-lite',
+      system: req.body.systemPrompt || 'You are a helpful AI assistant.',
       prompt: promptText,
     });
 

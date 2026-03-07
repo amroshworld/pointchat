@@ -33,13 +33,13 @@ class AppTheme {
   static const Color receivedMessageColor = surface2;
 
   // ── Typography helpers ─────────────────────────────────────────────
-  static TextStyle _inter({
+  static TextStyle _font({
     required double size,
     FontWeight weight = FontWeight.w400,
     Color color = textPri,
     double? height,
     double? letterSpacing,
-  }) => GoogleFonts.inter(
+  }) => GoogleFonts.outfit(
     fontSize: size,
     fontWeight: weight,
     color: color,
@@ -72,44 +72,44 @@ class AppTheme {
       ),
 
       textTheme: TextTheme(
-        displayLarge: _inter(
+        displayLarge: _font(
           size: 36,
           weight: FontWeight.w800,
           letterSpacing: -1.5,
         ),
-        displayMedium: _inter(
+        displayMedium: _font(
           size: 30,
           weight: FontWeight.w700,
           letterSpacing: -1,
         ),
-        displaySmall: _inter(
+        displaySmall: _font(
           size: 24,
           weight: FontWeight.w700,
           letterSpacing: -0.5,
         ),
-        headlineLarge: _inter(
+        headlineLarge: _font(
           size: 22,
           weight: FontWeight.w700,
           letterSpacing: -0.5,
         ),
-        headlineMedium: _inter(size: 18, weight: FontWeight.w600),
-        titleLarge: _inter(size: 16, weight: FontWeight.w600),
-        titleMedium: _inter(size: 15, weight: FontWeight.w500),
-        titleSmall: _inter(size: 13, weight: FontWeight.w500),
-        bodyLarge: _inter(size: 15, height: 1.5),
-        bodyMedium: _inter(size: 14, height: 1.5),
-        bodySmall: _inter(size: 12, color: textSec, height: 1.4),
-        labelLarge: _inter(
+        headlineMedium: _font(size: 18, weight: FontWeight.w600),
+        titleLarge: _font(size: 16, weight: FontWeight.w600),
+        titleMedium: _font(size: 15, weight: FontWeight.w500),
+        titleSmall: _font(size: 13, weight: FontWeight.w500),
+        bodyLarge: _font(size: 15, height: 1.5),
+        bodyMedium: _font(size: 14, height: 1.5),
+        bodySmall: _font(size: 12, color: textSec, height: 1.4),
+        labelLarge: _font(
           size: 14,
           weight: FontWeight.w600,
           letterSpacing: 0.3,
         ),
-        labelMedium: _inter(
+        labelMedium: _font(
           size: 12,
           weight: FontWeight.w600,
           letterSpacing: 0.5,
         ),
-        labelSmall: _inter(
+        labelSmall: _font(
           size: 11,
           weight: FontWeight.w500,
           color: textSec,
@@ -125,7 +125,7 @@ class AppTheme {
         backgroundColor: bg,
         foregroundColor: textPri,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.inter(
+        titleTextStyle: GoogleFonts.outfit(
           color: textPri,
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -184,12 +184,12 @@ class AppTheme {
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: red, width: 1),
         ),
-        hintStyle: GoogleFonts.inter(
+        hintStyle: GoogleFonts.outfit(
           color: muted,
           fontWeight: FontWeight.w400,
           fontSize: 14,
         ),
-        labelStyle: GoogleFonts.inter(color: textSec, fontSize: 12),
+        labelStyle: GoogleFonts.outfit(color: textSec, fontSize: 12),
         prefixIconColor: muted,
         suffixIconColor: muted,
       ),
@@ -216,7 +216,7 @@ class AppTheme {
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: GoogleFonts.inter(
+          textStyle: GoogleFonts.outfit(
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -229,7 +229,7 @@ class AppTheme {
           side: const BorderSide(color: border, width: 1),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: GoogleFonts.inter(
+          textStyle: GoogleFonts.outfit(
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -239,7 +239,7 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: purple,
-          textStyle: GoogleFonts.inter(
+          textStyle: GoogleFonts.outfit(
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -256,7 +256,7 @@ class AppTheme {
             borderRadius: BorderRadius.circular(8),
             side: const BorderSide(color: border),
           ),
-          textStyle: GoogleFonts.inter(
+          textStyle: GoogleFonts.outfit(
             fontSize: 13,
             fontWeight: FontWeight.w500,
           ),
@@ -280,7 +280,7 @@ class AppTheme {
       // Chip
       chipTheme: ChipThemeData(
         backgroundColor: surface2,
-        labelStyle: GoogleFonts.inter(fontSize: 12, color: textPri),
+        labelStyle: GoogleFonts.outfit(fontSize: 12, color: textPri),
         side: const BorderSide(color: border),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -299,7 +299,7 @@ class AppTheme {
       // Snack bar
       snackBarTheme: SnackBarThemeData(
         backgroundColor: surface2,
-        contentTextStyle: GoogleFonts.inter(color: textPri, fontSize: 14),
+        contentTextStyle: GoogleFonts.outfit(color: textPri, fontSize: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         behavior: SnackBarBehavior.floating,
       ),

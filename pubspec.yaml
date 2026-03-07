@@ -53,6 +53,7 @@ dependencies:
   open_filex: ^4.7.0
   audioplayers: ^6.6.0
   flutter_cache_manager: ^3.4.1
+  flutter_markdown_plus: ^1.0.7
 
 dev_dependencies:
   flutter_test:

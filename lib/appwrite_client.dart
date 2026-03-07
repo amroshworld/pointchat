@@ -12,6 +12,7 @@ class AppwriteConstants {
   static const String chatsCollection = 'chats';
   static const String messagesCollection = 'messages';
   static const String groupsCollection = 'groups';
+  static const String botsCollection = 'bots';
 
   // Storage
   static const String chatFilesBucket = 'chat_files';
