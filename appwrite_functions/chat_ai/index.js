@@ -1,43 +1,72 @@
-const sdk = require('node-appwrite');
-const { generateText } = require('ai');
+const { GoogleGenAI, ThinkingLevel } = require('@google/genai');
 
-module.exports = async function ({ req, res, log, error }) {
-  // Setup Client using Environment Variables
-  const endpoint = process.env.APPWRITE_FUNCTION_API_ENDPOINT;
-  const apiKey = req.headers['x-appwrite-key'] || process.env.APPWRITE_FUNCTION_API_KEY || process.env.APPWRITE_API_KEY;
-  const vercelAiToken = process.env.VERCEL_AI_SDK_TOKEN;
-  
-  if (!endpoint || !apiKey || !vercelAiToken) {
-    error("Environment variables are not set. API_KEY present: " + !!apiKey + " ENDPOINT present: " + !!endpoint + " VERCEL_TOKEN: " + !!vercelAiToken);
-    return res.json({ success: false, message: "Missing environment variables" });
+const MODEL_NAME = 'gemini-3.1-flash-lite-preview';
+const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant for PointChat.';
+
+function parseBody(req, log) {
+  if (!req.body) {
+    return {};
   }
 
-  // Set the AI Gateway key for the ai SDK to use
-  process.env.AI_GATEWAY_API_KEY = vercelAiToken;
+  try {
+    return typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  } catch (error) {
+    log(`Body parse error: ${error.message}`);
+    return {};
+  }
+}
+
+module.exports = async function ({ req, res, log }) {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    log('Missing GEMINI_API_KEY function variable');
+    return res.json({
+      success: false,
+      error: 'Missing GEMINI_API_KEY function variable.',
+    });
+  }
 
   try {
-    let promptText = "Hello!";
-    if (req.body) {
-       try {
-           const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-           promptText = body.prompt || promptText;
-       } catch (e) {
-           log("Body parse error: " + e);
-       }
+    const body = parseBody(req, log);
+    const promptText = String(body.prompt || '').trim();
+    const systemPrompt = String(
+      body.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+    ).trim();
+
+    if (!promptText) {
+      return res.json({ success: false, error: 'Prompt is required.' });
     }
 
-    log(`Generating response for prompt: ${promptText}`);
+    log(`Generating response with locked model ${MODEL_NAME}`);
 
-    const result = await generateText({
-      model: 'google/gemini-2.5-flash-lite',
-      system: req.body.systemPrompt || 'You are a helpful AI assistant.',
-      prompt: promptText,
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContentStream({
+      model: MODEL_NAME,
+      config: {
+        thinkingConfig: {
+          thinkingLevel: ThinkingLevel.MINIMAL,
+        },
+        tools: [{ googleSearch: {} }],
+        systemInstruction: systemPrompt,
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: promptText }],
+        },
+      ],
     });
 
-    log(`Generated response length: ${result.text.length}`);
-    return res.json({ success: true, text: result.text });
-  } catch (err) {
-    error(`Error generating text: ${err.message}`);
-    return res.json({ success: false, error: err.message });
+    let text = '';
+    for await (const chunk of response) {
+      text += chunk.text || '';
+    }
+
+    log(`Generated ${text.length} characters successfully`);
+    return res.json({ success: true, text: text.trim() });
+  } catch (error) {
+    log(`Error generating text: ${error.message}`);
+    return res.json({ success: false, error: error.message });
   }
 };

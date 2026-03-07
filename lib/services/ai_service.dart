@@ -10,9 +10,14 @@ class AiService {
   /// Generate a single response from a prompt
   Future<String> generateResponse(String prompt, {String? systemPrompt}) async {
     try {
+      final payload = <String, dynamic>{'prompt': prompt};
+      if (systemPrompt != null && systemPrompt.trim().isNotEmpty) {
+        payload['systemPrompt'] = systemPrompt.trim();
+      }
+
       final response = await appwriteFunctions.createExecution(
         functionId: 'chat_ai',
-        body: jsonEncode({'prompt': prompt, 'systemPrompt': ?systemPrompt}),
+        body: jsonEncode(payload),
       );
 
       final responseBody = response.responseBody;
@@ -26,13 +31,14 @@ class AiService {
       }
       return 'Sorry, I couldn\'t generate a response.';
     } catch (e) {
-      debugPrint('Vercel AI SDK error: $e');
+      debugPrint('Appwrite AI function error: $e');
       return '⚠️ AI error: ${e.toString().split('\n').first}';
     }
   }
 
   /// Stream a response from a prompt
-  /// Currently Vercel AI SDK over Appwrite Functions doesn't support streaming back natively via the Dart SDK execution method in the same way.
+  /// Appwrite Functions return the final payload, so this keeps the calling UI
+  /// compatible while using the safer function execution path.
   /// We'll fall back to just yielding the full response once it's complete to maintain API compatibility.
   Stream<String> streamResponse(String prompt, {String? systemPrompt}) async* {
     yield await generateResponse(prompt, systemPrompt: systemPrompt);

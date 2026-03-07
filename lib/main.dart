@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/auth_service.dart';
+import 'services/notification_service.dart';
 import 'appwrite_client.dart';
 import 'app.dart';
 
@@ -17,6 +18,7 @@ void main() async {
 
   // Load cached user info if session exists
   await AuthService().loadCurrentUser();
+  await NotificationService.instance.initialize();
 
   runApp(const ProviderScope(child: FocusChatApp()));
 }

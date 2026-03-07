@@ -225,6 +225,23 @@ class ChatService {
     double? longitude,
   }) async {
     final messageId = ID.unique();
+    final chatDoc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      rowId: chatId,
+    );
+    final unreadCount = _decodeJsonMap(chatDoc.data['unreadCount']);
+    final participants = List<String>.from(chatDoc.data['participants'] ?? []);
+
+    for (final participantId in participants) {
+      if (participantId == senderId) {
+        unreadCount[participantId] = 0;
+        continue;
+      }
+
+      unreadCount[participantId] = (unreadCount[participantId] ?? 0) + 1;
+    }
+
     final message = MessageModel(
       messageId: messageId,
       chatId: chatId,
@@ -256,6 +273,7 @@ class ChatService {
         'lastMessage': message.preview,
         'lastMessageTime': DateTime.now().toUtc().toIso8601String(),
         'lastMessageSenderId': senderId,
+        'unreadCount': jsonEncode(unreadCount),
       },
     );
   }

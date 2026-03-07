@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -12,6 +13,7 @@ import '../../appwrite_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/cache_service.dart';
 import '../../services/ai_service.dart';
+import '../../services/notification_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:record/record.dart';
@@ -27,6 +29,7 @@ import '../../services/group_service.dart';
 import '../../services/user_service.dart';
 import '../../services/bot_service.dart';
 import '../../models/group_model.dart';
+import '../../models/bot_model.dart';
 import '../../models/chat_model.dart';
 import '../../models/user_model.dart';
 import '../../models/message_model.dart';
@@ -57,6 +60,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   bool _isUploading = false;
 
   String? _expandedItemId;
+  String? _focusedHandle;
 
   bool _isMentioning = false;
   List<dynamic> _mentionSuggestions = [];
@@ -78,15 +82,19 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
   // Reply state
   MessageModel? _replyingToMessage;
+  MessageModel? _forwardingMessage;
 
   late final Stream<List<UserModel>> _allUsersStream;
   late final Stream<List<ChatModel>> _chatsStream;
   late final Stream<List<GroupModel>> _groupsStream;
   late final Stream<List<Map<String, dynamic>>> _combinedStream;
+  List<Map<String, dynamic>> _latestCombinedItems = [];
 
   @override
   void initState() {
     super.initState();
+
+    NotificationService.instance.bindToUser(currentUserId);
 
     _allUsersStream = _userService.getAllUsers(currentUserId);
     _chatsStream = _chatService.getUserChats(currentUserId);
@@ -179,6 +187,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           (a, b) =>
               (b['timeRaw'] as DateTime).compareTo(a['timeRaw'] as DateTime),
         );
+        _latestCombinedItems = List<Map<String, dynamic>>.from(merged);
         return merged;
       },
     );
@@ -218,6 +227,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     final textBeforeCursor = text.substring(0, selection.baseOffset);
     final lastAt = textBeforeCursor.lastIndexOf('@');
     final lastHash = textBeforeCursor.lastIndexOf('#');
+    final lastSlash = textBeforeCursor.lastIndexOf('/');
     final lastSpace = textBeforeCursor.lastIndexOf(' ');
     final lastToken = textBeforeCursor.split(' ').last.toLowerCase();
 
@@ -227,7 +237,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       // Check if there's at least one target before the /
       final beforeSlash = text.substring(0, slashIndex).trim();
       final hasTarget =
-          beforeSlash.startsWith('@') || beforeSlash.startsWith('#');
+          _hasExplicitTarget(beforeSlash) || _focusedHandle != null;
       setState(() {
         _isAiMode = hasTarget;
       });
@@ -258,6 +268,21 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             .where(
               (g) => g.name.toLowerCase().replaceAll(' ', '').contains(query),
             )
+            .toList();
+      });
+    } else if (lastSlash > lastSpace && lastSlash >= 0) {
+      final query = textBeforeCursor.substring(lastSlash + 1).toLowerCase();
+      final slashOptions = <String>[
+        '/setting',
+        '/myprofile',
+        '/summarize',
+        '/summarize unread',
+        '/summarize conversation',
+      ];
+      setState(() {
+        _isMentioning = true;
+        _mentionSuggestions = slashOptions
+            .where((option) => option.toLowerCase().contains(query))
             .toList();
       });
     } else if ('location'.startsWith(lastToken) && lastToken.length >= 2) {
@@ -291,17 +316,1238 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     return '#${name.replaceAll(' ', '').toLowerCase()}';
   }
 
+  bool _hasExplicitTarget(String text) {
+    final trimmed = text.trimLeft();
+    return trimmed.startsWith('@') || trimmed.startsWith('#');
+  }
+
+  String _applyFocusedHandle(String text) {
+    final trimmed = text.trim();
+
+    if (trimmed.isEmpty) {
+      return _focusedHandle ?? '';
+    }
+
+    if (_focusedHandle == null ||
+        _hasExplicitTarget(trimmed) ||
+        trimmed.toLowerCase().startsWith('@bot ')) {
+      return trimmed;
+    }
+
+    return '${_focusedHandle!} $trimmed';
+  }
+
+  void _clearFocusMode() {
+    if (_focusedHandle == null) {
+      return;
+    }
+
+    setState(() {
+      _focusedHandle = null;
+    });
+  }
+
   void _handleItemTap(String handle) {
-    _commandController.text = '$handle ';
-    _commandController.selection = TextSelection.fromPosition(
-      TextPosition(offset: _commandController.text.length),
+    setState(() {
+      _focusedHandle = _focusedHandle == handle ? null : handle;
+    });
+    _commandFocusNode.requestFocus();
+  }
+
+  void _insertHandleIntoComposer(String handle) {
+    final text = _commandController.text;
+    final selection = _commandController.selection;
+    final start = selection.start >= 0 ? selection.start : text.length;
+    final end = selection.end >= 0 ? selection.end : text.length;
+    final prefix = text.substring(0, start);
+    final suffix = text.substring(end);
+    final needsLeadingSpace = prefix.isNotEmpty && !prefix.endsWith(' ');
+    final replacement = '${needsLeadingSpace ? ' ' : ''}$handle ';
+    final newText = '$prefix$replacement$suffix';
+    final newOffset = prefix.length + replacement.length;
+
+    _commandController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newOffset),
     );
     _commandFocusNode.requestFocus();
   }
 
+  void _insertSlashCommand(String command) {
+    final text = _commandController.text;
+    final selection = _commandController.selection;
+    final cursor = selection.baseOffset >= 0
+        ? selection.baseOffset
+        : text.length;
+    final textBeforeCursor = text.substring(0, cursor);
+    final textAfterCursor = text.substring(cursor);
+    final lastSlash = textBeforeCursor.lastIndexOf('/');
+
+    final newText = lastSlash >= 0
+        ? '${textBeforeCursor.substring(0, lastSlash)}$command $textAfterCursor'
+        : '${textBeforeCursor.isNotEmpty ? '$textBeforeCursor ' : ''}$command $textAfterCursor';
+    final newOffset =
+        (lastSlash >= 0
+            ? lastSlash
+            : textBeforeCursor.length + (textBeforeCursor.isNotEmpty ? 1 : 0)) +
+        command.length +
+        1;
+
+    _commandController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newOffset),
+    );
+    _commandFocusNode.requestFocus();
+  }
+
+  Map<String, dynamic>? _findItemByHandle(String handle) {
+    for (final item in _latestCombinedItems) {
+      if (item['handle'] == handle) {
+        return item;
+      }
+    }
+
+    if (handle.startsWith('@')) {
+      final targetName = handle.substring(1);
+      final user = _allUsers.cast<UserModel?>().firstWhere(
+        (u) => u!.displayName.replaceAll(' ', '').toLowerCase() == targetName,
+        orElse: () => null,
+      );
+      if (user != null) {
+        return {
+          'type': 'dm',
+          'handle': handle,
+          'otherUserId': user.uid,
+          'photoUrl': user.photoUrl,
+          'isOnline': user.isOnline,
+        };
+      }
+    }
+
+    if (handle.startsWith('#')) {
+      final targetName = handle.substring(1);
+      final group = _allGroups.cast<GroupModel?>().firstWhere(
+        (g) => g!.name.replaceAll(' ', '').toLowerCase() == targetName,
+        orElse: () => null,
+      );
+      if (group != null) {
+        return {
+          'type': 'group',
+          'handle': handle,
+          'id': group.groupId,
+          'photoUrl': group.photoUrl,
+          'groupMembers': group.members,
+          'groupAdmins': group.admins,
+          'groupDescription': group.description,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  Future<void> _showSettingsOverlayForHandle(String handle) async {
+    final item = _findItemByHandle(handle);
+    if (item == null || !mounted) {
+      return;
+    }
+
+    await _showSettingsOverlay(item);
+  }
+
+  Future<void> _showMyProfileOverlay() async {
+    await _showSettingsOverlay({
+      'type': 'self',
+      'handle': '@me',
+      'otherUserId': currentUserId,
+    });
+  }
+
+  Future<void> _showSettingsOverlay(Map<String, dynamic> item) async {
+    if (!mounted) {
+      return;
+    }
+
+    await showGeneralDialog<void>(
+      context: context,
+      barrierLabel: 'settings',
+      barrierDismissible: true,
+      barrierColor: Colors.transparent,
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(color: Colors.black.withValues(alpha: 0.45)),
+              ),
+            ),
+            Center(
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.88,
+                  constraints: const BoxConstraints(
+                    maxWidth: 460,
+                    maxHeight: 620,
+                  ),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppTheme.border),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 30,
+                        spreadRadius: 0,
+                      ),
+                    ],
+                  ),
+                  child: _buildSettingsOverlayContent(item),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.96, end: 1.0).animate(animation),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSettingsOverlayContent(Map<String, dynamic> item) {
+    final handle = item['handle'] as String? ?? '';
+    final isGroup = (item['type'] as String?) == 'group';
+    final isSelf = (item['type'] as String?) == 'self';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                isGroup
+                    ? 'Group Settings'
+                    : (isSelf ? 'My Profile' : 'User Settings'),
+                style: GoogleFonts.outfit(
+                  color: AppTheme.textPri,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close_rounded, color: AppTheme.textSec),
+            ),
+          ],
+        ),
+        Text(
+          handle,
+          style: GoogleFonts.inter(
+            color: isGroup ? AppTheme.green : AppTheme.focusBlue,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            if (!isSelf)
+              _overlayActionButton(
+                icon: Icons.alternate_email_rounded,
+                label: 'Mention',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _insertHandleIntoComposer(handle);
+                },
+              ),
+            if (!isSelf)
+              _overlayActionButton(
+                icon: _focusedHandle == handle
+                    ? Icons.location_off_rounded
+                    : Icons.my_location_rounded,
+                label: _focusedHandle == handle ? 'Unfocus' : 'Focus',
+                onTap: () {
+                  Navigator.of(context).pop();
+                  setState(() {
+                    _focusedHandle = _focusedHandle == handle ? null : handle;
+                  });
+                  _commandFocusNode.requestFocus();
+                },
+              ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        Expanded(
+          child: isGroup
+              ? _buildGroupSettingsContent(item)
+              : (isSelf
+                    ? _buildMyProfileContent()
+                    : _buildUserSettingsContent(item)),
+        ),
+      ],
+    );
+  }
+
+  Widget _overlayActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.surface2,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: AppTheme.focusBlue, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                color: AppTheme.textPri,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupSettingsContent(Map<String, dynamic> item) {
+    final groupId = item['id'] as String? ?? '';
+
+    return StreamBuilder<GroupModel?>(
+      stream: _groupService.getGroupStream(groupId),
+      builder: (context, snapshot) {
+        final group = snapshot.data;
+        if (group == null) {
+          return Center(
+            child: Text(
+              'Group details unavailable.',
+              style: GoogleFonts.inter(color: AppTheme.textSec, fontSize: 13),
+            ),
+          );
+        }
+
+        final description = group.description;
+        final members = group.members;
+        final admins = group.admins;
+        final isCurrentUserAdmin = admins.contains(currentUserId);
+
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _editableAvatar(
+                    imageUrl: group.photoUrl,
+                    initialsSource: group.name,
+                    accent: AppTheme.green,
+                    onTap: isCurrentUserAdmin
+                        ? () => _updateGroupPhoto(group.groupId)
+                        : null,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          group.name,
+                          style: GoogleFonts.inter(
+                            color: AppTheme.textPri,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          description.isEmpty
+                              ? 'No group status set yet.'
+                              : description,
+                          style: GoogleFonts.inter(
+                            color: AppTheme.textSec,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (isCurrentUserAdmin) ...[
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _overlayActionButton(
+                      icon: Icons.photo_camera_back_outlined,
+                      label: 'Change Icon',
+                      onTap: () => _updateGroupPhoto(group.groupId),
+                    ),
+                    _overlayActionButton(
+                      icon: Icons.edit_note_rounded,
+                      label: 'Edit Status',
+                      onTap: () => _editGroupDescription(group),
+                    ),
+                    _overlayActionButton(
+                      icon: Icons.person_add_alt_1_rounded,
+                      label: 'Add Member',
+                      onTap: () => _showAddMembersOverlay(group),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 18),
+              Text(
+                'Members',
+                style: GoogleFonts.inter(
+                  color: AppTheme.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...members.map((memberId) {
+                final user = _allUsers.cast<UserModel?>().firstWhere(
+                  (entry) => entry?.uid == memberId,
+                  orElse: () =>
+                      memberId == currentUserId ? _currentUserModel : null,
+                );
+                final memberName = user?.displayName ?? 'Unknown';
+                final memberHandle = _formatHandle(memberName);
+                final isAdmin = admins.contains(memberId);
+                final canModerate =
+                    isCurrentUserAdmin && memberId != currentUserId;
+                final isFocused = _focusedHandle == memberHandle;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface2,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.of(context).pop();
+                                _insertHandleIntoComposer(memberHandle);
+                              },
+                              child: Text(
+                                memberHandle,
+                                style: GoogleFonts.inter(
+                                  color: AppTheme.textPri,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (isAdmin)
+                            Text(
+                              'ADMIN',
+                              style: GoogleFonts.inter(
+                                color: AppTheme.purpleLt,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _miniMemberAction(
+                            label: 'Mention',
+                            onTap: () {
+                              Navigator.of(context).pop();
+                              _insertHandleIntoComposer(memberHandle);
+                            },
+                          ),
+                          _miniMemberAction(
+                            label: isFocused ? 'Unfocus' : 'Focus',
+                            onTap: () {
+                              setState(() {
+                                _focusedHandle = isFocused
+                                    ? null
+                                    : memberHandle;
+                              });
+                            },
+                          ),
+                          if (canModerate)
+                            _miniMemberAction(
+                              label: isAdmin ? 'Remove Admin' : 'Make Admin',
+                              onTap: () async {
+                                if (isAdmin) {
+                                  await _groupService.removeAdmin(
+                                    group.groupId,
+                                    memberId,
+                                  );
+                                } else {
+                                  await _groupService.makeAdmin(
+                                    group.groupId,
+                                    memberId,
+                                  );
+                                }
+                              },
+                            ),
+                          if (canModerate)
+                            _miniMemberAction(
+                              label: 'Remove Member',
+                              isDanger: true,
+                              onTap: () async {
+                                await _groupService.removeMember(
+                                  group.groupId,
+                                  memberId,
+                                  removedByName: cachedUserName.isEmpty
+                                      ? 'Admin'
+                                      : cachedUserName,
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildUserSettingsContent(Map<String, dynamic> item) {
+    final otherUserId = item['otherUserId'] as String? ?? '';
+    final chatId = item['id'] as String?;
+    return StreamBuilder<UserModel?>(
+      stream: _userService.getUserStream(otherUserId),
+      builder: (context, snapshot) {
+        final user = snapshot.data;
+        if (user == null) {
+          return Center(
+            child: Text(
+              'User details unavailable.',
+              style: GoogleFonts.inter(color: AppTheme.textSec, fontSize: 13),
+            ),
+          );
+        }
+
+        return FutureBuilder<String>(
+          future: chatId == null || chatId.isEmpty
+              ? _chatService.getOrCreateChat(currentUserId, otherUserId)
+              : Future.value(chatId),
+          builder: (context, chatIdSnapshot) {
+            if (!chatIdSnapshot.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(
+                  color: AppTheme.purple,
+                  strokeWidth: 2,
+                ),
+              );
+            }
+
+            final resolvedChatId = chatIdSnapshot.data!;
+            return StreamBuilder<ChatModel?>(
+              stream: _chatService.getChatStream(resolvedChatId),
+              builder: (context, chatSnapshot) {
+                final chat = chatSnapshot.data;
+                final mySeenEnabled = chat?.seenEnabled[currentUserId] ?? true;
+                final otherSeenEnabled = chat?.seenEnabled[otherUserId] ?? true;
+                final myNotifyOnSeen =
+                    chat?.notifyOnSeen[currentUserId] ?? false;
+                final otherNotifyOnSeen =
+                    chat?.notifyOnSeen[otherUserId] ?? false;
+
+                return SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _editableAvatar(
+                            imageUrl: user.photoUrl,
+                            initialsSource: user.displayName,
+                            accent: AppTheme.focusBlue,
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  user.displayName,
+                                  style: GoogleFonts.inter(
+                                    color: AppTheme.textPri,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  user.status,
+                                  style: GoogleFonts.inter(
+                                    color: AppTheme.textSec,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      _settingsField('Email', user.email),
+                      _settingsField('Type', user.isBot ? 'AI Bot' : 'Person'),
+                      _settingsField(
+                        'Presence',
+                        user.isOnline ? 'Online' : 'Offline',
+                      ),
+                      const SizedBox(height: 10),
+                      _seenToggleRow(
+                        label: 'Show my read receipts',
+                        subtitle: 'Let ${user.displayName} see when you read.',
+                        value: mySeenEnabled,
+                        onChanged: (val) {
+                          _chatService.toggleSeenEnabled(
+                            resolvedChatId,
+                            currentUserId,
+                            val,
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      _seenToggleRow(
+                        label: 'Notify me when seen',
+                        subtitle:
+                            'Get a notice when ${user.displayName} reads your messages.',
+                        value: myNotifyOnSeen,
+                        onChanged: (val) {
+                          _chatService.toggleNotifyOnSeen(
+                            resolvedChatId,
+                            currentUserId,
+                            val,
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _infoRow(
+                        icon: otherSeenEnabled
+                            ? Icons.done_all
+                            : Icons.visibility_off_outlined,
+                        text: otherSeenEnabled
+                            ? '${user.displayName} is sharing read receipts.'
+                            : '${user.displayName} is hiding read receipts.',
+                        color: otherSeenEnabled
+                            ? AppTheme.green
+                            : AppTheme.muted,
+                      ),
+                      const SizedBox(height: 8),
+                      _infoRow(
+                        icon: otherNotifyOnSeen
+                            ? Icons.notifications_active_outlined
+                            : Icons.notifications_off_outlined,
+                        text: otherNotifyOnSeen
+                            ? '${user.displayName} turned on seen notifications for this chat.'
+                            : '${user.displayName} has seen notifications off.',
+                        color: otherNotifyOnSeen
+                            ? AppTheme.focusBlue
+                            : AppTheme.muted,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMyProfileContent() {
+    return StreamBuilder<UserModel?>(
+      stream: _userService.getUserStream(currentUserId),
+      builder: (context, snapshot) {
+        final user = snapshot.data ?? _currentUserModel;
+        if (user == null) {
+          return Center(
+            child: Text(
+              'Profile unavailable.',
+              style: GoogleFonts.inter(color: AppTheme.textSec, fontSize: 13),
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _editableAvatar(
+                    imageUrl: user.photoUrl,
+                    initialsSource: user.displayName,
+                    accent: AppTheme.focusBlue,
+                    onTap: _updateMyProfilePhoto,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user.displayName,
+                          style: GoogleFonts.inter(
+                            color: AppTheme.textPri,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          user.status,
+                          style: GoogleFonts.inter(
+                            color: AppTheme.textSec,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  _overlayActionButton(
+                    icon: Icons.photo_camera_back_outlined,
+                    label: 'Change Picture',
+                    onTap: _updateMyProfilePhoto,
+                  ),
+                  _overlayActionButton(
+                    icon: Icons.edit_note_rounded,
+                    label: 'Edit Status',
+                    onTap: () => _editMyStatus(user.status),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _settingsField('Email', user.email),
+              _settingsField('Presence', user.isOnline ? 'Online' : 'Offline'),
+              _settingsField('Chats', '${user.chatIds.length} active chats'),
+              _settingsField('Groups', '${user.groupIds.length} joined groups'),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _editableAvatar({
+    required String imageUrl,
+    required String initialsSource,
+    required Color accent,
+    VoidCallback? onTap,
+  }) {
+    final initials = initialsSource.isEmpty
+        ? '?'
+        : initialsSource[0].toUpperCase();
+    final avatar = Container(
+      width: 72,
+      height: 72,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: accent.withValues(alpha: 0.4)),
+        color: accent.withValues(alpha: 0.12),
+        image: imageUrl.isNotEmpty
+            ? DecorationImage(image: NetworkImage(imageUrl), fit: BoxFit.cover)
+            : null,
+      ),
+      child: imageUrl.isEmpty
+          ? Center(
+              child: Text(
+                initials,
+                style: GoogleFonts.inter(
+                  color: accent,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            )
+          : null,
+    );
+
+    if (onTap == null) {
+      return avatar;
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        children: [
+          avatar,
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Icon(Icons.edit_rounded, size: 14, color: accent),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniMemberAction({
+    required String label,
+    required VoidCallback onTap,
+    bool isDanger = false,
+  }) {
+    final color = isDanger ? AppTheme.red : AppTheme.focusBlue;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: 0.26)),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _pickAndUploadSquareImage({
+    required String filePrefix,
+  }) async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (pickedFile == null) {
+      return null;
+    }
+
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: pickedFile.path,
+      compressQuality: 82,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop Image',
+          toolbarColor: const Color(0xFF161618),
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+        ),
+        IOSUiSettings(title: 'Crop Image', aspectRatioLockEnabled: true),
+      ],
+    );
+    if (croppedFile == null) {
+      return null;
+    }
+
+    final imageBytes = await XFile(croppedFile.path).readAsBytes();
+    final file = await appwriteStorage.createFile(
+      bucketId: AppwriteConstants.chatFilesBucket,
+      fileId: ID.unique(),
+      file: InputFile.fromBytes(
+        bytes: imageBytes,
+        filename: '$filePrefix-${const Uuid().v4()}.jpg',
+      ),
+    );
+
+    return '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${file.$id}/view?project=${AppwriteConstants.projectId}';
+  }
+
+  Future<void> _updateMyProfilePhoto() async {
+    final photoUrl = await _pickAndUploadSquareImage(filePrefix: 'profile');
+    if (photoUrl == null) {
+      return;
+    }
+
+    await _userService.updateUserPhotoUrl(currentUserId, photoUrl);
+    cachedUserPhotoUrl = photoUrl;
+  }
+
+  Future<void> _updateGroupPhoto(String groupId) async {
+    final photoUrl = await _pickAndUploadSquareImage(filePrefix: 'group');
+    if (photoUrl == null) {
+      return;
+    }
+
+    await _groupService.updateGroup(groupId, {'photoUrl': photoUrl});
+  }
+
+  Future<void> _editMyStatus(String currentStatus) async {
+    final controller = TextEditingController(text: currentStatus);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Edit Status'),
+        content: TextField(
+          controller: controller,
+          maxLength: 140,
+          decoration: const InputDecoration(hintText: 'What do people see?'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              await _userService.updateStatus(
+                currentUserId,
+                controller.text.trim(),
+              );
+              if (context.mounted) Navigator.of(context).pop();
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editGroupDescription(GroupModel group) async {
+    final controller = TextEditingController(text: group.description);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Edit Group Status'),
+        content: TextField(
+          controller: controller,
+          maxLength: 180,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'Write a short group status or description',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              await _groupService.updateGroup(group.groupId, {
+                'description': controller.text.trim(),
+              });
+              if (context.mounted) Navigator.of(context).pop();
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAddMembersOverlay(GroupModel group) async {
+    final selectedIds = <String>{};
+    final candidates = _allUsers
+        .where((user) => !group.members.contains(user.uid))
+        .toList();
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: AppTheme.surface,
+          title: const Text('Add Members'),
+          content: SizedBox(
+            width: 420,
+            child: candidates.isEmpty
+                ? Text(
+                    'No more people available to add.',
+                    style: GoogleFonts.inter(color: AppTheme.textSec),
+                  )
+                : ListView(
+                    shrinkWrap: true,
+                    children: candidates.map((user) {
+                      final handle = _formatHandle(user.displayName);
+                      return CheckboxListTile(
+                        value: selectedIds.contains(user.uid),
+                        activeColor: AppTheme.focusBlue,
+                        title: Text(handle),
+                        subtitle: Text(
+                          user.status,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onChanged: (checked) {
+                          setState(() {
+                            if (checked == true) {
+                              selectedIds.add(user.uid);
+                            } else {
+                              selectedIds.remove(user.uid);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: selectedIds.isEmpty
+                  ? null
+                  : () async {
+                      await _groupService.addMembers(
+                        group.groupId,
+                        selectedIds.toList(),
+                        cachedUserName.isEmpty ? 'Admin' : cachedUserName,
+                      );
+                      if (context.mounted) Navigator.of(context).pop();
+                    },
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow({
+    required IconData icon,
+    required String text,
+    required Color color,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: color, size: 16),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: GoogleFonts.inter(
+              color: AppTheme.textSec,
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _seenToggleRow({
+    required String label,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface2,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    color: AppTheme.textPri,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.inter(
+                    color: AppTheme.textSec,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Switch.adaptive(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+
+  Widget _settingsField(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              color: AppTheme.muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: GoogleFonts.inter(color: AppTheme.textPri, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _forwardPendingMessage(String input) async {
+    final message = _forwardingMessage;
+    if (message == null) {
+      return;
+    }
+
+    final command = _applyFocusedHandle(input);
+    if (!_hasExplicitTarget(command)) {
+      _commandFocusNode.requestFocus();
+      return;
+    }
+
+    switch (message.type) {
+      case MessageType.image:
+        await _processCommand(
+          command,
+          imageUrl: message.text,
+          skipReplyMarkup: true,
+        );
+        break;
+      case MessageType.file:
+        await _processCommand(
+          command,
+          metadata: {
+            'url': message.text,
+            'type': MessageType.file,
+            'fileName': message.fileName,
+            'fileSize': message.fileSize,
+          },
+          skipReplyMarkup: true,
+        );
+        break;
+      case MessageType.audio:
+        await _processCommand(
+          command,
+          metadata: {
+            'url': message.text,
+            'type': MessageType.audio,
+            'fileName': message.fileName,
+            'audioDuration': message.audioDuration,
+          },
+          skipReplyMarkup: true,
+        );
+        break;
+      case MessageType.location:
+        if (message.latitude != null && message.longitude != null) {
+          await _processCommand(
+            command,
+            metadata: {
+              'type': MessageType.location,
+              'latitude': message.latitude,
+              'longitude': message.longitude,
+            },
+            skipReplyMarkup: true,
+          );
+        } else {
+          await _processCommand(
+            command,
+            textOverride: message.text,
+            skipReplyMarkup: true,
+          );
+        }
+        break;
+      case MessageType.system:
+      case MessageType.text:
+        await _processCommand(
+          command,
+          textOverride: message.text,
+          skipReplyMarkup: true,
+        );
+        break;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _forwardingMessage = null;
+    });
+    _commandController.clear();
+  }
+
   void _pickAndSendImage() async {
-    final text = _commandController.text.trim();
-    if (text.isEmpty || (!text.startsWith('@') && !text.startsWith('#'))) {
+    final text = _applyFocusedHandle(_commandController.text);
+    if (!_hasExplicitTarget(text)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -378,8 +1624,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
   // ── Pick & send file ──
   void _pickAndSendFile() async {
-    final text = _commandController.text.trim();
-    if (text.isEmpty || (!text.startsWith('@') && !text.startsWith('#'))) {
+    final text = _applyFocusedHandle(_commandController.text);
+    if (!_hasExplicitTarget(text)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -489,8 +1735,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
   // ── Start recording ──
   Future<void> _startRecording() async {
-    final text = _commandController.text.trim();
-    if (text.isEmpty || (!text.startsWith('@') && !text.startsWith('#'))) {
+    final text = _applyFocusedHandle(_commandController.text);
+    if (!_hasExplicitTarget(text)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -602,7 +1848,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${uploadedAudio.$id}/view?project=${AppwriteConstants.projectId}';
 
       await _processCommand(
-        _commandController.text.trim(),
+        _applyFocusedHandle(_commandController.text),
         metadata: {
           'url': downloadUrl,
           'type': MessageType.audio,
@@ -653,8 +1899,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
   // ── Send location ──
   void _sendLocation() async {
-    final text = _commandController.text.trim();
-    if (text.isEmpty || (!text.startsWith('@') && !text.startsWith('#'))) {
+    final text = _applyFocusedHandle(_commandController.text);
+    if (!_hasExplicitTarget(text)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -718,8 +1964,14 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     String text, {
     String? imageUrl,
     Map<String, dynamic>? metadata,
+    String? textOverride,
+    bool skipReplyMarkup = false,
   }) async {
-    final words = text.split(' ');
+    final normalizedText = _applyFocusedHandle(text);
+    final words = normalizedText
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .toList();
     final handles = <String>[];
     String msg = '';
     bool collectingHandles = true;
@@ -758,10 +2010,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       content = imageUrl;
     } else {
       type = MessageType.text;
-      content = msg;
+      content = textOverride ?? msg;
     }
 
-    if (type == MessageType.text && _replyingToMessage != null) {
+    if (!skipReplyMarkup &&
+        type == MessageType.text &&
+        _replyingToMessage != null) {
       content = '> Reply: ${_replyPreview(_replyingToMessage!)}\n$content';
     }
 
@@ -904,11 +2158,18 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   }
 
   void _sendCommand(String input) async {
-    if (input.trim().isEmpty) return;
+    if (input.trim().isEmpty && _forwardingMessage == null) return;
+
+    final normalizedInput = _applyFocusedHandle(input);
+
+    if (_forwardingMessage != null) {
+      await _forwardPendingMessage(input);
+      return;
+    }
 
     // Check for @bot creation command
-    if (input.toLowerCase().startsWith('@bot ')) {
-      final botName = input.substring(5).trim();
+    if (normalizedInput.toLowerCase().startsWith('@bot ')) {
+      final botName = normalizedInput.substring(5).trim();
       if (botName.isNotEmpty) {
         _showBotConfigDialog(botName);
         _commandController.clear();
@@ -917,14 +2178,32 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     }
 
     // Check for AI mode: if text contains /, extract the AI prompt
-    final slashIndex = input.indexOf('/');
+    final slashIndex = normalizedInput.indexOf('/');
     if (slashIndex >= 0) {
-      final beforeSlash = input.substring(0, slashIndex).trim();
-      final aiPrompt = input.substring(slashIndex + 1).trim();
+      final beforeSlash = normalizedInput.substring(0, slashIndex).trim();
+      final aiPrompt = normalizedInput.substring(slashIndex + 1).trim();
+
+      if (aiPrompt.toLowerCase() == 'myprofile' && beforeSlash.isEmpty) {
+        _commandController.clear();
+        await _showMyProfileOverlay();
+        return;
+      }
+
+      if (aiPrompt.toLowerCase().startsWith('setting')) {
+        final targetHandle = beforeSlash
+            .split(' ')
+            .where((word) => word.startsWith('@') || word.startsWith('#'))
+            .cast<String?>()
+            .firstWhere((word) => word != null, orElse: () => _focusedHandle);
+        if (targetHandle != null && targetHandle.isNotEmpty) {
+          _commandController.clear();
+          await _showSettingsOverlayForHandle(targetHandle);
+        }
+        return;
+      }
 
       // Ensure there are @user or #group targets before the /
-      final hasTarget =
-          beforeSlash.startsWith('@') || beforeSlash.startsWith('#');
+      final hasTarget = _hasExplicitTarget(beforeSlash);
 
       if (hasTarget && aiPrompt.isNotEmpty) {
         setState(() => _isAiLoading = true);
@@ -933,10 +2212,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         try {
           String finalPrompt = aiPrompt;
           final aiPromptLower = aiPrompt.toLowerCase();
+          final isSummaryRequest =
+              aiPromptLower.contains('summarize') ||
+              aiPromptLower.contains('summary');
 
-          if (aiPromptLower.contains('summarize') &&
-              (aiPromptLower.contains('unread') ||
-                  aiPromptLower.contains('conversation'))) {
+          if (isSummaryRequest) {
             final words = beforeSlash.split(' ');
             final handles = words
                 .where((w) => w.startsWith('@') || w.startsWith('#'))
@@ -1029,9 +2309,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
             if (contextText.isNotEmpty) {
               finalPrompt =
-                  'Context:\n$contextText\n\nPrompt: $aiPrompt\nRespond professionally without any weird markers or asterisks before the text. Format cleanly.';
+                  'Conversation context:\n$contextText\n\nTask: $aiPrompt\nWrite a clean summary using the provided messages only. Do not invent details.';
             } else {
-              finalPrompt = '$aiPrompt (Note: No messages found to summarize)';
+              finalPrompt =
+                  '$aiPrompt\nNo saved messages were found for the selected conversation.';
             }
           } else {
             // Normal prompt - tell AI not to use markers
@@ -1063,7 +2344,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       }
     }
 
-    await _processCommand(input.trim());
+    await _processCommand(normalizedInput);
     _commandController.clear();
   }
 
@@ -1215,6 +2496,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
               key: ValueKey(item['id']),
               item: item,
               isExpanded: isExpanded,
+              isFocusLocked: _focusedHandle == item['handle'],
               currentUserId: currentUserId,
               chatService: _chatService,
               groupService: _groupService,
@@ -1240,20 +2522,15 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 _commandFocusNode.requestFocus();
               },
               onForward: (msg) {
-                _commandController.text = ' Forwarded: ${msg.text} ';
-                _commandController.selection = TextSelection.fromPosition(
-                  TextPosition(offset: 0),
-                );
+                setState(() {
+                  _forwardingMessage = msg;
+                });
                 _commandFocusNode.requestFocus();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Type @user or #group to forward this message',
-                    ),
-                  ),
-                );
               },
               onLongPress: () => _handleItemTap(item['handle'] ?? ''),
+              onHandleTap: (handle) {
+                _insertHandleIntoComposer(handle);
+              },
             );
           },
         );
@@ -1309,10 +2586,76 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   }
 
   Widget _buildCommandBar() {
+    final isFocusModeActive = _focusedHandle != null;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (isFocusModeActive)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppTheme.focusBlueGlow,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppTheme.focusBlue.withValues(alpha: 0.7),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.focusBlue.withValues(alpha: 0.14),
+                  blurRadius: 18,
+                  spreadRadius: 0,
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: AppTheme.focusBlue.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Icon(
+                    Icons.my_location_rounded,
+                    color: AppTheme.focusBlue,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Focused on $_focusedHandle',
+                        style: GoogleFonts.inter(
+                          color: AppTheme.focusBlue,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: _clearFocusMode,
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: AppTheme.focusBlue,
+                    size: 18,
+                  ),
+                  constraints: const BoxConstraints(),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          ),
+
         if (_replyingToMessage != null)
           Container(
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
@@ -1376,6 +2719,69 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             ),
           ),
 
+        if (_forwardingMessage != null)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.surface2,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 3,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: AppTheme.focusBlue,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Forwarding message',
+                        style: GoogleFonts.inter(
+                          color: AppTheme.focusBlue,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _replyPreview(_forwardingMessage!),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: AppTheme.textSec,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _forwardingMessage = null;
+                    });
+                  },
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: AppTheme.muted,
+                    size: 18,
+                  ),
+                  constraints: const BoxConstraints(),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          ),
+
         if (_isMentioning && _mentionSuggestions.isNotEmpty)
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1393,6 +2799,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 final isUser = suggestion is UserModel;
                 final isGroup = suggestion is GroupModel;
                 final isAction = suggestion is String;
+                final isSlashCommand = isAction && suggestion.startsWith('/');
                 final name = isUser
                     ? suggestion.displayName
                     : isGroup
@@ -1411,11 +2818,15 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         ? Icons.person_outline_rounded
                         : isGroup
                         ? Icons.tag_rounded
+                        : isSlashCommand
+                        ? Icons.bolt_rounded
                         : Icons.location_on_outlined,
                     color: isUser
                         ? AppTheme.purple
                         : isGroup
                         ? AppTheme.green
+                        : isSlashCommand
+                        ? AppTheme.focusBlue
                         : AppTheme.accent,
                     size: 20, // larger
                   ),
@@ -1428,6 +2839,15 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   ),
                   onTap: () {
                     if (isAction) {
+                      if (isSlashCommand) {
+                        setState(() {
+                          _isMentioning = false;
+                          _mentionSuggestions = [];
+                        });
+                        _insertSlashCommand(suggestion);
+                        return;
+                      }
+
                       setState(() {
                         _isMentioning = false;
                         _mentionSuggestions = [];
@@ -1493,9 +2913,22 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                       color: AppTheme.surface,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: _isAiMode ? AppTheme.purple : Colors.white,
-                        width: _isAiMode ? 2.0 : 1.5,
+                        color: isFocusModeActive
+                            ? AppTheme.focusBlue
+                            : (_isAiMode ? AppTheme.purple : Colors.white),
+                        width: (isFocusModeActive || _isAiMode) ? 2.0 : 1.5,
                       ),
+                      boxShadow: isFocusModeActive
+                          ? [
+                              BoxShadow(
+                                color: AppTheme.focusBlue.withValues(
+                                  alpha: 0.16,
+                                ),
+                                blurRadius: 18,
+                                spreadRadius: 0,
+                              ),
+                            ]
+                          : null,
                     ),
                     child: Stack(
                       children: [
@@ -1514,11 +2947,15 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 decoration: InputDecoration(
                                   hintText: _isAiMode
                                       ? '✨ Type your AI prompt...'
-                                      : '@user or #group message... ( / for AI)',
+                                      : (isFocusModeActive
+                                            ? 'Focus mode: message $_focusedHandle directly'
+                                            : '@user or #group message... ( / for AI)'),
                                   hintStyle: GoogleFonts.inter(
                                     color: _isAiMode
                                         ? AppTheme.purpleLt
-                                        : AppTheme.muted,
+                                        : (isFocusModeActive
+                                              ? AppTheme.focusBlue
+                                              : AppTheme.muted),
                                     fontSize: 15,
                                   ),
                                   border: InputBorder.none,
@@ -1582,6 +3019,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 valueListenable: _commandController,
                                 builder: (context, value, child) {
                                   final hasText = value.text.trim().isNotEmpty;
+                                  final canSend =
+                                      hasText || _forwardingMessage != null;
                                   return Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -1597,7 +3036,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                             ),
                                           ),
                                         )
-                                      else if (hasText)
+                                      else if (canSend)
                                         Padding(
                                           padding: const EdgeInsets.only(
                                             right: 4,
@@ -1606,8 +3045,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                             icon: Icon(
                                               _isAiMode
                                                   ? Icons.auto_awesome_rounded
-                                                  : Icons.arrow_forward_rounded,
-                                              color: AppTheme.purple,
+                                                  : (_forwardingMessage != null
+                                                        ? Icons.forward_rounded
+                                                        : Icons
+                                                              .arrow_forward_rounded),
+                                              color: isFocusModeActive
+                                                  ? AppTheme.focusBlue
+                                                  : AppTheme.purple,
                                               size: 26,
                                             ),
                                             onPressed: () => _sendCommand(
@@ -1819,20 +3263,49 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   setState(() => _isAiLoading = true);
 
                   try {
+                    late final BotModel bot;
                     if (existingBot == null) {
-                      await _botService.createBot(
+                      bot = await _botService.createBot(
                         name: botName,
                         ownerId: currentUserId,
                         instructions: instructions,
                       );
                     } else {
+                      bot = existingBot;
                       await _botService.updateBot(existingBot.botId, {
                         'instructions': instructions,
                       });
                     }
+                    await _chatService.getOrCreateChat(
+                      currentUserId,
+                      bot.botId,
+                    );
+                    if (mounted) {
+                      setState(() {
+                        if (!_allUsers.any((user) => user.uid == bot.botId)) {
+                          _allUsers = [
+                            ..._allUsers,
+                            UserModel(
+                              uid: bot.botId,
+                              displayName: botName,
+                              email: 'bot-${bot.botId}@pointchat.ai',
+                              isBot: true,
+                              status: 'Custom AI Bot',
+                            ),
+                          ];
+                        }
+                        _focusedHandle = _formatHandle(botName);
+                      });
+                    }
+                    _commandController.clear();
+                    _commandFocusNode.requestFocus();
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Bot @$botName configured!')),
+                        SnackBar(
+                          content: Text(
+                            'Bot @$botName is ready in your AI chat.',
+                          ),
+                        ),
                       );
                     }
                   } catch (e) {
@@ -1993,11 +3466,13 @@ class DateSeparator extends StatelessWidget {
 class StreamItemWidget extends StatefulWidget {
   final Map<String, dynamic> item;
   final bool isExpanded;
+  final bool isFocusLocked;
   final String currentUserId;
   final ChatService chatService;
   final GroupService groupService;
   final UserService userService;
   final VoidCallback onTap;
+  final ValueChanged<String> onHandleTap;
   final void Function(Map<String, dynamic>) onReply;
   final void Function(MessageModel) onForward;
   final VoidCallback onLongPress;
@@ -2006,11 +3481,13 @@ class StreamItemWidget extends StatefulWidget {
     super.key,
     required this.item,
     required this.isExpanded,
+    required this.isFocusLocked,
     required this.currentUserId,
     required this.chatService,
     required this.groupService,
     required this.userService,
     required this.onTap,
+    required this.onHandleTap,
     required this.onReply,
     required this.onForward,
     required this.onLongPress,
@@ -2065,8 +3542,24 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
       child: Stack(
         alignment: Alignment.center,
         children: [
+          if (widget.isFocusLocked)
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppTheme.focusBlue, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.focusBlue.withValues(alpha: 0.18),
+                    blurRadius: 12,
+                    spreadRadius: 0,
+                  ),
+                ],
+              ),
+            ),
           // Online ring for DMs
-          if (!isGroup && percentage > 0)
+          if (!widget.isFocusLocked && !isGroup && percentage > 0)
             Container(
               width: 40,
               height: 40,
@@ -2099,12 +3592,16 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
       width: 34,
       height: 34,
       decoration: BoxDecoration(
-        color: isGroup ? const Color(0xFF1A2A1A) : AppTheme.purpleDim,
+        color: widget.isFocusLocked
+            ? AppTheme.focusBlue.withValues(alpha: 0.18)
+            : (isGroup ? const Color(0xFF1A2A1A) : AppTheme.purpleDim),
         shape: BoxShape.circle,
         border: Border.all(
-          color: isGroup
-              ? AppTheme.green.withValues(alpha: 0.3)
-              : AppTheme.purple.withValues(alpha: 0.4),
+          color: widget.isFocusLocked
+              ? AppTheme.focusBlue.withValues(alpha: 0.8)
+              : (isGroup
+                    ? AppTheme.green.withValues(alpha: 0.3)
+                    : AppTheme.purple.withValues(alpha: 0.4)),
           width: 1.5,
         ),
       ),
@@ -2112,7 +3609,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         child: Text(
           initials,
           style: GoogleFonts.inter(
-            color: isGroup ? AppTheme.green : AppTheme.purpleLt,
+            color: widget.isFocusLocked
+                ? AppTheme.focusBlue
+                : (isGroup ? AppTheme.green : AppTheme.purpleLt),
             fontWeight: FontWeight.w700,
             fontSize: 15,
           ),
@@ -2129,6 +3628,12 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     final isGroup = handleText.startsWith('#');
     // Purple for DM (@), emerald-ish green for group (#)
     final handlePrefixColor = isGroup ? AppTheme.green : AppTheme.purple;
+    final tileBorderColor = widget.isFocusLocked
+        ? AppTheme.focusBlue.withValues(alpha: 0.8)
+        : (isUnread ? AppTheme.purple.withValues(alpha: 0.5) : AppTheme.border);
+    final tileBackgroundColor = widget.isFocusLocked
+        ? AppTheme.focusBlueGlow
+        : (isUnread ? AppTheme.purpleGlow : AppTheme.surface);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
@@ -2153,18 +3658,18 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             decoration: BoxDecoration(
-              color: isUnread ? AppTheme.purpleGlow : AppTheme.surface,
+              color: tileBackgroundColor,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isUnread
-                    ? AppTheme.purple.withValues(alpha: 0.5)
-                    : AppTheme.border,
-                width: isUnread ? 1.5 : 1,
+                color: tileBorderColor,
+                width: widget.isFocusLocked || isUnread ? 1.6 : 1,
               ),
-              boxShadow: isUnread
+              boxShadow: (widget.isFocusLocked || isUnread)
                   ? [
                       BoxShadow(
-                        color: AppTheme.purple.withValues(alpha: 0.08),
+                        color: widget.isFocusLocked
+                            ? AppTheme.focusBlue.withValues(alpha: 0.12)
+                            : AppTheme.purple.withValues(alpha: 0.08),
                         blurRadius: 10,
                         spreadRadius: 0,
                       ),
@@ -2187,31 +3692,34 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               // Handle: coloured prefix symbol + white name
-                              RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: handleText.isNotEmpty
-                                          ? handleText.substring(0, 1)
-                                          : '',
-                                      style: GoogleFonts.inter(
-                                        color: handlePrefixColor,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
+                              GestureDetector(
+                                onTap: () => widget.onHandleTap(handleText),
+                                child: RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: handleText.isNotEmpty
+                                            ? handleText.substring(0, 1)
+                                            : '',
+                                        style: GoogleFonts.inter(
+                                          color: handlePrefixColor,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
-                                    ),
-                                    TextSpan(
-                                      text: handleText.length > 1
-                                          ? handleText.substring(1)
-                                          : '',
-                                      style: GoogleFonts.inter(
-                                        color: const Color(0xFFF0F0F0),
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: -0.2,
+                                      TextSpan(
+                                        text: handleText.length > 1
+                                            ? handleText.substring(1)
+                                            : '',
+                                        style: GoogleFonts.inter(
+                                          color: const Color(0xFFF0F0F0),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          letterSpacing: -0.2,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                               Text(
@@ -2877,16 +4385,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                     ),
                                     onTap: () {
                                       Navigator.pop(context);
-                                      // Just copy text to clipboard for now or fill the input field
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Forward functionality coming soon!',
-                                          ),
-                                        ),
-                                      );
+                                      widget.onForward(msg);
                                     },
                                   ),
                                   if (isMe)
@@ -2955,30 +4454,35 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                             children: [
                               // Show sender name in a box for group chats only
                               if (isGroup && !isMe)
-                                Container(
-                                  margin: const EdgeInsets.only(bottom: 4),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
+                                GestureDetector(
+                                  onTap: () => widget.onHandleTap(
+                                    '@${msg.senderName.replaceAll(' ', '').toLowerCase()}',
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.purple.withValues(
-                                      alpha: 0.12,
+                                  child: Container(
+                                    margin: const EdgeInsets.only(bottom: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
                                     ),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
+                                    decoration: BoxDecoration(
                                       color: AppTheme.purple.withValues(
-                                        alpha: 0.25,
+                                        alpha: 0.12,
                                       ),
-                                      width: 0.5,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: AppTheme.purple.withValues(
+                                          alpha: 0.25,
+                                        ),
+                                        width: 0.5,
+                                      ),
                                     ),
-                                  ),
-                                  child: Text(
-                                    msg.senderName,
-                                    style: GoogleFonts.inter(
-                                      color: AppTheme.purpleLt,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
+                                    child: Text(
+                                      msg.senderName,
+                                      style: GoogleFonts.inter(
+                                        color: AppTheme.purpleLt,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
                                 ),

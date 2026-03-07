@@ -6,6 +6,7 @@ import 'package:appwrite/enums.dart';
 import 'package:appwrite/models.dart' as models;
 import '../appwrite_client.dart';
 import '../models/user_model.dart';
+import 'notification_service.dart';
 
 class AuthService {
   final Account _account = appwriteAccount;
@@ -216,5 +217,6 @@ class AuthService {
     cachedUserId = '';
     cachedUserName = '';
     cachedUserPhotoUrl = '';
+    await NotificationService.instance.unbind();
   }
 }

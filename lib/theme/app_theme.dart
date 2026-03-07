@@ -22,6 +22,8 @@ class AppTheme {
   static const Color green = Color(0xFF22C55E); // online / success
   static const Color red = Color(0xFFEF4444); // error
   static const Color yellow = Color(0xFFEAB308); // warning / star
+  static const Color focusBlue = Color(0xFF38BDF8);
+  static const Color focusBlueGlow = Color(0x2238BDF8);
 
   // Legacy aliases used by widgets
   static const Color black = bg;
