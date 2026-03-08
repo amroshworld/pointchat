@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
+import 'services/subscription_service.dart';
 import 'appwrite_client.dart';
 import 'app.dart';
 
@@ -15,6 +16,8 @@ void main() async {
   } catch (e) {
     debugPrint('Appwrite Ping Error: $e');
   }
+
+  await SubscriptionService.instance.initialize();
 
   // Load cached user info if session exists
   await AuthService().loadCurrentUser();

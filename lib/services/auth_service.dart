@@ -4,16 +4,21 @@ import 'package:flutter/foundation.dart';
 import 'package:appwrite/appwrite.dart';
 import 'package:appwrite/enums.dart';
 import 'package:appwrite/models.dart' as models;
+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import '../appwrite_client.dart';
 import '../models/user_model.dart';
 import 'notification_service.dart';
+import 'subscription_service.dart';
 
 class AuthService {
   final Account _account = appwriteAccount;
   final TablesDB _databases = appwriteTablesDB;
 
+  String get _oauthCallbackScheme =>
+      'appwrite-callback-${AppwriteConstants.projectId}';
+
   String get _oauthCallbackUrl =>
-      'appwrite-callback-${AppwriteConstants.projectId}://auth';
+      '$_oauthCallbackScheme://auth';
 
   // Get current user (async)
   Future<models.User?> getCurrentUser() async {
@@ -41,6 +46,7 @@ class AuthService {
     final user = await _account.get();
     await _saveUserToDatabase(user);
     _cacheCurrentUser(user);
+    await SubscriptionService.instance.logIn(user.$id);
 
     return session;
   }
@@ -75,6 +81,7 @@ class AuthService {
 
     await _saveUserToDatabase(user, isNew: true);
     _cacheCurrentUser(user);
+    await SubscriptionService.instance.logIn(user.$id);
 
     return user;
   }
@@ -85,6 +92,13 @@ class AuthService {
       await _account.deleteSession(sessionId: 'current');
     } catch (_) {}
 
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      await _signInWithGoogleMobile();
+      return;
+    }
+
     await _account.createOAuth2Session(
       provider: OAuthProvider.google,
       success: kIsWeb ? null : _oauthCallbackUrl,
@@ -94,6 +108,46 @@ class AuthService {
     final user = await _waitForOAuthSessionUser();
     await _saveUserToDatabase(user);
     _cacheCurrentUser(user);
+    await SubscriptionService.instance.logIn(user.$id);
+  }
+
+  Future<void> _signInWithGoogleMobile() async {
+    final callbackUrl = Uri.parse(_oauthCallbackUrl);
+    final failureUrl = callbackUrl.replace(queryParameters: {'error': 'oauth'});
+    final authUri = Uri.parse(
+      '${AppwriteConstants.endpoint}/account/tokens/oauth2/google',
+    ).replace(
+      queryParameters: {
+        'project': AppwriteConstants.projectId,
+        'success': callbackUrl.toString(),
+        'failure': failureUrl.toString(),
+      },
+    );
+
+    final result = await FlutterWebAuth2.authenticate(
+      url: authUri.toString(),
+      callbackUrlScheme: _oauthCallbackScheme,
+    );
+
+    final callback = Uri.parse(result);
+    if ((callback.queryParameters['error'] ?? '').isNotEmpty) {
+      throw AppwriteException('Google sign-in was cancelled or failed.');
+    }
+
+    final userId = callback.queryParameters['userId'];
+    final secret = callback.queryParameters['secret'];
+    if (userId == null || userId.isEmpty || secret == null || secret.isEmpty) {
+      throw AppwriteException(
+        'Google sign-in did not return a valid Appwrite session token.',
+      );
+    }
+
+    await _account.createSession(userId: userId, secret: secret);
+
+    final user = await _account.get();
+    await _saveUserToDatabase(user);
+    _cacheCurrentUser(user);
+    await SubscriptionService.instance.logIn(user.$id);
   }
 
   Future<models.User> _waitForOAuthSessionUser() async {
@@ -123,6 +177,7 @@ class AuthService {
     try {
       final user = await _account.get();
       _cacheCurrentUser(user);
+      await SubscriptionService.instance.logIn(user.$id);
 
       // Also load photoUrl from database
       try {
@@ -217,6 +272,8 @@ class AuthService {
     cachedUserId = '';
     cachedUserName = '';
     cachedUserPhotoUrl = '';
+    cachedUserEmail = '';
+    await SubscriptionService.instance.logOut();
     await NotificationService.instance.unbind();
   }
 }

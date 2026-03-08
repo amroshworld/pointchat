@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import '../../services/auth_service.dart';
 import '../../services/cache_service.dart';
 import '../../services/ai_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/subscription_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:record/record.dart';
@@ -33,6 +35,7 @@ import '../../models/bot_model.dart';
 import '../../models/chat_model.dart';
 import '../../models/user_model.dart';
 import '../../models/message_model.dart';
+import '../subscription/ai_subscription_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/voice_message_player.dart';
 
@@ -1208,9 +1211,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         bytes: imageBytes,
         filename: '$filePrefix-${const Uuid().v4()}.jpg',
       ),
+      permissions: signedInReadPermissions(),
     );
 
-    return '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${file.$id}/view?project=${AppwriteConstants.projectId}';
+    return buildStorageFileUrl(file.$id);
   }
 
   Future<void> _updateMyProfilePhoto() async {
@@ -1221,6 +1225,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
     await _userService.updateUserPhotoUrl(currentUserId, photoUrl);
     cachedUserPhotoUrl = photoUrl;
+    if (mounted) setState(() {});
   }
 
   Future<void> _updateGroupPhoto(String groupId) async {
@@ -1230,6 +1235,20 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     }
 
     await _groupService.updateGroup(groupId, {'photoUrl': photoUrl});
+    if (mounted) setState(() {});
+  }
+
+  Future<bool> _ensureAiAccess() async {
+    final service = SubscriptionService.instance;
+    final hasAccess = await service.ensureAiAccess();
+    if (hasAccess || !mounted) {
+      return hasAccess;
+    }
+
+    final unlocked = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(builder: (_) => const AiSubscriptionScreen()),
+    );
+    return unlocked == true || service.hasAiAccess;
   }
 
   Future<void> _editMyStatus(String currentStatus) async {
@@ -2055,6 +2074,22 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
           // ── Bot Auto-Reply Logic ──
           if (targetUser.isBot && type == MessageType.text) {
+            final hasAiAccess = await _ensureAiAccess();
+            if (!hasAiAccess) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Subscribe to PointChat AI to chat with bots.',
+                      style: GoogleFonts.inter(),
+                    ),
+                    backgroundColor: const Color(0xFF161618),
+                  ),
+                );
+              }
+              continue;
+            }
+
             final botConfig = await _botService.getBotByName(
               targetUser.displayName,
             );
@@ -2206,6 +2241,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       final hasTarget = _hasExplicitTarget(beforeSlash);
 
       if (hasTarget && aiPrompt.isNotEmpty) {
+        final hasAiAccess = await _ensureAiAccess();
+        if (!hasAiAccess) {
+          return;
+        }
+
         setState(() => _isAiLoading = true);
         _commandController.clear();
 
@@ -3570,14 +3610,12 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
             ),
           // Arc for groups
           if (isGroup && percentage > 0)
-            SizedBox(
-              width: 40,
-              height: 40,
-              child: CircularProgressIndicator(
-                value: percentage,
-                strokeWidth: 2,
-                backgroundColor: AppTheme.border,
-                valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.green),
+            CustomPaint(
+              size: const Size.square(40),
+              painter: _PresenceRingPainter(
+                percentage: percentage,
+                color: AppTheme.green,
+                trackColor: AppTheme.border,
               ),
             ),
           innerAvatar,
@@ -5090,6 +5128,56 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         );
       },
     );
+  }
+}
+
+class _PresenceRingPainter extends CustomPainter {
+  final double percentage;
+  final Color color;
+  final Color trackColor;
+
+  const _PresenceRingPainter({
+    required this.percentage,
+    required this.color,
+    required this.trackColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const strokeWidth = 2.5;
+    final normalized = percentage.clamp(0.0, 1.0);
+    final arcRect = (Offset.zero & size).deflate(strokeWidth / 2);
+    final startAngle = -math.pi / 2;
+
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+    canvas.drawArc(arcRect, 0, math.pi * 2, false, trackPaint);
+
+    if (normalized <= 0) {
+      return;
+    }
+
+    final progressPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      arcRect,
+      startAngle,
+      math.pi * 2 * normalized,
+      false,
+      progressPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PresenceRingPainter oldDelegate) {
+    return oldDelegate.percentage != percentage ||
+        oldDelegate.color != color ||
+        oldDelegate.trackColor != trackColor;
   }
 }
 

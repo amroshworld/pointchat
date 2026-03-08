@@ -6,9 +6,11 @@ import 'package:appwrite/appwrite.dart';
 import 'package:uuid/uuid.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/user_service.dart';
+import '../../services/subscription_service.dart';
 import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
 import '../../appwrite_client.dart';
+import '../subscription/ai_subscription_screen.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -49,20 +51,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     try {
       final fileName = const Uuid().v4();
-      final imageBytes = await pickedFile.readAsBytes();
+      final imageBytes = await XFile(croppedFile.path).readAsBytes();
 
       final file = await appwriteStorage.createFile(
-        bucketId:
-            AppwriteConstants.chatFilesBucket, // or a specific profile bucket
+        bucketId: AppwriteConstants.chatFilesBucket,
         fileId: ID.unique(),
         file: InputFile.fromBytes(bytes: imageBytes, filename: '$fileName.jpg'),
+        permissions: signedInReadPermissions(),
       );
 
-      final photoUrl =
-          '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${file.$id}/view?project=${AppwriteConstants.projectId}';
+      final photoUrl = buildStorageFileUrl(file.$id);
 
       await _userService.updateUserPhotoUrl(uid, photoUrl);
       cachedUserPhotoUrl = photoUrl;
+      if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -215,6 +217,41 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () =>
                             _editStatus(cachedUserId, userData?.status ?? ''),
+                      ),
+                      const Divider(height: 1, indent: 72),
+                      ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.auto_awesome,
+                            color: colorScheme.onPrimaryContainer,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text('AI subscription'),
+                        subtitle: ValueListenableBuilder<SubscriptionState>(
+                          valueListenable: SubscriptionService.instance.state,
+                          builder: (context, value, _) => Text(
+                            value.hasAiAccess
+                                ? 'Active'
+                                : 'Required for all AI features',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<bool>(
+                              builder: (_) => const AiSubscriptionScreen(),
+                            ),
+                          );
+                        },
                       ),
                       const Divider(height: 1, indent: 72),
                       ListTile(

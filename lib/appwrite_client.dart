@@ -30,6 +30,13 @@ final Storage appwriteStorage = Storage(appwriteClient);
 final Realtime appwriteRealtime = Realtime(appwriteClient);
 final Functions appwriteFunctions = Functions(appwriteClient);
 
+List<String> signedInReadPermissions() => [Permission.read(Role.users())];
+
+String buildStorageFileUrl(String fileId, {String? bucketId}) {
+  final resolvedBucketId = bucketId ?? AppwriteConstants.chatFilesBucket;
+  return '${AppwriteConstants.endpoint}/storage/buckets/$resolvedBucketId/files/$fileId/view?project=${AppwriteConstants.projectId}';
+}
+
 // Cached current user info (populated after login)
 String cachedUserId = '';
 String cachedUserName = '';

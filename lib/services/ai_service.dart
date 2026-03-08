@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../appwrite_client.dart';
+import 'subscription_service.dart';
 
 class AiService {
   static final AiService _instance = AiService._internal();
@@ -10,6 +11,11 @@ class AiService {
   /// Generate a single response from a prompt
   Future<String> generateResponse(String prompt, {String? systemPrompt}) async {
     try {
+      final hasAccess = await SubscriptionService.instance.ensureAiAccess();
+      if (!hasAccess) {
+        return 'AI requires an active PointChat AI subscription.';
+      }
+
       final payload = <String, dynamic>{'prompt': prompt};
       if (systemPrompt != null && systemPrompt.trim().isNotEmpty) {
         payload['systemPrompt'] = systemPrompt.trim();
