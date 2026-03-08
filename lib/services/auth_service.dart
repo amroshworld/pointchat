@@ -17,8 +17,7 @@ class AuthService {
   String get _oauthCallbackScheme =>
       'appwrite-callback-${AppwriteConstants.projectId}';
 
-  String get _oauthCallbackUrl =>
-      '$_oauthCallbackScheme://auth';
+  String get _oauthCallbackUrl => '$_oauthCallbackScheme://auth';
 
   // Get current user (async)
   Future<models.User?> getCurrentUser() async {
@@ -114,15 +113,16 @@ class AuthService {
   Future<void> _signInWithGoogleMobile() async {
     final callbackUrl = Uri.parse(_oauthCallbackUrl);
     final failureUrl = callbackUrl.replace(queryParameters: {'error': 'oauth'});
-    final authUri = Uri.parse(
-      '${AppwriteConstants.endpoint}/account/tokens/oauth2/google',
-    ).replace(
-      queryParameters: {
-        'project': AppwriteConstants.projectId,
-        'success': callbackUrl.toString(),
-        'failure': failureUrl.toString(),
-      },
-    );
+    final authUri =
+        Uri.parse(
+          '${AppwriteConstants.endpoint}/account/tokens/oauth2/google',
+        ).replace(
+          queryParameters: {
+            'project': AppwriteConstants.projectId,
+            'success': callbackUrl.toString(),
+            'failure': failureUrl.toString(),
+          },
+        );
 
     final result = await FlutterWebAuth2.authenticate(
       url: authUri.toString(),

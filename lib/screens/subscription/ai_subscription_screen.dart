@@ -95,7 +95,8 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                         label: 'Bot chats use the same AI entitlement',
                       ),
                       const _FeatureLine(
-                        label: 'Android purchases come from Google Play through RevenueCat',
+                        label:
+                            'Android purchases come from Google Play through RevenueCat',
                       ),
                     ],
                   ),
@@ -103,7 +104,8 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                 const SizedBox(height: 20),
                 if (!state.isConfigured)
                   _MessageCard(
-                    message: state.message ??
+                    message:
+                        state.message ??
                         'RevenueCat is not configured yet. Add your API keys and offering in the app build.',
                   )
                 else if (state.hasAiAccess)
@@ -117,7 +119,8 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                   )
                 else if (packages.isEmpty)
                   _MessageCard(
-                    message: state.message ??
+                    message:
+                        state.message ??
                         'No subscription packages are available. Create an offering in RevenueCat and attach your Google Play products.',
                   )
                 else
