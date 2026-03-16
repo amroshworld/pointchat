@@ -235,6 +235,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     final lastToken = textBeforeCursor.split(' ').last.toLowerCase();
 
     // Detect /ai mode — check if text contains /
+    /* AI FEATURE TEMPORARILY HIDDEN
     final slashIndex = text.indexOf('/');
     if (slashIndex >= 0) {
       // Check if there's at least one target before the /
@@ -249,6 +250,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         _isAiMode = false;
       });
     }
+    */
+    setState(() {
+      _isAiMode = false;
+    });
 
     if (lastAt > lastSpace && lastAt >= 0) {
       final query = textBeforeCursor.substring(lastAt + 1).toLowerCase();
@@ -278,9 +283,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       final slashOptions = <String>[
         '/setting',
         '/myprofile',
-        '/summarize',
-        '/summarize unread',
-        '/summarize conversation',
+        // AI commands hidden for now
+        // '/summarize',
+        // '/summarize unread',
+        // '/summarize conversation',
       ];
       setState(() {
         _isMentioning = true;
@@ -2202,7 +2208,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       return;
     }
 
-    // Check for @bot creation command
+    // AI/Bot creation hidden for now
+    /*
     if (normalizedInput.toLowerCase().startsWith('@bot ')) {
       final botName = normalizedInput.substring(5).trim();
       if (botName.isNotEmpty) {
@@ -2211,6 +2218,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         return;
       }
     }
+    */
 
     // Check for AI mode: if text contains /, extract the AI prompt
     final slashIndex = normalizedInput.indexOf('/');
