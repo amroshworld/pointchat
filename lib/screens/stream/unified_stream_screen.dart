@@ -406,10 +406,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       text: newText,
       selection: TextSelection.collapsed(offset: newOffset),
     );
-      
-      // Auto-submit command immediately so user doesn't have to press ok
-      _sendCommand(newText);
-      
+
+    // Auto-submit command immediately so user doesn't have to press ok
+    _sendCommand(newText);
+  }
+
+  Map<String, dynamic>? _findItemByHandle(String handle) {
+    if (handle.startsWith('@')) {
       final targetName = handle.substring(1);
       final user = _allUsers.cast<UserModel?>().firstWhere(
         (u) => u!.displayName.replaceAll(' ', '').toLowerCase() == targetName,
@@ -421,7 +424,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           'handle': handle,
           'otherUserId': user.uid,
           'photoUrl': user.photoUrl,
-          'isOnline': user.isOnline,
         };
       }
     }
@@ -495,15 +497,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   ),
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: Colors.black, // High contrast black background
-                    borderRadius: BorderRadius.circular(16), // frameless (no border)
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        blurRadius: 20,
-                        spreadRadius: -5,
-                      ),
-                    ],
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: _buildSettingsOverlayContent(item),
                 ),
@@ -714,7 +709,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 final isAdmin = admins.contains(memberId);
                 final canModerate =
                     isCurrentUserAdmin && memberId != currentUserId;
-                final isFocused = _focusedHandle == memberHandle;
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
@@ -761,23 +755,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          _miniMemberAction(
-                            label: 'Mention',
-                            onTap: () {
-                              Navigator.of(context).pop();
-                              _insertHandleIntoComposer(memberHandle);
-                            },
-                          ),
-                          _miniMemberAction(
-                            label: isFocused ? 'Unfocus' : 'Focus',
-                            onTap: () {
-                              setState(() {
-                                _focusedHandle = isFocused
-                                    ? null
-                                    : memberHandle;
-                              });
-                            },
-                          ),
                           if (canModerate)
                             _miniMemberAction(
                               label: isAdmin ? 'Remove Admin' : 'Make Admin',
