@@ -5,13 +5,13 @@ class AppTheme {
   // ── High-Contrast Black & White Palette ──────────────────────────────
 
   // Dark Theme Colors
-  static const Color darkBg = Color(0xFF26333B); // True dark bg or slightly off black like 0F0F0F
-  static const Color darkSurface = Color(0xFF384B49);
-  static const Color darkSurface2 = Color(0xFF5E7D78);
-  static const Color darkBorder = Color(0xFF5E7D78);
-  static const Color darkMuted = Color(0xFF995B36);
+  static const Color darkBg = Color(0xFF000000); // True dark bg or slightly off black like 0F0F0F
+  static const Color darkSurface = Color(0xFF121212);
+  static const Color darkSurface2 = Color(0xFF222222);
+  static const Color darkBorder = Color(0xFF333333);
+  static const Color darkMuted = Color(0xFF888888);
   static const Color darkTextPri = Color(0xFFFFFFFF);
-  static const Color darkTextSec = Color(0xFFC08B57);
+  static const Color darkTextSec = Color(0xFFAAAAAA);
 
   // Light Theme Colors
   static const Color lightBg = Color(0xFFFFFFFF);
@@ -23,11 +23,11 @@ class AppTheme {
   static const Color lightTextSec = Color(0xFF424242);
 
   // Accent & Semantic
-  static const Color primaryAccent = Color(0xFFC08B57); // White in dark, Black in light (handled via theme)
-  static const Color success = Color(0xFF5E7D78); // Deep green
-  static const Color error = Color(0xFF995B36); // Deep red
-  static const Color warning = Color(0xFFC08B57); // Orange/Yellow
-  static const Color focusBlue = Color(0xFFC08B57); // Standard link/focus blue
+  static const Color primaryAccent = Color(0xFFFFFFFF); // White in dark, Black in light (handled via theme)
+  static const Color success = Color(0xFF4CAF50); // Deep green
+  static const Color error = Color(0xFFF44336); // Deep red
+  static const Color warning = Color(0xFFFF9800); // Orange/Yellow
+  static const Color focusBlue = Color(0xFF2196F3); // Standard link/focus blue
 
   // Legacy aliases (used by widgets - keeping for backwards compatibility but mapping to solid colors)
   // We'll define these based on dark theme as fallback for places that don't use Theme.of(context)
@@ -38,9 +38,9 @@ class AppTheme {
   static const Color muted = darkMuted;
   static const Color textPri = darkTextPri;
   static const Color textSec = darkTextSec;
-  static const Color purple = Color(0xFFC08B57); // Fallback mapping, should avoid usage
-  static const Color purpleLt = Color(0xFFC08B57); // Fallback mapping
-  static const Color purpleDim = Color(0xFF5E7D78); // Fallback mapping
+  static const Color purple = Color(0xFF2196F3); // Fallback mapping, should avoid usage
+  static const Color purpleLt = Color(0xFF64B5F6); // Fallback mapping
+  static const Color purpleDim = Color(0xFF0D47A1); // Fallback mapping
   static const Color purpleGlow = Colors.transparent; // Removed glow
 
   static const Color black = Color(0xFF000000);
@@ -50,7 +50,7 @@ class AppTheme {
   static const Color offlineDot = darkMuted;
   static const Color sentMessageColor = darkSurface2;
   static const Color receivedMessageColor = darkSurface2;
-  static const Color green = success;
+  static const Color green = Color(0xFF9C27B0);
   static const Color red = error;
   static const Color yellow = warning;
   static const Color focusBlueGlow = Colors.transparent;
