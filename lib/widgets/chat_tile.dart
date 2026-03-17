@@ -31,7 +31,7 @@ class ChatTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.zero,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -112,7 +112,7 @@ class ChatTile extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color: colorScheme.primary,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.zero,
                           ),
                           child: Text(
                             unreadCount > 99 ? '99+' : '$unreadCount',
@@ -166,7 +166,7 @@ class GroupChatTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.zero,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -235,7 +235,7 @@ class GroupChatTile extends StatelessWidget {
                           ),
                           decoration: BoxDecoration(
                             color: colorScheme.primary,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.zero,
                           ),
                           child: Text(
                             unreadCount > 99 ? '99+' : '$unreadCount',

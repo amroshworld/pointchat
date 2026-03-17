@@ -1,3 +1,4 @@
+import '../../widgets/pixel_symbol.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -500,7 +501,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     color: Colors.black,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.zero,
                   ),
                   child: _buildSettingsOverlayContent(item),
                 ),
@@ -576,12 +577,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.zero,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.white12, // High contrast button bg without border
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.zero,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -717,7 +718,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: AppTheme.surface2,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.zero,
                     border: Border.all(color: AppTheme.border),
                   ),
                   child: Column(
@@ -1039,7 +1040,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       width: 72,
       height: 72,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.zero,
         border: Border.all(color: accent.withValues(alpha: 0.4)),
         color: accent.withValues(alpha: 0.12),
         image: imageUrl.isNotEmpty
@@ -1095,12 +1096,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     final color = isDanger ? AppTheme.red : AppTheme.focusBlue;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: BorderRadius.zero,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.zero,
           border: Border.all(color: color.withValues(alpha: 0.26)),
         ),
         child: Text(
@@ -1285,7 +1286,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                       return CheckboxListTile(
                         value: selectedIds.contains(user.uid),
                         activeColor: AppTheme.focusBlue,
-                        title: Text(handle),
+                        title: Row(
+                          children: [
+                            PixelSymbol(isGroup: handle.startsWith('#'), color: handle.startsWith('#') ? AppTheme.green : AppTheme.purple, size: 12),
+                            const SizedBox(width: 6),
+                            Expanded(child: Text(handle.substring(1))),
+                          ],
+                        ),
                         subtitle: Text(
                           user.status,
                           maxLines: 1,
@@ -1362,7 +1369,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white10, // Contrast change, no border
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.zero,
       ),
       child: Row(
         children: [
@@ -2111,7 +2118,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             style: GoogleFonts.jetBrainsMono(),
           ),
           backgroundColor: const Color(0xFF161618),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         ),
       );
     } else if (_replyingToMessage != null) {
@@ -2380,7 +2387,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           Row(
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.zero,
                 child: Image.asset(
                   'assets/icon.png',
                   width: 26,
@@ -2549,7 +2556,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF1E1E20),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.zero,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.3),
@@ -2602,7 +2609,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: AppTheme.focusBlueGlow,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.zero,
               border: Border.all(
                 color: AppTheme.focusBlue.withValues(alpha: 0.7),
               ),
@@ -2621,7 +2628,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   height: 30,
                   decoration: BoxDecoration(
                     color: AppTheme.focusBlue.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.zero,
                   ),
                   child: const Icon(
                     Icons.my_location_rounded,
@@ -2666,7 +2673,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: AppTheme.surface2,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.zero,
               border: Border.all(color: AppTheme.border),
             ),
             child: Row(
@@ -2676,7 +2683,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   height: 30,
                   decoration: BoxDecoration(
                     color: AppTheme.purple,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.zero,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -2729,7 +2736,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: AppTheme.surface2,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.zero,
               border: Border.all(color: AppTheme.border),
             ),
             child: Row(
@@ -2739,7 +2746,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   height: 30,
                   decoration: BoxDecoration(
                     color: AppTheme.focusBlue,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.zero,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -2792,7 +2799,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             constraints: const BoxConstraints(maxHeight: 150),
             decoration: BoxDecoration(
               color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.zero,
               border: Border.all(color: AppTheme.border),
             ),
             child: ListView.builder(
@@ -2915,11 +2922,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                     height: 54,
                     decoration: BoxDecoration(
                       color: AppTheme.surface,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.zero,
                       border: Border.all(
-                        color: isFocusModeActive
-                            ? AppTheme.focusBlue
-                            : (_isAiMode ? AppTheme.purple : Colors.white),
+                        color: isFocusModeActive ? AppTheme.focusBlue : AppTheme.purple,
                         width: (isFocusModeActive || _isAiMode) ? 2.0 : 1.5,
                       ),
                       boxShadow: isFocusModeActive
@@ -3173,9 +3178,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                     width: 54,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF5F5F5), // offwhite
-                      borderRadius: BorderRadius.circular(
-                        16,
-                      ), // Soft corner square
+                      borderRadius: BorderRadius.zero, // Soft corner square
                       border: Border.all(color: Colors.white, width: 1.5),
                     ),
                     child: const Icon(Icons.mic, color: Colors.black, size: 24),
@@ -3345,7 +3348,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             return AlertDialog(
               backgroundColor: const Color(0xFF1E1E20),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.zero,
                 side: BorderSide(
                   color: colorScheme.onSurface.withValues(alpha: 0.2),
                 ),
@@ -3398,7 +3401,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 ),
                                 backgroundColor: const Color(0xFF161618),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.zero,
                                 ),
                               ),
                             );
@@ -3427,7 +3430,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 ),
                                 backgroundColor: colorScheme.error,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.zero,
                                 ),
                               ),
                             );
@@ -3654,14 +3657,14 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         child: InkWell(
           onTap: widget.onTap,
           onLongPress: widget.onLongPress,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.zero,
           splashColor: AppTheme.purpleGlow,
           highlightColor: AppTheme.purpleGlow,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             decoration: BoxDecoration(
               color: tileBackgroundColor,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.zero,
               border: Border.all(
                 color: tileBorderColor,
                 width: widget.isFocusLocked || isUnread ? 1.6 : 1,
@@ -3910,7 +3913,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                           ),
                           decoration: BoxDecoration(
                             color: AppTheme.purpleGlow,
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: BorderRadius.zero,
                             border: Border.all(
                               color: AppTheme.purple.withValues(alpha: 0.4),
                             ),
@@ -4116,7 +4119,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: AppTheme.purple.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.zero,
                         border: Border.all(
                           color: AppTheme.purple.withValues(alpha: 0.3),
                         ),
@@ -4152,7 +4155,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                       color: AppTheme.green.withValues(
                                         alpha: 0.2,
                                       ),
-                                      borderRadius: BorderRadius.circular(6),
+                                      borderRadius: BorderRadius.zero,
                                     ),
                                     child: Text(
                                       'Approve',
@@ -4184,7 +4187,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                       color: AppTheme.red.withValues(
                                         alpha: 0.15,
                                       ),
-                                      borderRadius: BorderRadius.circular(6),
+                                      borderRadius: BorderRadius.zero,
                                     ),
                                     child: Text(
                                       'Deny',
@@ -4324,7 +4327,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   padding: const EdgeInsets.only(left: 16),
                   decoration: BoxDecoration(
                     color: AppTheme.purple.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.zero,
                   ),
                   child: const Icon(Icons.reply, color: AppTheme.purple),
                 ),
@@ -4334,7 +4337,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                         padding: const EdgeInsets.only(right: 16),
                         decoration: BoxDecoration(
                           color: AppTheme.red.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.zero,
                         ),
                         child: const Icon(Icons.delete, color: AppTheme.red),
                       )
@@ -4470,7 +4473,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                       color: AppTheme.purple.withValues(
                                         alpha: 0.12,
                                       ),
-                                      borderRadius: BorderRadius.circular(4),
+                                      borderRadius: BorderRadius.zero,
                                       border: Border.all(
                                         color: AppTheme.purple.withValues(
                                           alpha: 0.25,
@@ -4522,7 +4525,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.zero,
                 child: CachedNetworkImage(
                   imageUrl: msg.text,
                   width: 200,
@@ -4563,7 +4566,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   color: AppTheme.purple.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.zero,
                 ),
                 child: Icon(
                   Icons.insert_drive_file_outlined,
@@ -4632,7 +4635,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   color: AppTheme.red.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.zero,
                 ),
                 child: const Icon(
                   Icons.location_on,
@@ -4745,7 +4748,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               minScale: 0.8,
               maxScale: 4,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.zero,
                 child: Image.network(
                   imageUrl,
                   fit: BoxFit.contain,
@@ -4844,7 +4847,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: c.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.zero,
           border: Border.all(color: c.withValues(alpha: 0.2)),
         ),
         child: Row(
@@ -4980,12 +4983,17 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                   : AppTheme.muted,
                               size: 20,
                             ),
-                            title: Text(
-                              user.displayName,
-                              style: GoogleFonts.inter(
-                                color: AppTheme.textPri,
-                                fontSize: 13,
-                              ),
+                            title: Row(
+                              children: [
+                                PixelSymbol(isGroup: false, color: AppTheme.purple, size: 10),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    user.displayName,
+                                    style: GoogleFonts.inter(color: AppTheme.textPri, fontSize: 13),
+                                  ),
+                                ),
+                              ],
                             ),
                             subtitle: Text(
                               user.email,
@@ -5204,7 +5212,7 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
                   margin: const EdgeInsets.only(bottom: 24),
                   decoration: BoxDecoration(
                     color: AppTheme.border,
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: BorderRadius.zero,
                   ),
                 ),
               ),
@@ -5215,12 +5223,8 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
                     width: 28,
                     height: 28,
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppTheme.purple, AppTheme.purpleLt],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(7),
+                      color: AppTheme.purple,
+                      borderRadius: BorderRadius.zero,
                     ),
                     child: const Icon(
                       Icons.people_alt_outlined,
@@ -5302,7 +5306,7 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
 
     return InkWell(
       onTap: () => widget.onUserTap(user),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.zero,
       splashColor: AppTheme.purpleGlow,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
