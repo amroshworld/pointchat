@@ -59,8 +59,8 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                 Container(
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1B1C23), Color(0xFF10231B)],
+                    gradient: LinearGradient(
+                      colors: [Theme.of(context).colorScheme.surface, Theme.of(context).colorScheme.primaryContainer],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),

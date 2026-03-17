@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/theme_provider.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:appwrite/appwrite.dart';
@@ -543,7 +545,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             ),
             IconButton(
               onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close_rounded, color: Colors.white70),
+              icon: Icon(Icons.close_rounded, color: Colors.white70),
             ),
           ],
         ),
@@ -691,7 +693,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
               Text(
                 'Members',
                 style: GoogleFonts.inter(
-                  color: AppTheme.muted,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.4,
@@ -1411,7 +1413,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           Text(
             label,
             style: GoogleFonts.inter(
-              color: AppTheme.muted,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.4,
@@ -2390,7 +2392,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
               Text(
                 'PointChat',
                 style: GoogleFonts.inter(
-                  color: AppTheme.textPri,
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.3,
@@ -2400,10 +2402,26 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           ),
           Row(
             children: [
+              Consumer(
+                builder: (context, ref, child) {
+                  final themeMode = ref.watch(themeModeProvider);
+                  final isDark = themeMode == ThemeMode.dark;
+                  return IconButton(
+                    icon: Icon(
+                      isDark ? Icons.light_mode : Icons.dark_mode,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      size: 20,
+                    ),
+                    onPressed: () {
+                      ref.read(themeModeProvider.notifier).toggle();
+                    },
+                  );
+                },
+              ),
               IconButton(
-                icon: const Icon(
+                icon: Icon(
                   Icons.logout_rounded,
-                  color: AppTheme.muted,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   size: 20,
                 ),
                 onPressed: () => AuthService().signOut(),
@@ -2454,7 +2472,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 Text(
                   'No conversations yet',
                   style: GoogleFonts.inter(
-                    color: AppTheme.muted,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
                   ),
@@ -2462,7 +2480,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 const SizedBox(height: 6),
                 Text(
                   'Type @name or #group to start',
-                  style: GoogleFonts.inter(color: AppTheme.muted, fontSize: 13),
+                  style: GoogleFonts.inter(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
               ],
             ),
@@ -2630,7 +2648,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 ),
                 IconButton(
                   onPressed: _clearFocusMode,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.close_rounded,
                     color: AppTheme.focusBlue,
                     size: 18,
@@ -2693,9 +2711,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                       _replyingToMessage = null;
                     });
                   },
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.close_rounded,
-                    color: AppTheme.muted,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     size: 18,
                   ),
                   constraints: const BoxConstraints(),
@@ -2756,9 +2774,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                       _forwardingMessage = null;
                     });
                   },
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.close_rounded,
-                    color: AppTheme.muted,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     size: 18,
                   ),
                   constraints: const BoxConstraints(),
@@ -2956,7 +2974,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                             ),
                             if (_showActions) ...[
                               IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.emoji_emotions_outlined,
                                   color: AppTheme.textSec,
                                   size: 24,
@@ -2968,7 +2986,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 },
                               ),
                               IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.add_photo_alternate_outlined,
                                   color: AppTheme.textSec,
                                   size: 24,
@@ -2976,7 +2994,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 onPressed: _pickAndSendImage,
                               ),
                               IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.attach_file_outlined,
                                   color: AppTheme.textSec,
                                   size: 24,
@@ -2984,7 +3002,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 onPressed: _pickAndSendFile,
                               ),
                               IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.location_on_outlined,
                                   color: AppTheme.textSec,
                                   size: 24,
@@ -2992,7 +3010,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 onPressed: _sendLocation,
                               ),
                               IconButton(
-                                icon: const Icon(
+                                icon: Icon(
                                   Icons.group_add_outlined,
                                   color: AppTheme.textSec,
                                   size: 24,
@@ -3216,7 +3234,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: AppTheme.muted),
+                  icon: Icon(Icons.close, color: AppTheme.muted),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -3709,7 +3727,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                               Text(
                                 widget.item['time'] ?? '',
                                 style: GoogleFonts.inter(
-                                  color: AppTheme.muted,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w400,
                                 ),
@@ -3847,7 +3865,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               Text(
                 'MEMBERS (${members.length})',
                 style: GoogleFonts.inter(
-                  color: AppTheme.muted,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontSize: 11,
                   letterSpacing: 0.5,
                 ),
@@ -3986,7 +4004,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   Text(
                     'STATUS',
                     style: GoogleFonts.inter(
-                      color: AppTheme.muted,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 11,
                       letterSpacing: 0.5,
                     ),
@@ -4004,7 +4022,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   Text(
                     'EMAIL',
                     style: GoogleFonts.inter(
-                      color: AppTheme.muted,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 11,
                       letterSpacing: 0.5,
                     ),
@@ -4060,7 +4078,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                     _infoRow(
                       icon: Icons.visibility_off_outlined,
                       text: '${u.displayName}\'s receipts: OFF',
-                      color: AppTheme.muted,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(height: 8),
                     if (!hasPendingRequestFromMe)
@@ -4572,7 +4590,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                       Text(
                         _formatFileSize(msg.fileSize!),
                         style: GoogleFonts.inter(
-                          color: AppTheme.muted,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 10,
                         ),
                       ),
@@ -4637,7 +4655,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   Text(
                     'Tap to open in Maps',
                     style: GoogleFonts.inter(
-                      color: AppTheme.muted,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 10,
                     ),
                   ),
@@ -4653,7 +4671,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         return Text(
           msg.text,
           style: GoogleFonts.inter(
-            color: AppTheme.muted,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
             fontSize: 11,
             fontStyle: FontStyle.italic,
           ),
@@ -4748,7 +4766,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               top: 8,
               right: 8,
               child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
+                icon: Icon(Icons.close, color: Colors.white),
                 onPressed: () => Navigator.of(ctx).pop(),
               ),
             ),
@@ -4889,7 +4907,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               ),
               Text(
                 subtitle,
-                style: GoogleFonts.inter(color: AppTheme.muted, fontSize: 10),
+                style: GoogleFonts.inter(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 10),
               ),
             ],
           ),
@@ -4941,7 +4959,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                         child: Text(
                           'No users to add',
                           style: GoogleFonts.inter(
-                            color: AppTheme.muted,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                             fontSize: 14,
                           ),
                         ),
@@ -4972,7 +4990,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                             subtitle: Text(
                               user.email,
                               style: GoogleFonts.inter(
-                                color: AppTheme.muted,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 fontSize: 11,
                               ),
                             ),
@@ -5241,7 +5259,7 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
                         child: Text(
                           'No matches found',
                           style: GoogleFonts.inter(
-                            color: AppTheme.muted,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                             fontSize: 13,
                           ),
                         ),
@@ -5272,7 +5290,7 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
   Widget _sectionLabel(String label) => Text(
     label,
     style: GoogleFonts.inter(
-      color: AppTheme.muted,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
       fontSize: 11,
       fontWeight: FontWeight.w600,
       letterSpacing: 0.8,

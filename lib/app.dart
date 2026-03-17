@@ -5,16 +5,20 @@ import 'theme/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/stream/unified_stream_screen.dart';
+import 'providers/theme_provider.dart';
 
 class FocusChatApp extends ConsumerWidget {
   const FocusChatApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp(
       title: 'PointChat',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeMode,
       home: const AuthGate(),
     );
   }
@@ -35,7 +39,7 @@ class AuthGate extends ConsumerWidget {
         return const LoginScreen();
       },
       loading: () => Scaffold(
-        backgroundColor: const Color(0xFF0A0A0A),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -53,7 +57,7 @@ class AuthGate extends ConsumerWidget {
               Text(
                 'PointChat',
                 style: GoogleFonts.inter(
-                  color: const Color(0xFFEAEAEA),
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.5,
