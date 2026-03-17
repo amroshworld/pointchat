@@ -20,8 +20,7 @@ class AppwriteConstants {
 
 final Client appwriteClient = Client()
     .setEndpoint(AppwriteConstants.endpoint)
-    .setProject(AppwriteConstants.projectId)
-    .setSelfSigned(status: true);
+    .setProject(AppwriteConstants.projectId);
 
 final Account appwriteAccount = Account(appwriteClient);
 final Databases appwriteDatabases = Databases(appwriteClient);
