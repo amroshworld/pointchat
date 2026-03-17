@@ -406,17 +406,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       text: newText,
       selection: TextSelection.collapsed(offset: newOffset),
     );
-    _commandFocusNode.requestFocus();
-  }
-
-  Map<String, dynamic>? _findItemByHandle(String handle) {
-    for (final item in _latestCombinedItems) {
-      if (item['handle'] == handle) {
-        return item;
-      }
-    }
-
-    if (handle.startsWith('@')) {
+      
+      // Auto-submit command immediately so user doesn't have to press ok
+      _sendCommand(newText);
+      
       final targetName = handle.substring(1);
       final user = _allUsers.cast<UserModel?>().firstWhere(
         (u) => u!.displayName.replaceAll(' ', '').toLowerCase() == targetName,
@@ -488,7 +481,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             Positioned.fill(
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(color: Colors.black.withValues(alpha: 0.45)),
+                child: Container(color: Colors.black.withValues(alpha: 0.6)),
               ),
             ),
             Center(
@@ -500,16 +493,15 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                     maxWidth: 460,
                     maxHeight: 620,
                   ),
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppTheme.border),
+                    color: Colors.black, // High contrast black background
+                    borderRadius: BorderRadius.circular(16), // frameless (no border)
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 30,
-                        spreadRadius: 0,
+                        color: Colors.white.withValues(alpha: 0.1),
+                        blurRadius: 20,
+                        spreadRadius: -5,
                       ),
                     ],
                   ),
@@ -548,57 +540,27 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                     ? 'Group Settings'
                     : (isSelf ? 'My Profile' : 'User Settings'),
                 style: GoogleFonts.outfit(
-                  color: AppTheme.textPri,
+                  color: Colors.white, // High contrast
                   fontSize: 22,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ),
             IconButton(
               onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close_rounded, color: AppTheme.textSec),
+              icon: const Icon(Icons.close_rounded, color: Colors.white70),
             ),
           ],
         ),
         Text(
           handle,
           style: GoogleFonts.inter(
-            color: isGroup ? AppTheme.green : AppTheme.focusBlue,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
+            color: Colors.white54,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            if (!isSelf)
-              _overlayActionButton(
-                icon: Icons.alternate_email_rounded,
-                label: 'Mention',
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _insertHandleIntoComposer(handle);
-                },
-              ),
-            if (!isSelf)
-              _overlayActionButton(
-                icon: _focusedHandle == handle
-                    ? Icons.location_off_rounded
-                    : Icons.my_location_rounded,
-                label: _focusedHandle == handle ? 'Unfocus' : 'Focus',
-                onTap: () {
-                  Navigator.of(context).pop();
-                  setState(() {
-                    _focusedHandle = _focusedHandle == handle ? null : handle;
-                  });
-                  _commandFocusNode.requestFocus();
-                },
-              ),
-          ],
-        ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 24),
         Expanded(
           child: isGroup
               ? _buildGroupSettingsContent(item)
@@ -617,25 +579,24 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: AppTheme.surface2,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppTheme.border),
+          color: Colors.white12, // High contrast button bg without border
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: AppTheme.focusBlue, size: 18),
+            Icon(icon, color: Colors.white, size: 18),
             const SizedBox(width: 8),
             Text(
               label,
               style: GoogleFonts.inter(
-                color: AppTheme.textPri,
+                color: Colors.white,
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],
@@ -941,12 +902,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         ],
                       ),
                       const SizedBox(height: 18),
-                      _settingsField('Email', user.email),
+                      // Email and Presence concealed for privacy
                       _settingsField('Type', user.isBot ? 'AI Bot' : 'Person'),
-                      _settingsField(
-                        'Presence',
-                        user.isOnline ? 'Online' : 'Offline',
-                      ),
                       const SizedBox(height: 10),
                       _seenToggleRow(
                         label: 'Show my read receipts',
@@ -1425,9 +1382,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppTheme.surface2,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.border),
+        color: Colors.white10, // Contrast change, no border
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
@@ -1438,16 +1394,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 Text(
                   label,
                   style: GoogleFonts.inter(
-                    color: AppTheme.textPri,
+                    color: Colors.white,
                     fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
                   style: GoogleFonts.inter(
-                    color: AppTheme.textSec,
+                    color: Colors.white60,
                     fontSize: 12,
                     height: 1.4,
                   ),
@@ -1456,7 +1412,14 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          Switch.adaptive(value: value, onChanged: onChanged),
+          Switch.adaptive(
+            value: value, 
+            onChanged: onChanged,
+            activeColor: Colors.black,
+            activeTrackColor: Colors.white,
+            inactiveThumbColor: Colors.white54,
+            inactiveTrackColor: Colors.white10,
+          ),
         ],
       ),
     );
@@ -2208,8 +2171,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       return;
     }
 
-    // AI/Bot creation hidden for now
-    /*
+    // AI/Bot creation re-enabled
     if (normalizedInput.toLowerCase().startsWith('@bot ')) {
       final botName = normalizedInput.substring(5).trim();
       if (botName.isNotEmpty) {
@@ -2218,7 +2180,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         return;
       }
     }
-    */
 
     // Check for AI mode: if text contains /, extract the AI prompt
     final slashIndex = normalizedInput.indexOf('/');

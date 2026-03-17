@@ -2,28 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // ── Render.com-inspired color palette ──────────────────────────────
-  static const Color bg = Color(0xFF0A0A0A); // near-black page bg
-  static const Color surface = Color(0xFF111111); // card / tile surface
-  static const Color surface2 = Color(0xFF1A1A1A); // elevated surface
-  static const Color border = Color(0xFF242424); // subtle border
-  static const Color muted = Color(0xFF6B6B6B); // secondary text
-  static const Color mutedHover = Color(0xFF888888);
-  static const Color textPri = Color(0xFFEAEAEA); // primary text
-  static const Color textSec = Color(0xFF9A9A9A); // secondary text
+  // ── Discord-inspired color palette ──────────────────────────────
+  static const Color bg = Color(0xFF313338); // Discord primary chat bg
+  static const Color surface = Color(0xFF2B2D31); // Discord sidebar/surface bg
+  static const Color surface2 = Color(0xFF1E1F22); // Discord dark surface
+  static const Color border = Colors.transparent; // remove edges/contrast
+  static const Color muted = Color(0xFF80848E); // secondary text / muted
+  static const Color mutedHover = Color(0xFF949BA4);
+  static const Color textPri = Color(0xFFF2F3F5); // primary text
+  static const Color textSec = Color(0xFFB5BAC1); // secondary text
 
-  // Purple accent (Render logo purple spectrum)
-  static const Color purple = Color(0xFF7C3AED); // primary purple
-  static const Color purpleLt = Color(0xFF9D5CF6); // lighter purple
-  static const Color purpleDim = Color(0xFF3D1C7B); // dim purple bg
-  static const Color purpleGlow = Color(0x337C3AED); // purple glow tint
+  // Blurple accent
+  static const Color purple = Color(0xFF5865F2); // Blurple
+  static const Color purpleLt = Color(0xFF7983F5); // lighter blurple
+  static const Color purpleDim = Color(0xFF4752C4); // dim blurple
+  static const Color purpleGlow = Color(
+    0x335865F2,
+  ); // removed neon, subtle tint
 
   // Semantic
-  static const Color green = Color(0xFF22C55E); // online / success
-  static const Color red = Color(0xFFEF4444); // error
-  static const Color yellow = Color(0xFFEAB308); // warning / star
-  static const Color focusBlue = Color(0xFF38BDF8);
-  static const Color focusBlueGlow = Color(0x2238BDF8);
+  static const Color green = Color(0xFF23A559); // online / success
+  static const Color red = Color(0xFFDA373C); // error
+  static const Color yellow = Color(0xFFF0B232); // warning / star
+  static const Color focusBlue = Color(0xFF00A8FC);
+  static const Color focusBlueGlow = Color(0x2200A8FC);
 
   // Legacy aliases used by widgets
   static const Color black = bg;
