@@ -64,12 +64,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Theme.of(context).scaffoldBackgroundColor, Theme.of(context).colorScheme.surface, Theme.of(context).scaffoldBackgroundColor],
-                    stops: const [0, 0.5, 1],
-                  ),
+                  color: Theme.of(context).scaffoldBackgroundColor,
                 ),
               ),
             ),
@@ -88,7 +83,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     decoration: BoxDecoration(
                       color: AppTheme.surface.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.zero,
                       border: Border.all(color: AppTheme.border),
                     ),
                     child: Column(
@@ -99,21 +94,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           child: Container(
                             width: 64,
                             height: 64,
-                            decoration: BoxDecoration(
-                              color: Colors.black,
-                              borderRadius: BorderRadius.circular(18),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.1),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
                             ),
                             child: const Icon(
-                              Icons.bolt_rounded,
-                              color: Colors.white,
-                              size: 36,
+                              Icons.chat_bubble_outline_rounded,
+                              color: AppTheme.darkBg,
+                              size: 32,
                             ),
                           ),
                         ),
@@ -161,13 +149,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 vertical: 16,
                               ),
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.zero,
                                 borderSide: const BorderSide(
                                   color: AppTheme.border,
                                 ),
                               ),
                               enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.zero,
                                 borderSide: const BorderSide(
                                   color: AppTheme.border,
                                 ),
@@ -193,13 +181,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               vertical: 16,
                             ),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.zero,
                               borderSide: const BorderSide(
                                 color: AppTheme.border,
                               ),
                             ),
                             enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.zero,
                               borderSide: const BorderSide(
                                 color: AppTheme.border,
                               ),
@@ -224,13 +212,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               vertical: 16,
                             ),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.zero,
                               borderSide: const BorderSide(
                                 color: AppTheme.border,
                               ),
                             ),
                             enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.zero,
                               borderSide: const BorderSide(
                                 color: AppTheme.border,
                               ),
@@ -261,7 +249,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             margin: const EdgeInsets.only(bottom: 24),
                             decoration: BoxDecoration(
                               color: AppTheme.red.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.zero,
                               border: Border.all(
                                 color: AppTheme.red.withValues(alpha: 0.3),
                               ),
@@ -299,7 +287,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               foregroundColor: Colors.white,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.zero,
                               ),
                               disabledBackgroundColor: Colors.black54,
                             ),
@@ -410,7 +398,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               height: 24,
                               decoration: BoxDecoration(
                                 color: Colors.transparent,
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.zero,
                               ),
                               alignment: Alignment.center,
                               child: Text(
@@ -436,7 +424,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 width: 1.5,
                               ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.zero,
                               ),
                             ),
                           ),

@@ -52,16 +52,7 @@ class MessageBubble extends StatelessWidget {
             color: isMe
                 ? colorScheme.primaryContainer
                 : colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(20),
-              topRight: const Radius.circular(20),
-              bottomLeft: isMe
-                  ? const Radius.circular(20)
-                  : const Radius.circular(4),
-              bottomRight: isMe
-                  ? const Radius.circular(4)
-                  : const Radius.circular(20),
-            ),
+            borderRadius: BorderRadius.zero,
             boxShadow: [
               BoxShadow(
                 color: colorScheme.shadow.withValues(alpha: 0.05),
@@ -160,7 +151,7 @@ class MessageBubble extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.zero,
           ),
           child: Text(
             message,
@@ -208,7 +199,7 @@ class DateSeparator extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.zero,
           ),
           child: Text(
             text,

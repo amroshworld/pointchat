@@ -5,13 +5,13 @@ class AppTheme {
   // ── High-Contrast Black & White Palette ──────────────────────────────
 
   // Dark Theme Colors
-  static const Color darkBg = Color(0xFF0F0F0F); // True dark bg or slightly off black like 0F0F0F
-  static const Color darkSurface = Color(0xFF1A1A1A);
-  static const Color darkSurface2 = Color(0xFF262626);
-  static const Color darkBorder = Color(0xFF333333);
-  static const Color darkMuted = Color(0xFF8A8A8A);
+  static const Color darkBg = Color(0xFF26333B); // True dark bg or slightly off black like 0F0F0F
+  static const Color darkSurface = Color(0xFF384B49);
+  static const Color darkSurface2 = Color(0xFF5E7D78);
+  static const Color darkBorder = Color(0xFF5E7D78);
+  static const Color darkMuted = Color(0xFF995B36);
   static const Color darkTextPri = Color(0xFFFFFFFF);
-  static const Color darkTextSec = Color(0xFFCCCCCC);
+  static const Color darkTextSec = Color(0xFFC08B57);
 
   // Light Theme Colors
   static const Color lightBg = Color(0xFFFFFFFF);
@@ -23,11 +23,11 @@ class AppTheme {
   static const Color lightTextSec = Color(0xFF424242);
 
   // Accent & Semantic
-  static const Color primaryAccent = Color(0xFFFFFFFF); // White in dark, Black in light (handled via theme)
-  static const Color success = Color(0xFF2E7D32); // Deep green
-  static const Color error = Color(0xFFD32F2F); // Deep red
-  static const Color warning = Color(0xFFF57C00); // Orange/Yellow
-  static const Color focusBlue = Color(0xFF1976D2); // Standard link/focus blue
+  static const Color primaryAccent = Color(0xFFC08B57); // White in dark, Black in light (handled via theme)
+  static const Color success = Color(0xFF5E7D78); // Deep green
+  static const Color error = Color(0xFF995B36); // Deep red
+  static const Color warning = Color(0xFFC08B57); // Orange/Yellow
+  static const Color focusBlue = Color(0xFFC08B57); // Standard link/focus blue
 
   // Legacy aliases (used by widgets - keeping for backwards compatibility but mapping to solid colors)
   // We'll define these based on dark theme as fallback for places that don't use Theme.of(context)
@@ -38,9 +38,9 @@ class AppTheme {
   static const Color muted = darkMuted;
   static const Color textPri = darkTextPri;
   static const Color textSec = darkTextSec;
-  static const Color purple = Color(0xFF000000); // Fallback mapping, should avoid usage
-  static const Color purpleLt = Color(0xFF333333); // Fallback mapping
-  static const Color purpleDim = Color(0xFF1A1A1A); // Fallback mapping
+  static const Color purple = Color(0xFFC08B57); // Fallback mapping, should avoid usage
+  static const Color purpleLt = Color(0xFFC08B57); // Fallback mapping
+  static const Color purpleDim = Color(0xFF5E7D78); // Fallback mapping
   static const Color purpleGlow = Colors.transparent; // Removed glow
 
   static const Color black = Color(0xFF000000);
@@ -192,7 +192,7 @@ class AppTheme {
         elevation: 0,
         color: surfaceColor,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(4), // sharper corners for modern look
+          borderRadius: BorderRadius.zero, // sharper corners for modern look
           side: BorderSide(color: borderColor, width: 1),
         ),
       ),
@@ -203,19 +203,19 @@ class AppTheme {
         fillColor: surfaceColor,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide(color: borderColor, width: 1),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide(color: borderColor, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.zero,
           borderSide: BorderSide(color: accentColor, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.zero,
           borderSide: const BorderSide(color: error, width: 1),
         ),
         hintStyle: _font(color: mutedColor, weight: FontWeight.w400, size: 14),
@@ -226,7 +226,7 @@ class AppTheme {
 
       // List tile
       listTileTheme: ListTileThemeData(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         tileColor: Colors.transparent,
         iconColor: primaryTextColor,
@@ -247,7 +247,7 @@ class AppTheme {
           foregroundColor: invertedAccentColor,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
           textStyle: _font(size: 14, weight: FontWeight.w600),
         ),
       ),
@@ -257,7 +257,7 @@ class AppTheme {
           foregroundColor: primaryTextColor,
           side: BorderSide(color: borderColor, width: 1),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
           textStyle: _font(size: 14, weight: FontWeight.w600),
         ),
       ),
@@ -276,7 +276,7 @@ class AppTheme {
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.zero,
             side: BorderSide(color: borderColor),
           ),
           textStyle: _font(size: 13, weight: FontWeight.w500),
@@ -290,7 +290,7 @@ class AppTheme {
         backgroundColor: accentColor,
         foregroundColor: invertedAccentColor,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(8)),
+          borderRadius: BorderRadius.zero,
         ),
       ),
 
@@ -302,7 +302,7 @@ class AppTheme {
         backgroundColor: surface2Color,
         labelStyle: _font(size: 12, color: primaryTextColor),
         side: BorderSide(color: borderColor),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       ),
 
@@ -311,7 +311,7 @@ class AppTheme {
         backgroundColor: bgColor,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.zero,
           side: BorderSide(color: borderColor),
         ),
       ),
@@ -321,7 +321,7 @@ class AppTheme {
         backgroundColor: surfaceColor,
         contentTextStyle: _font(color: primaryTextColor, size: 14),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.zero,
           side: BorderSide(color: borderColor),
         ),
         behavior: SnackBarBehavior.floating,
@@ -347,7 +347,7 @@ class AppTheme {
         backgroundColor: bgColor,
         elevation: 0,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: BorderRadius.zero,
         ),
       ),
 

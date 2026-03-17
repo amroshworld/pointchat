@@ -26,16 +26,11 @@ class UserAvatar extends StatelessWidget {
           width: radius * 2,
           height: radius * 2,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            // Subtle purple-tinted gradient bg for initials
-            gradient: const LinearGradient(
-              colors: [AppTheme.purpleDim, Color(0xFF1A1A2E)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            shape: BoxShape.rectangle,
+            color: AppTheme.purpleDim,
             border: Border.all(color: AppTheme.border, width: 1.5),
           ),
-          child: ClipOval(
+          child: ClipRect(
             child: (photoUrl != null && photoUrl!.isNotEmpty)
                 ? CachedNetworkImage(
                     imageUrl: photoUrl!,
@@ -49,15 +44,15 @@ class UserAvatar extends StatelessWidget {
         ),
         if (showOnlineIndicator)
           Positioned(
-            right: 0,
-            bottom: 0,
+            right: -2,
+            bottom: -2,
             child: Container(
               width: radius * 0.45,
               height: radius * 0.45,
               decoration: BoxDecoration(
                 color: isOnline ? AppTheme.green : AppTheme.muted,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppTheme.bg, width: 2),
+                shape: BoxShape.rectangle,
+                border: Border.all(color: AppTheme.bg, width: 1.5),
               ),
             ),
           ),
@@ -70,7 +65,7 @@ class UserAvatar extends StatelessWidget {
       child: Text(
         name.isNotEmpty ? name[0].toUpperCase() : '?',
         style: TextStyle(
-          color: AppTheme.purpleLt,
+          color: AppTheme.textPri,
           fontSize: radius * 0.75,
           fontWeight: FontWeight.w700,
         ),
@@ -97,15 +92,11 @@ class GroupAvatar extends StatelessWidget {
       width: radius * 2,
       height: radius * 2,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1A2A1A), Color(0xFF0D1F0D)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        shape: BoxShape.rectangle,
+        color: AppTheme.surface2,
         border: Border.all(color: AppTheme.border, width: 1.5),
       ),
-      child: ClipOval(
+      child: ClipRect(
         child: (photoUrl != null && photoUrl!.isNotEmpty)
             ? CachedNetworkImage(
                 imageUrl: photoUrl!,
