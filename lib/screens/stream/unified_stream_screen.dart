@@ -1288,9 +1288,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         activeColor: AppTheme.focusBlue,
                         title: Row(
                           children: [
-                            PixelSymbol(isGroup: handle.startsWith('#'), color: handle.startsWith('#') ? AppTheme.green : AppTheme.purple, size: 12),
+                            PixelSymbol(isGroup: handle.startsWith('#'), color: handle.startsWith('#') ? Colors.purpleAccent : Colors.blueAccent, size: 12),
                             const SizedBox(width: 6),
-                            Expanded(child: Text(handle.substring(1))),
+                            Expanded(child: Text(' ' + handle.substring(1))),
                           ],
                         ),
                         subtitle: Text(
@@ -3632,7 +3632,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     final String handleText = widget.item['handle'] ?? '';
     final isGroup = handleText.startsWith('#');
     // Purple for DM (@), emerald-ish green for group (#)
-    final handlePrefixColor = isGroup ? AppTheme.green : AppTheme.purple;
+    final handlePrefixColor = isGroup ? Colors.purpleAccent : Colors.blueAccent;
     final tileBorderColor = widget.isFocusLocked
         ? AppTheme.focusBlue.withValues(alpha: 0.8)
         : (isUnread ? AppTheme.purple.withValues(alpha: 0.5) : AppTheme.border);
@@ -3714,7 +3714,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                       ),
                                       TextSpan(
                                         text: handleText.length > 1
-                                            ? handleText.substring(1)
+                                            ? ' ' + handleText.substring(1)
                                             : '',
                                         style: GoogleFonts.inter(
                                           color: const Color(0xFFF0F0F0),
@@ -4985,7 +4985,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                             ),
                             title: Row(
                               children: [
-                                PixelSymbol(isGroup: false, color: AppTheme.purple, size: 10),
+                                PixelSymbol(isGroup: false, color: Colors.blueAccent, size: 10),
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
