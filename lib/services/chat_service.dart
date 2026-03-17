@@ -496,13 +496,15 @@ class ChatService {
       queries: [Query.equal('chatId', chatId), Query.limit(500)],
     );
 
-    for (final doc in messages.rows) {
-      await _databases.deleteRow(
-        databaseId: AppwriteConstants.databaseId,
-        tableId: AppwriteConstants.messagesCollection,
-        rowId: doc.$id,
-      );
-    }
+    await Future.wait(
+      messages.rows.map(
+        (doc) => _databases.deleteRow(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.messagesCollection,
+          rowId: doc.$id,
+        ),
+      ),
+    );
 
     // Delete chat document
     await _databases.deleteRow(
@@ -512,14 +514,16 @@ class ChatService {
     );
 
     // Remove chatId from users
-    for (final userId in participants) {
-      await _removeFromArray(
-        AppwriteConstants.usersCollection,
-        userId,
-        'chatIds',
-        chatId,
-      );
-    }
+    await Future.wait(
+      participants.map(
+        (userId) => _removeFromArray(
+          AppwriteConstants.usersCollection,
+          userId,
+          'chatIds',
+          chatId,
+        ),
+      ),
+    );
   }
 
   // ── Helpers ──
