@@ -39,9 +39,9 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: AppTheme.bg,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         title: Text(
           'Unlock AI',
           style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
@@ -60,12 +60,17 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Theme.of(context).colorScheme.surface, Theme.of(context).colorScheme.primaryContainer],
+                      colors: [
+                        Theme.of(context).colorScheme.surface,
+                        Theme.of(context).colorScheme.primaryContainer,
+                      ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: AppTheme.border),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,7 +78,7 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                       Text(
                         'AI is paid only',
                         style: GoogleFonts.outfit(
-                          color: AppTheme.textPri,
+                          color: Theme.of(context).colorScheme.onSurface,
                           fontSize: 28,
                           fontWeight: FontWeight.w800,
                         ),
@@ -82,7 +87,7 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                       Text(
                         'There is no free AI tier. Subscribe to use AI prompts, AI bots, and future premium model features.',
                         style: GoogleFonts.inter(
-                          color: AppTheme.textSec,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 14,
                           height: 1.45,
                         ),
@@ -149,8 +154,10 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                           }
                         },
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.textPri,
-                    side: const BorderSide(color: AppTheme.border),
+                    foregroundColor: Theme.of(context).colorScheme.onSurface,
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                     minimumSize: const Size.fromHeight(52),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -166,7 +173,7 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                   Text(
                     state.message!,
                     style: GoogleFonts.inter(
-                      color: AppTheme.textSec,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 13,
                     ),
                     textAlign: TextAlign.center,
@@ -201,9 +208,9 @@ class _PackageCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppTheme.border),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -214,7 +221,7 @@ class _PackageCard extends StatelessWidget {
                 child: Text(
                   label,
                   style: GoogleFonts.outfit(
-                    color: AppTheme.textPri,
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                   ),
@@ -243,7 +250,7 @@ class _PackageCard extends StatelessWidget {
           Text(
             product.title,
             style: GoogleFonts.inter(
-              color: AppTheme.textPri,
+              color: Theme.of(context).colorScheme.onSurface,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
@@ -253,7 +260,7 @@ class _PackageCard extends StatelessWidget {
             Text(
               product.description,
               style: GoogleFonts.inter(
-                color: AppTheme.textSec,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 13,
                 height: 1.4,
               ),
@@ -266,7 +273,7 @@ class _PackageCard extends StatelessWidget {
               onPressed: isBusy ? null : onPressed,
               style: FilledButton.styleFrom(
                 backgroundColor: AppTheme.green,
-                foregroundColor: AppTheme.bg,
+                foregroundColor: Theme.of(context).scaffoldBackgroundColor,
                 minimumSize: const Size.fromHeight(50),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
@@ -304,7 +311,10 @@ class _FeatureLine extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: GoogleFonts.inter(color: AppTheme.textSec, height: 1.4),
+              style: GoogleFonts.inter(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -323,13 +333,16 @@ class _MessageCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppTheme.border),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
       ),
       child: Text(
         message,
-        style: GoogleFonts.inter(color: AppTheme.textSec, height: 1.5),
+        style: GoogleFonts.inter(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          height: 1.5,
+        ),
       ),
     );
   }

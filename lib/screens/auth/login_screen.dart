@@ -57,7 +57,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authProvider);
 
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Stack(
           children: [
@@ -82,9 +82,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       vertical: 28,
                     ),
                     decoration: BoxDecoration(
-                      color: AppTheme.surface.withValues(alpha: 0.9),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surface.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.zero,
-                      border: Border.all(color: AppTheme.border),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -100,7 +104,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(32),
-                              child: Image.asset('assets/icon.png', width: 48, height: 48, fit: BoxFit.cover),
+                              child: Image.asset(
+                                'assets/icon.png',
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                              ),
                             ),
                           ),
                         ),
@@ -111,7 +120,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           _isLogin ? 'Welcome back' : 'Create account',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
-                            color: AppTheme.textPri,
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 32,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -1.0,
@@ -124,7 +133,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               : 'Start messaging in seconds',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
-                            color: AppTheme.textSec,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                             fontSize: 16,
                           ),
                         ),
@@ -138,7 +149,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           TextField(
                             controller: _nameController,
                             style: GoogleFonts.inter(
-                              color: AppTheme.textPri,
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontSize: 15,
                             ),
                             decoration: InputDecoration(
@@ -149,14 +160,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.zero,
-                                borderSide: const BorderSide(
-                                  color: AppTheme.border,
+                                borderSide: BorderSide(
+                                  color: Theme.of(context).colorScheme.outline,
                                 ),
                               ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.zero,
-                                borderSide: const BorderSide(
-                                  color: AppTheme.border,
+                                borderSide: BorderSide(
+                                  color: Theme.of(context).colorScheme.outline,
                                 ),
                               ),
                             ),
@@ -170,7 +181,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
                           style: GoogleFonts.inter(
-                            color: AppTheme.textPri,
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 15,
                           ),
                           decoration: InputDecoration(
@@ -181,14 +192,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.zero,
-                              borderSide: const BorderSide(
-                                color: AppTheme.border,
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.outline,
                               ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.zero,
-                              borderSide: const BorderSide(
-                                color: AppTheme.border,
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.outline,
                               ),
                             ),
                           ),
@@ -201,7 +212,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           controller: _passwordController,
                           obscureText: _obscurePassword,
                           style: GoogleFonts.inter(
-                            color: AppTheme.textPri,
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 15,
                           ),
                           decoration: InputDecoration(
@@ -212,14 +223,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.zero,
-                              borderSide: const BorderSide(
-                                color: AppTheme.border,
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.outline,
                               ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.zero,
-                              borderSide: const BorderSide(
-                                color: AppTheme.border,
+                              borderSide: BorderSide(
+                                color: Theme.of(context).colorScheme.outline,
                               ),
                             ),
                             suffixIcon: IconButton(
@@ -317,7 +328,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             onPressed: () =>
                                 setState(() => _isLogin = !_isLogin),
                             style: TextButton.styleFrom(
-                              foregroundColor: AppTheme.textSec,
+                              foregroundColor: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                               padding: const EdgeInsets.symmetric(
                                 vertical: 12,
                                 horizontal: 16,
@@ -327,7 +340,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               text: TextSpan(
                                 style: GoogleFonts.inter(
                                   fontSize: 15,
-                                  color: AppTheme.textSec,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                                 children: [
                                   TextSpan(
@@ -356,7 +371,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             Expanded(
                               child: Container(
                                 height: 1,
-                                color: AppTheme.border,
+                                color: Theme.of(context).colorScheme.outline,
                               ),
                             ),
                             Padding(
@@ -366,7 +381,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               child: Text(
                                 'or',
                                 style: GoogleFonts.inter(
-                                  color: AppTheme.muted,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.secondary,
                                   fontSize: 14,
                                 ),
                               ),
@@ -374,7 +391,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             Expanded(
                               child: Container(
                                 height: 1,
-                                color: AppTheme.border,
+                                color: Theme.of(context).colorScheme.outline,
                               ),
                             ),
                           ],
@@ -403,7 +420,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               child: Text(
                                 'G',
                                 style: GoogleFonts.inter(
-                                  color: AppTheme.textPri,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -412,14 +431,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             label: Text(
                               'Continue with Google',
                               style: GoogleFonts.inter(
-                                color: AppTheme.textPri,
+                                color: Theme.of(context).colorScheme.onSurface,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(
-                                color: AppTheme.border,
+                              side: BorderSide(
+                                color: Theme.of(context).colorScheme.outline,
                                 width: 1.5,
                               ),
                               shape: RoundedRectangleBorder(
@@ -443,7 +462,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget _label(String text) => Text(
     text,
     style: GoogleFonts.inter(
-      color: AppTheme.textSec,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
       fontSize: 12,
       fontWeight: FontWeight.w500,
       letterSpacing: 0.3,

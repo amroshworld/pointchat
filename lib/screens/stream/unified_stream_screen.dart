@@ -94,7 +94,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   late final Stream<List<ChatModel>> _chatsStream;
   late final Stream<List<GroupModel>> _groupsStream;
   late final Stream<List<Map<String, dynamic>>> _combinedStream;
-  List<Map<String, dynamic>> _latestCombinedItems = [];
 
   @override
   void initState() {
@@ -193,7 +192,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           (a, b) =>
               (b['timeRaw'] as DateTime).compareTo(a['timeRaw'] as DateTime),
         );
-        _latestCombinedItems = List<Map<String, dynamic>>.from(merged);
+
         return merged;
       },
     );
@@ -614,7 +613,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           return Center(
             child: Text(
               'Group details unavailable.',
-              style: GoogleFonts.inter(color: AppTheme.textSec, fontSize: 13),
+              style: GoogleFonts.inter(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 13,
+              ),
             ),
           );
         }
@@ -646,7 +648,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         Text(
                           group.name,
                           style: GoogleFonts.inter(
-                            color: AppTheme.textPri,
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                           ),
@@ -657,7 +659,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                               ? 'No group status set yet.'
                               : description,
                           style: GoogleFonts.inter(
-                            color: AppTheme.textSec,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                             fontSize: 13,
                           ),
                         ),
@@ -717,9 +721,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppTheme.surface2,
+                    color: Theme.of(context).colorScheme.primaryContainer,
                     borderRadius: BorderRadius.zero,
-                    border: Border.all(color: AppTheme.border),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -735,7 +741,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                               child: Text(
                                 memberHandle,
                                 style: GoogleFonts.inter(
-                                  color: AppTheme.textPri,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -813,7 +821,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           return Center(
             child: Text(
               'User details unavailable.',
-              style: GoogleFonts.inter(color: AppTheme.textSec, fontSize: 13),
+              style: GoogleFonts.inter(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 13,
+              ),
             ),
           );
         }
@@ -863,7 +874,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 Text(
                                   user.displayName,
                                   style: GoogleFonts.inter(
-                                    color: AppTheme.textPri,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
                                     fontSize: 18,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -872,7 +885,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 Text(
                                   user.status,
                                   style: GoogleFonts.inter(
-                                    color: AppTheme.textSec,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
                                     fontSize: 13,
                                   ),
                                 ),
@@ -921,7 +936,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                             : '${user.displayName} is hiding read receipts.',
                         color: otherSeenEnabled
                             ? AppTheme.green
-                            : AppTheme.muted,
+                            : Theme.of(context).colorScheme.secondary,
                       ),
                       const SizedBox(height: 8),
                       _infoRow(
@@ -933,7 +948,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                             : '${user.displayName} has seen notifications off.',
                         color: otherNotifyOnSeen
                             ? AppTheme.focusBlue
-                            : AppTheme.muted,
+                            : Theme.of(context).colorScheme.secondary,
                       ),
                     ],
                   ),
@@ -955,7 +970,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           return Center(
             child: Text(
               'Profile unavailable.',
-              style: GoogleFonts.inter(color: AppTheme.textSec, fontSize: 13),
+              style: GoogleFonts.inter(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 13,
+              ),
             ),
           );
         }
@@ -980,7 +998,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         Text(
                           user.displayName,
                           style: GoogleFonts.inter(
-                            color: AppTheme.textPri,
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                           ),
@@ -989,7 +1007,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         Text(
                           user.status,
                           style: GoogleFonts.inter(
-                            color: AppTheme.textSec,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                             fontSize: 13,
                           ),
                         ),
@@ -1076,9 +1096,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             child: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppTheme.surface,
+                color: Theme.of(context).colorScheme.surface,
                 shape: BoxShape.circle,
-                border: Border.all(color: AppTheme.border),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
               ),
               child: Icon(Icons.edit_rounded, size: 14, color: accent),
             ),
@@ -1199,7 +1221,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         title: const Text('Edit Status'),
         content: TextField(
           controller: controller,
@@ -1231,7 +1253,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.surface,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         title: const Text('Edit Group Status'),
         content: TextField(
           controller: controller,
@@ -1270,14 +1292,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          backgroundColor: AppTheme.surface,
+          backgroundColor: Theme.of(context).colorScheme.surface,
           title: const Text('Add Members'),
           content: SizedBox(
             width: 420,
             child: candidates.isEmpty
                 ? Text(
                     'No more people available to add.',
-                    style: GoogleFonts.inter(color: AppTheme.textSec),
+                    style: GoogleFonts.inter(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   )
                 : ListView(
                     shrinkWrap: true,
@@ -1288,7 +1312,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         activeColor: AppTheme.focusBlue,
                         title: Row(
                           children: [
-                            PixelSymbol(isGroup: handle.startsWith('#'), color: handle.startsWith('#') ? Colors.purpleAccent : Colors.blueAccent, size: 12),
+                            PixelSymbol(
+                              isGroup: handle.startsWith('#'),
+                              color: handle.startsWith('#')
+                                  ? Colors.purpleAccent
+                                  : Colors.blueAccent,
+                              size: 12,
+                            ),
                             const SizedBox(width: 6),
                             Expanded(child: Text(' ' + handle.substring(1))),
                           ],
@@ -1349,7 +1379,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           child: Text(
             text,
             style: GoogleFonts.inter(
-              color: AppTheme.textSec,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
               height: 1.4,
             ),
@@ -1399,7 +1429,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           ),
           const SizedBox(width: 12),
           Switch.adaptive(
-            value: value, 
+            value: value,
             onChanged: onChanged,
             activeColor: Colors.black,
             activeTrackColor: Colors.white,
@@ -1429,7 +1459,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           const SizedBox(height: 6),
           Text(
             value,
-            style: GoogleFonts.inter(color: AppTheme.textPri, fontSize: 13),
+            style: GoogleFonts.inter(
+              color: Theme.of(context).colorScheme.onSurface,
+              fontSize: 13,
+            ),
           ),
         ],
       ),
@@ -1670,17 +1703,25 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         backgroundColor: const Color(0xFF1E1E20),
         title: Text(
           'Add note (optional)',
-          style: GoogleFonts.inter(color: AppTheme.textPri),
+          style: GoogleFonts.inter(
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
         ),
         content: TextField(
           controller: controller,
           maxLines: 3,
-          style: GoogleFonts.inter(color: AppTheme.textPri),
+          style: GoogleFonts.inter(
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
           decoration: InputDecoration(
             hintText: 'Write a note for this photo...',
-            hintStyle: GoogleFonts.inter(color: AppTheme.muted),
-            enabledBorder: const OutlineInputBorder(
-              borderSide: BorderSide(color: AppTheme.border),
+            hintStyle: GoogleFonts.inter(
+              color: Theme.of(context).colorScheme.secondary,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(
+                color: Theme.of(context).colorScheme.outline,
+              ),
             ),
             focusedBorder: const OutlineInputBorder(
               borderSide: BorderSide(color: AppTheme.purple),
@@ -1692,7 +1733,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             onPressed: () => Navigator.of(ctx).pop(null),
             child: Text(
               'Cancel',
-              style: GoogleFonts.inter(color: AppTheme.muted),
+              style: GoogleFonts.inter(
+                color: Theme.of(context).colorScheme.secondary,
+              ),
             ),
           ),
           TextButton(
@@ -2346,7 +2389,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           SafeArea(
@@ -2360,7 +2403,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           ),
           if (_isUploading)
             Container(
-              color: AppTheme.bg.withValues(alpha: 0.7),
+              color: Theme.of(
+                context,
+              ).scaffoldBackgroundColor.withValues(alpha: 0.7),
               child: const Center(
                 child: CircularProgressIndicator(
                   color: AppTheme.purple,
@@ -2376,9 +2421,14 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   Widget _buildStatusBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        color: AppTheme.bg,
-        border: Border(bottom: BorderSide(color: AppTheme.border, width: 1)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).colorScheme.outline,
+            width: 1,
+          ),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2473,7 +2523,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 Icon(
                   Icons.chat_bubble_outline_rounded,
                   size: 48,
-                  color: AppTheme.border,
+                  color: Theme.of(context).colorScheme.outline,
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -2487,7 +2537,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 const SizedBox(height: 6),
                 Text(
                   'Type @name or #group to start',
-                  style: GoogleFonts.inter(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                  style: GoogleFonts.inter(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -2672,9 +2725,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: AppTheme.surface2,
+              color: Theme.of(context).colorScheme.primaryContainer,
               borderRadius: BorderRadius.zero,
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: Theme.of(context).colorScheme.outline),
             ),
             child: Row(
               children: [
@@ -2705,7 +2758,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
-                          color: AppTheme.textSec,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 12,
                         ),
                       ),
@@ -2735,9 +2788,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: AppTheme.surface2,
+              color: Theme.of(context).colorScheme.primaryContainer,
               borderRadius: BorderRadius.zero,
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: Theme.of(context).colorScheme.outline),
             ),
             child: Row(
               children: [
@@ -2768,7 +2821,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
-                          color: AppTheme.textSec,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 12,
                         ),
                       ),
@@ -2798,9 +2851,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             constraints: const BoxConstraints(maxHeight: 150),
             decoration: BoxDecoration(
-              color: AppTheme.surface,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.zero,
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: Theme.of(context).colorScheme.outline),
             ),
             child: ListView.builder(
               shrinkWrap: true,
@@ -2838,13 +2891,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         ? AppTheme.green
                         : isSlashCommand
                         ? AppTheme.focusBlue
-                        : AppTheme.accent,
+                        : Theme.of(context).colorScheme.primary,
                     size: 20, // larger
                   ),
                   title: Text(
                     handle,
                     style: GoogleFonts.inter(
-                      color: AppTheme.textPri,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 14, // larger
                     ),
                   ),
@@ -2921,10 +2974,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                   child: Container(
                     height: 54,
                     decoration: BoxDecoration(
-                      color: AppTheme.surface,
+                      color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.zero,
                       border: Border.all(
-                        color: isFocusModeActive ? AppTheme.focusBlue : AppTheme.purple,
+                        color: isFocusModeActive
+                            ? AppTheme.focusBlue
+                            : AppTheme.purple,
                         width: (isFocusModeActive || _isAiMode) ? 2.0 : 1.5,
                       ),
                       boxShadow: isFocusModeActive
@@ -2950,7 +3005,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                 controller: _commandController,
                                 focusNode: _commandFocusNode,
                                 style: GoogleFonts.inter(
-                                  color: AppTheme.textPri,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                   fontSize: 15,
                                 ),
                                 decoration: InputDecoration(
@@ -2964,7 +3021,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                         ? AppTheme.purpleLt
                                         : (isFocusModeActive
                                               ? AppTheme.focusBlue
-                                              : AppTheme.muted),
+                                              : Theme.of(
+                                                  context,
+                                                ).colorScheme.secondary),
                                     fontSize: 15,
                                   ),
                                   border: InputBorder.none,
@@ -2981,7 +3040,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                               IconButton(
                                 icon: Icon(
                                   Icons.emoji_emotions_outlined,
-                                  color: AppTheme.textSec,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                   size: 24,
                                 ),
                                 onPressed: () {
@@ -2993,7 +3054,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                               IconButton(
                                 icon: Icon(
                                   Icons.add_photo_alternate_outlined,
-                                  color: AppTheme.textSec,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                   size: 24,
                                 ),
                                 onPressed: _pickAndSendImage,
@@ -3001,7 +3064,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                               IconButton(
                                 icon: Icon(
                                   Icons.attach_file_outlined,
-                                  color: AppTheme.textSec,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                   size: 24,
                                 ),
                                 onPressed: _pickAndSendFile,
@@ -3009,7 +3074,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                               IconButton(
                                 icon: Icon(
                                   Icons.location_on_outlined,
-                                  color: AppTheme.textSec,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                   size: 24,
                                 ),
                                 onPressed: _sendLocation,
@@ -3017,7 +3084,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                               IconButton(
                                 icon: Icon(
                                   Icons.group_add_outlined,
-                                  color: AppTheme.textSec,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                   size: 24,
                                 ),
                                 onPressed: _showCreateGroupDialog,
@@ -3080,7 +3149,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                           builder: (context, isRecording, _) {
                             if (!isRecording) return const SizedBox.shrink();
                             return Container(
-                              color: AppTheme.surface,
+                              color: Theme.of(context).colorScheme.surface,
                               child: Row(
                                 children: [
                                   const SizedBox(width: 14),
@@ -3106,7 +3175,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                       return Text(
                                         '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}',
                                         style: GoogleFonts.inter(
-                                          color: AppTheme.textPri,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -3119,11 +3190,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                         _recordingDragOffset.clamp(-100.0, 0.0),
                                         0,
                                       ),
-                                      child: const Center(
+                                      child: Center(
                                         child: Text(
                                           '< Slide to cancel',
                                           style: TextStyle(
-                                            color: AppTheme.textSec,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
                                             fontSize: 14,
                                           ),
                                         ),
@@ -3145,7 +3218,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                         Icons.delete_outline_rounded,
                                         color: _recordingDragOffset < -50
                                             ? AppTheme.red
-                                            : AppTheme.textSec,
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
                                         size: 26,
                                       ),
                                     ),
@@ -3213,7 +3288,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppTheme.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       builder: (context) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
@@ -3231,13 +3306,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 Text(
                   existingBot == null ? 'CREATE BOT' : 'EDIT BOT',
                   style: GoogleFonts.outfit(
-                    color: AppTheme.textPri,
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Icons.close, color: AppTheme.muted),
+                  icon: Icon(
+                    Icons.close,
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -3251,7 +3329,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             TextField(
               controller: instructionsController,
               maxLines: 5,
-              style: GoogleFonts.inter(color: AppTheme.textPri),
+              style: GoogleFonts.inter(
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
               decoration: const InputDecoration(
                 labelText: 'Instructions / System Prompt',
                 hintText:
@@ -3516,10 +3596,10 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
   }
 
   Widget _buildAvatar(Map<String, dynamic> item, ColorScheme colorScheme) {
-    final isGroup = item['type'] == 'group';
+    final String handleText = item['handle'] ?? '?';
+    final isGroup = item['type'] == 'group' || handleText.startsWith('#');
     final double percentage = item['onlinePercentage'] ?? 0.0;
     final String photoUrl = item['photoUrl'] ?? '';
-    final String handleText = item['handle'] ?? '?';
     final String initials =
         handleText.replaceAll(RegExp(r'[@#]'), '').isNotEmpty
         ? handleText
@@ -3582,7 +3662,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               painter: _PresenceRingPainter(
                 percentage: percentage,
                 color: AppTheme.green,
-                trackColor: AppTheme.border,
+                trackColor: Theme.of(context).colorScheme.outline,
               ),
             ),
           innerAvatar,
@@ -3592,7 +3672,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
   }
 
   Widget _buildInitials(String initials, ColorScheme colorScheme) {
-    final isGroup = widget.item['type'] == 'group';
+    final String handleText = widget.item['handle'] ?? '';
+    final isGroup =
+        widget.item['type'] == 'group' || handleText.startsWith('#');
     return Container(
       width: 34,
       height: 34,
@@ -3632,13 +3714,17 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     final String handleText = widget.item['handle'] ?? '';
     final isGroup = handleText.startsWith('#');
     // Purple for DM (@), emerald-ish green for group (#)
-    final handlePrefixColor = isGroup ? Colors.purpleAccent : Colors.blueAccent;
+    final handlePrefixColor = isGroup ? AppTheme.green : AppTheme.purple;
     final tileBorderColor = widget.isFocusLocked
         ? AppTheme.focusBlue.withValues(alpha: 0.8)
-        : (isUnread ? AppTheme.purple.withValues(alpha: 0.5) : AppTheme.border);
+        : (isUnread
+              ? AppTheme.purple.withValues(alpha: 0.5)
+              : Theme.of(context).colorScheme.outline);
     final tileBackgroundColor = widget.isFocusLocked
         ? AppTheme.focusBlueGlow
-        : (isUnread ? AppTheme.purpleGlow : AppTheme.surface);
+        : (isUnread
+              ? AppTheme.purpleGlow
+              : Theme.of(context).colorScheme.surface);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
@@ -3730,7 +3816,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                               Text(
                                 widget.item['time'] ?? '',
                                 style: GoogleFonts.inter(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w400,
                                 ),
@@ -3828,7 +3916,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               Text(
                 'GROUP INFO',
                 style: GoogleFonts.inter(
-                  color: AppTheme.textPri,
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontWeight: FontWeight.w700,
                   fontSize: 13,
                   letterSpacing: 0.5,
@@ -3839,7 +3927,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                 Text(
                   desc,
                   style: GoogleFonts.inter(
-                    color: AppTheme.textSec,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 13,
                   ),
                 ),
@@ -3890,7 +3978,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                         decoration: BoxDecoration(
                           color: u?.isOnline == true
                               ? AppTheme.green
-                              : AppTheme.muted,
+                              : Theme.of(context).colorScheme.secondary,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -3899,7 +3987,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                         child: Text(
                           '@${u?.displayName.replaceAll(' ', '').toLowerCase() ?? 'unknown'}',
                           style: GoogleFonts.inter(
-                            color: AppTheme.textPri,
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 13,
                           ),
                         ),
@@ -3997,7 +4085,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   Text(
                     'USER INFO',
                     style: GoogleFonts.inter(
-                      color: AppTheme.textPri,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
                       letterSpacing: 0.5,
@@ -4016,7 +4104,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   Text(
                     u.status,
                     style: GoogleFonts.inter(
-                      color: AppTheme.textSec,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 13,
                       fontStyle: FontStyle.italic,
                     ),
@@ -4034,20 +4122,23 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   Text(
                     u.email,
                     style: GoogleFonts.inter(
-                      color: AppTheme.textSec,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 13,
                     ),
                   ),
 
                   const SizedBox(height: 24),
-                  Container(height: 1, color: AppTheme.border),
+                  Container(
+                    height: 1,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
                   const SizedBox(height: 16),
 
                   // ── Seen Status Section ──
                   Text(
                     'SEEN STATUS',
                     style: GoogleFonts.inter(
-                      color: AppTheme.textPri,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
                       letterSpacing: 0.5,
@@ -4099,7 +4190,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                               content: Text(
                                 'Seen request sent to ${u.displayName}',
                               ),
-                              backgroundColor: AppTheme.surface2,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.primaryContainer,
                             ),
                           );
                         },
@@ -4130,7 +4223,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                           Text(
                             '${u.displayName} wants to see your read receipts',
                             style: GoogleFonts.inter(
-                              color: AppTheme.textPri,
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                             ),
@@ -4271,14 +4364,20 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                     return await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        backgroundColor: AppTheme.surface,
+                        backgroundColor: Theme.of(context).colorScheme.surface,
                         title: Text(
                           'Delete message?',
-                          style: TextStyle(color: AppTheme.textPri),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
                         ),
                         content: Text(
                           'This message will be deleted for everyone.',
-                          style: TextStyle(color: AppTheme.textSec),
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         actions: [
                           TextButton(
@@ -4352,20 +4451,26 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                         onLongPress: () {
                           showModalBottomSheet(
                             context: context,
-                            backgroundColor: AppTheme.surface,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surface,
                             builder: (context) => SafeArea(
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   ListTile(
-                                    leading: const Icon(
+                                    leading: Icon(
                                       Icons.reply,
-                                      color: AppTheme.textPri,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
                                     ),
                                     title: Text(
                                       'Reply',
                                       style: GoogleFonts.outfit(
-                                        color: AppTheme.textPri,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
                                       ),
                                     ),
                                     onTap: () {
@@ -4378,14 +4483,18 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                     },
                                   ),
                                   ListTile(
-                                    leading: const Icon(
+                                    leading: Icon(
                                       Icons.forward,
-                                      color: AppTheme.textPri,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
                                     ),
                                     title: Text(
                                       'Forward',
                                       style: GoogleFonts.outfit(
-                                        color: AppTheme.textPri,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
                                       ),
                                     ),
                                     onTap: () {
@@ -4450,7 +4559,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                             border: Border.all(
                               color: isMe
                                   ? const Color(0xFF3A3A3E)
-                                  : AppTheme.border,
+                                  : Theme.of(context).colorScheme.outline,
                               width: 1,
                             ),
                           ),
@@ -4510,9 +4619,11 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
 
   // ── Message content renderer ──
   Widget _buildMessageContent(MessageModel msg, bool isMe) {
-    final iconColor = isMe ? AppTheme.purpleLt : AppTheme.textSec;
+    final iconColor = isMe
+        ? AppTheme.purpleLt
+        : Theme.of(context).colorScheme.onSurfaceVariant;
     final textStyle = GoogleFonts.inter(
-      color: AppTheme.textPri,
+      color: Theme.of(context).colorScheme.onSurface,
       fontSize: 13,
       height: 1.4,
     );
@@ -4535,7 +4646,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   placeholder: (context, url) => Container(
                     width: 200,
                     height: 150,
-                    color: AppTheme.surface,
+                    color: Theme.of(context).colorScheme.surface,
                     child: const Center(
                       child: CircularProgressIndicator(
                         color: AppTheme.purple,
@@ -4546,7 +4657,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   errorWidget: (context, url, error) => Container(
                     width: 200,
                     height: 150,
-                    color: AppTheme.surface,
+                    color: Theme.of(context).colorScheme.surface,
                     child: Icon(Icons.broken_image, color: iconColor, size: 32),
                   ),
                 ),
@@ -4582,7 +4693,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                     Text(
                       msg.fileName ?? 'File',
                       style: GoogleFonts.inter(
-                        color: AppTheme.textPri,
+                        color: Theme.of(context).colorScheme.onSurface,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -4650,7 +4761,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   Text(
                     '📍 Location',
                     style: GoogleFonts.inter(
-                      color: AppTheme.textPri,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -4699,7 +4810,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                 child: Text(
                   replyLine.replaceAll('> Reply:', 'Reply').trim(),
                   style: GoogleFonts.inter(
-                    color: AppTheme.textSec,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontSize: 12,
                     fontStyle: FontStyle.italic,
                   ),
@@ -4839,7 +4950,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     required VoidCallback onTap,
     Color? color,
   }) {
-    final c = color ?? AppTheme.textPri;
+    final c = color ?? Theme.of(context).colorScheme.onSurface;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -4873,7 +4984,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     required String text,
     Color? color,
   }) {
-    final c = color ?? AppTheme.textSec;
+    final c = color ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -4903,14 +5014,17 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               Text(
                 label,
                 style: GoogleFonts.inter(
-                  color: AppTheme.textPri,
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               Text(
                 subtitle,
-                style: GoogleFonts.inter(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 10),
+                style: GoogleFonts.inter(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 10,
+                ),
               ),
             ],
           ),
@@ -4922,8 +5036,8 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
             onChanged: onChanged,
             activeThumbColor: AppTheme.purple,
             activeTrackColor: AppTheme.purple.withValues(alpha: 0.3),
-            inactiveThumbColor: AppTheme.muted,
-            inactiveTrackColor: AppTheme.border,
+            inactiveThumbColor: Theme.of(context).colorScheme.secondary,
+            inactiveTrackColor: Theme.of(context).colorScheme.outline,
           ),
         ),
       ],
@@ -4946,11 +5060,11 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             return AlertDialog(
-              backgroundColor: AppTheme.surface,
+              backgroundColor: Theme.of(context).colorScheme.surface,
               title: Text(
                 'Add Members',
                 style: GoogleFonts.inter(
-                  color: AppTheme.textPri,
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -4962,7 +5076,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                         child: Text(
                           'No users to add',
                           style: GoogleFonts.inter(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                             fontSize: 14,
                           ),
                         ),
@@ -4980,17 +5096,26 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                   : Icons.radio_button_unchecked,
                               color: isSelected
                                   ? AppTheme.purple
-                                  : AppTheme.muted,
+                                  : Theme.of(context).colorScheme.secondary,
                               size: 20,
                             ),
                             title: Row(
                               children: [
-                                PixelSymbol(isGroup: false, color: Colors.blueAccent, size: 10),
+                                PixelSymbol(
+                                  isGroup: false,
+                                  color: Colors.blueAccent,
+                                  size: 10,
+                                ),
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
                                     user.displayName,
-                                    style: GoogleFonts.inter(color: AppTheme.textPri, fontSize: 13),
+                                    style: GoogleFonts.inter(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      fontSize: 13,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -4998,7 +5123,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                             subtitle: Text(
                               user.email,
                               style: GoogleFonts.inter(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                                 fontSize: 11,
                               ),
                             ),
@@ -5020,7 +5147,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   onPressed: () => Navigator.pop(ctx),
                   child: Text(
                     'Cancel',
-                    style: GoogleFonts.inter(color: AppTheme.muted),
+                    style: GoogleFonts.inter(
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
                   ),
                 ),
                 TextButton(
@@ -5040,7 +5169,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                     'Add (${selected.length})',
                     style: GoogleFonts.inter(
                       color: selected.isEmpty
-                          ? AppTheme.muted
+                          ? Theme.of(context).colorScheme.secondary
                           : AppTheme.purple,
                       fontWeight: FontWeight.w600,
                     ),
@@ -5059,24 +5188,29 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          backgroundColor: AppTheme.surface,
+          backgroundColor: Theme.of(context).colorScheme.surface,
           title: Text(
             'Leave group?',
             style: GoogleFonts.inter(
-              color: AppTheme.textPri,
+              color: Theme.of(context).colorScheme.onSurface,
               fontWeight: FontWeight.w700,
             ),
           ),
           content: Text(
             'You will no longer receive messages from this group.',
-            style: GoogleFonts.inter(color: AppTheme.textSec, fontSize: 14),
+            style: GoogleFonts.inter(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 14,
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: Text(
                 'Cancel',
-                style: GoogleFonts.inter(color: AppTheme.muted),
+                style: GoogleFonts.inter(
+                  color: Theme.of(context).colorScheme.secondary,
+                ),
               ),
             ),
             TextButton(
@@ -5191,9 +5325,9 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
-      decoration: const BoxDecoration(
-        color: AppTheme.bg,
-        borderRadius: BorderRadius.only(
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(20),
           topRight: Radius.circular(20),
         ),
@@ -5211,7 +5345,7 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 24),
                   decoration: BoxDecoration(
-                    color: AppTheme.border,
+                    color: Theme.of(context).colorScheme.outline,
                     borderRadius: BorderRadius.zero,
                   ),
                 ),
@@ -5236,7 +5370,7 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
                   Text(
                     'NETWORK',
                     style: GoogleFonts.inter(
-                      color: AppTheme.textPri,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.5,
@@ -5249,7 +5383,10 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
               // Search Box
               TextField(
                 onChanged: (val) => setState(() => _searchQuery = val),
-                style: GoogleFonts.inter(color: AppTheme.textPri, fontSize: 14),
+                style: GoogleFonts.inter(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontSize: 14,
+                ),
                 decoration: const InputDecoration(
                   hintText: 'Search people...',
                   prefixIcon: Icon(Icons.search, size: 18),
@@ -5263,7 +5400,9 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
                         child: Text(
                           'No matches found',
                           style: GoogleFonts.inter(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                             fontSize: 13,
                           ),
                         ),
@@ -5326,7 +5465,9 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
                       end: Alignment.bottomRight,
                     ),
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppTheme.border),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                   ),
                   child: Center(
                     child: Text(
@@ -5350,7 +5491,7 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
                         Text(
                           handle,
                           style: GoogleFonts.inter(
-                            color: AppTheme.textPri,
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
@@ -5375,7 +5516,9 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
             IconButton(
               icon: Icon(
                 isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
-                color: isFavorite ? AppTheme.yellow : AppTheme.muted,
+                color: isFavorite
+                    ? AppTheme.yellow
+                    : Theme.of(context).colorScheme.secondary,
                 size: 20,
               ),
               onPressed: () {

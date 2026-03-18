@@ -31,15 +31,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
   bool _isSelectionMode = false;
 
   // Render.com palette
-  static const _bgColor = AppTheme.bg;
-  static const _surfaceColor = AppTheme.surface;
-  static const _expandedColor = AppTheme.surface2;
-  static const _inputBgColor = AppTheme.surface2;
-  static const _textPrimary = AppTheme.textPri;
-  static const _textSecondary = AppTheme.textSec;
-  static const _accent = AppTheme.purple;
-  static const _bubbleMe = AppTheme.purpleDim;
-  static const _bubbleOther = AppTheme.surface2;
+  Color get _bgColor => Theme.of(context).scaffoldBackgroundColor;
+  Color get _surfaceColor => Theme.of(context).colorScheme.surface;
+  Color get _expandedColor => Theme.of(context).colorScheme.primaryContainer;
+  Color get _inputBgColor => Theme.of(context).colorScheme.primaryContainer;
+  Color get _textPrimary => Theme.of(context).colorScheme.onSurface;
+  Color get _textSecondary => Theme.of(context).colorScheme.onSurfaceVariant;
+  Color get _accent => Theme.of(context).colorScheme.primary;
+  Color get _bubbleMe =>
+      Theme.of(context).colorScheme.primary.withValues(alpha: 0.2);
+  Color get _bubbleOther => Theme.of(context).colorScheme.primaryContainer;
 
   @override
   void dispose() {
@@ -131,7 +132,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         actions: [
           if (_isSelectionMode)
             IconButton(
-              icon: const Icon(Icons.close, color: _textSecondary),
+              icon: Icon(Icons.close, color: _textSecondary),
               onPressed: _clearSelection,
             ),
         ],
@@ -143,9 +144,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             stream: _chatService.getUserChats(widget.currentUserId),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: CircularProgressIndicator(color: _accent),
-                );
+                return Center(child: CircularProgressIndicator(color: _accent));
               }
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return _buildEmptyState();
@@ -199,8 +198,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
               color: isSelected
                   ? AppTheme.purple
                   : isExpanded
-                  ? AppTheme.border
-                  : AppTheme.border,
+                  ? Theme.of(context).colorScheme.outline
+                  : Theme.of(context).colorScheme.outline,
               width: isSelected ? 1.5 : 1,
             ),
           ),
@@ -375,8 +374,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
       stream: _chatService.getChatMessages(chatId),
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.only(bottom: 16),
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
             child: Center(
               child: Text(
                 'No messages yet',
@@ -432,7 +431,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       children: [
                         Text(
                           msg.text,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: _textPrimary,
                             fontSize: 14,
                             height: 1.35,
@@ -446,7 +445,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                               msg.timestamp != null
                                   ? DateFormat('HH:mm').format(msg.timestamp!)
                                   : '',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: _textSecondary,
                                 fontSize: 10,
                               ),
@@ -482,14 +481,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
             decoration: BoxDecoration(
               color: _inputBgColor,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.border),
+              border: Border.all(color: Theme.of(context).colorScheme.outline),
             ),
             child: TextField(
               controller: _messageController,
               focusNode: _focusNode,
               maxLines: null,
               enabled: _hasTarget,
-              style: const TextStyle(color: _textPrimary, fontSize: 15),
+              style: TextStyle(color: _textPrimary, fontSize: 15),
               textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
                 hintText: _isSelectionMode
@@ -497,7 +496,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     : _hasTarget
                     ? 'Type a message…'
                     : 'Select a chat first…',
-                hintStyle: const TextStyle(color: _textSecondary, fontSize: 15),
+                hintStyle: TextStyle(color: _textSecondary, fontSize: 15),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 20,
@@ -516,10 +515,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              color: _hasTarget ? AppTheme.purple : AppTheme.surface2,
+              color: _hasTarget
+                  ? AppTheme.purple
+                  : Theme.of(context).colorScheme.primaryContainer,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: _hasTarget ? AppTheme.purple : AppTheme.border,
+                color: _hasTarget
+                    ? AppTheme.purple
+                    : Theme.of(context).colorScheme.outline,
               ),
             ),
             child: Icon(
@@ -535,12 +538,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   // ── Empty state ────────────────────────────────────────────────────
   Widget _buildEmptyState() {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.chat_bubble_outline, size: 60, color: _textSecondary),
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
           Text(
             'No conversations yet',
             style: TextStyle(

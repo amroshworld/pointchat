@@ -28,7 +28,10 @@ class UserAvatar extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.rectangle,
             color: AppTheme.purpleDim,
-            border: Border.all(color: AppTheme.border, width: 1.5),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outline,
+              width: 1.5,
+            ),
           ),
           child: ClipRect(
             child: (photoUrl != null && photoUrl!.isNotEmpty)
@@ -37,9 +40,10 @@ class UserAvatar extends StatelessWidget {
                     width: radius * 2,
                     height: radius * 2,
                     fit: BoxFit.cover,
-                    errorWidget: (context, url, error) => _buildFallbackText(),
+                    errorWidget: (context, url, error) =>
+                        _buildFallbackText(context),
                   )
-                : _buildFallbackText(),
+                : _buildFallbackText(context),
           ),
         ),
         if (showOnlineIndicator)
@@ -50,9 +54,14 @@ class UserAvatar extends StatelessWidget {
               width: radius * 0.45,
               height: radius * 0.45,
               decoration: BoxDecoration(
-                color: isOnline ? AppTheme.green : AppTheme.muted,
+                color: isOnline
+                    ? AppTheme.green
+                    : Theme.of(context).colorScheme.secondary,
                 shape: BoxShape.rectangle,
-                border: Border.all(color: AppTheme.bg, width: 1.5),
+                border: Border.all(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  width: 1.5,
+                ),
               ),
             ),
           ),
@@ -60,12 +69,12 @@ class UserAvatar extends StatelessWidget {
     );
   }
 
-  Widget _buildFallbackText() {
+  Widget _buildFallbackText(BuildContext context) {
     return Center(
       child: Text(
         name.isNotEmpty ? name[0].toUpperCase() : '?',
         style: TextStyle(
-          color: AppTheme.textPri,
+          color: Theme.of(context).colorScheme.onSurface,
           fontSize: radius * 0.75,
           fontWeight: FontWeight.w700,
         ),
@@ -93,8 +102,11 @@ class GroupAvatar extends StatelessWidget {
       height: radius * 2,
       decoration: BoxDecoration(
         shape: BoxShape.rectangle,
-        color: AppTheme.surface2,
-        border: Border.all(color: AppTheme.border, width: 1.5),
+        color: Theme.of(context).colorScheme.primaryContainer,
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline,
+          width: 1.5,
+        ),
       ),
       child: ClipRect(
         child: (photoUrl != null && photoUrl!.isNotEmpty)
@@ -103,14 +115,15 @@ class GroupAvatar extends StatelessWidget {
                 width: radius * 2,
                 height: radius * 2,
                 fit: BoxFit.cover,
-                errorWidget: (context, url, error) => _buildFallbackIcon(),
+                errorWidget: (context, url, error) =>
+                    _buildFallbackIcon(context),
               )
-            : _buildFallbackIcon(),
+            : _buildFallbackIcon(context),
       ),
     );
   }
 
-  Widget _buildFallbackIcon() {
+  Widget _buildFallbackIcon(BuildContext context) {
     return Center(
       child: Icon(Icons.group, color: AppTheme.green, size: radius),
     );

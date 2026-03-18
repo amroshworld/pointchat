@@ -55,7 +55,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: StreamBuilder<List<UserModel>>(
           stream: _userService.getAllUsers(widget.currentUserId),
@@ -111,13 +111,13 @@ class _PeopleScreenState extends State<PeopleScreen> {
             return CustomScrollView(
               slivers: [
                 SliverAppBar(
-                  backgroundColor: AppTheme.bg,
+                  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
                   floating: true,
                   snap: true,
                   title: Text(
                     'People',
                     style: GoogleFonts.inter(
-                      color: AppTheme.textPri,
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                       letterSpacing: -0.4,
@@ -134,7 +134,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                           Text(
                             'Favorites',
                             style: GoogleFonts.inter(
-                              color: AppTheme.textPri,
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
@@ -164,7 +164,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                                         Text(
                                           user.displayName.split(' ').first,
                                           style: GoogleFonts.inter(
-                                            color: AppTheme.textSec,
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                                             fontSize: 12,
                                           ),
                                         ),
@@ -248,9 +248,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
                         return Container(
                           margin: const EdgeInsets.only(bottom: 8),
                           decoration: BoxDecoration(
-                            color: AppTheme.surface,
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: AppTheme.border),
+                            border: Border.all(color: Theme.of(context).colorScheme.outline),
                           ),
                           child: ListTile(
                             contentPadding: const EdgeInsets.symmetric(
@@ -267,7 +267,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                             title: Text(
                               user.displayName,
                               style: GoogleFonts.inter(
-                                color: AppTheme.textPri,
+                                color: Theme.of(context).colorScheme.onSurface,
                                 fontWeight: FontWeight.w600,
                                 fontSize: 14,
                               ),
@@ -275,7 +275,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                             subtitle: Text(
                               user.email,
                               style: GoogleFonts.inter(
-                                color: AppTheme.textSec,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 fontSize: 12,
                               ),
                             ),
