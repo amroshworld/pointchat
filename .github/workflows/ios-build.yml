@@ -1,0 +1,170 @@
+name: iOS Build
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      signed_build:
+        description: "Build signed IPA (requires iOS signing secrets)"
+        required: true
+        default: false
+        type: boolean
+      export_method:
+        description: "iOS export method"
+        required: true
+        default: "app-store"
+        type: choice
+        options:
+          - app-store
+          - ad-hoc
+          - development
+      upload_testflight:
+        description: "Upload IPA to TestFlight (requires App Store Connect API key secrets)"
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  ios-unsigned:
+    name: iOS Unsigned Build
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
+
+      - name: Archive unsigned app bundle
+        run: |
+          cd build/ios/iphoneos
+          zip -r Runner.app.zip Runner.app
+
+      - name: Upload unsigned iOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-runner-app
+          path: build/ios/iphoneos/Runner.app.zip
+          if-no-files-found: error
+
+  ios-signed:
+    name: iOS Signed IPA
+    runs-on: macos-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.signed_build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Install Apple signing certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.IOS_CERTIFICATE_P12_PASSWORD }}
+
+      - name: Install provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$PROFILE_BASE64" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
+
+      - name: Create ExportOptions.plist
+        env:
+          EXPORT_METHOD: ${{ inputs.export_method }}
+          TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+          PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+        run: |
+          cat > ios/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>${EXPORT_METHOD}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>teamID</key>
+            <string>${TEAM_ID}</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${BUNDLE_ID}</key>
+              <string>${PROFILE_NAME}</string>
+            </dict>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>compileBitcode</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Build signed IPA
+        env:
+          REVENUECAT_ANDROID_API_KEY: ${{ secrets.REVENUECAT_ANDROID_API_KEY }}
+          REVENUECAT_IOS_API_KEY: ${{ secrets.REVENUECAT_IOS_API_KEY }}
+        run: |
+          flutter build ipa \
+            --release \
+            --export-options-plist=ios/ExportOptions.plist \
+            --build-number=${{ github.run_number }} \
+            --dart-define=REVENUECAT_ANDROID_API_KEY=${REVENUECAT_ANDROID_API_KEY} \
+            --dart-define=REVENUECAT_IOS_API_KEY=${REVENUECAT_IOS_API_KEY}
+
+      - name: Upload signed IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-signed-ipa
+          path: build/ios/ipa/*.ipa
+          if-no-files-found: error
+
+      - name: Upload dSYM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-dsym
+          path: build/ios/archive/Runner.xcarchive/dSYMs
+          if-no-files-found: warn
+
+      - name: Prepare App Store Connect API key
+        if: inputs.upload_testflight
+        env:
+          ASC_API_KEY_BASE64: ${{ secrets.APPSTORE_API_KEY_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$ASC_API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+      - name: Upload to TestFlight
+        if: inputs.upload_testflight
+        env:
+          ASC_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app \
+            --type ios \
+            --file build/ios/ipa/*.ipa \
+            --apiKey "$ASC_KEY_ID" \
+            --apiIssuer "$ASC_ISSUER_ID"

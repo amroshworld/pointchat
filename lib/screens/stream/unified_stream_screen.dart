@@ -77,7 +77,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   final AiService _aiService = AiService();
 
   bool _showActions = false;
-  bool _showEmojiPopup = false;
   final ValueNotifier<bool> _isRecordingNotifier = ValueNotifier<bool>(false);
   final ValueNotifier<int> _recordingSecondsNotifier = ValueNotifier<int>(0);
   double _recordingDragOffset = 0;
@@ -1152,7 +1151,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
     final croppedFile = await ImageCropper().cropImage(
       sourcePath: pickedFile.path,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
       compressQuality: 82,
+      maxWidth: 1024,
+      maxHeight: 1024,
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: 'Crop Image',
@@ -1176,31 +1178,74 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         bytes: imageBytes,
         filename: '$filePrefix-${const Uuid().v4()}.jpg',
       ),
-      permissions: signedInReadPermissions(),
+      // Avatars/icons should be readable by anyone who can see chat UI.
+      permissions: publicReadPermissions(),
     );
 
-    return buildStorageFileUrl(file.$id);
+    return buildStoragePreviewUrl(file.$id, width: 320, height: 320);
   }
 
   Future<void> _updateMyProfilePhoto() async {
-    final photoUrl = await _pickAndUploadSquareImage(filePrefix: 'profile');
-    if (photoUrl == null) {
-      return;
-    }
+    try {
+      final photoUrl = await _pickAndUploadSquareImage(filePrefix: 'profile');
+      if (photoUrl == null) {
+        return;
+      }
 
-    await _userService.updateUserPhotoUrl(currentUserId, photoUrl);
-    cachedUserPhotoUrl = photoUrl;
-    if (mounted) setState(() {});
+      await _userService.updateUserPhotoUrl(currentUserId, photoUrl);
+      final updatedUser = await _userService.getUserById(currentUserId);
+      if (updatedUser?.photoUrl != photoUrl) {
+        throw Exception('Photo update not persisted in Appwrite user record.');
+      }
+
+      cachedUserPhotoUrl = photoUrl;
+      if (!mounted) {
+        return;
+      }
+      setState(() {});
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Profile picture updated.')));
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update profile picture: $e')),
+      );
+    }
   }
 
   Future<void> _updateGroupPhoto(String groupId) async {
-    final photoUrl = await _pickAndUploadSquareImage(filePrefix: 'group');
-    if (photoUrl == null) {
-      return;
-    }
+    try {
+      final photoUrl = await _pickAndUploadSquareImage(filePrefix: 'group');
+      if (photoUrl == null) {
+        return;
+      }
 
-    await _groupService.updateGroup(groupId, {'photoUrl': photoUrl});
-    if (mounted) setState(() {});
+      await _groupService.updateGroup(groupId, {'photoUrl': photoUrl});
+      final updatedGroup = await _groupService.getGroupStream(groupId).first;
+      if (updatedGroup?.photoUrl != photoUrl) {
+        throw Exception(
+          'Group icon update not persisted in Appwrite group record.',
+        );
+      }
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {});
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Group icon updated.')));
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update group icon: $e')),
+      );
+    }
   }
 
   Future<bool> _ensureAiAccess() async {
@@ -1320,7 +1365,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                               size: 12,
                             ),
                             const SizedBox(width: 6),
-                            Expanded(child: Text(' ' + handle.substring(1))),
+                            Expanded(child: Text(' ${handle.substring(1)}')),
                           ],
                         ),
                         subtitle: Text(
@@ -2078,7 +2123,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      'Subscribe to PointChat AI to chat with bots.',
+                      'AI access is required to chat with bots.',
                       style: GoogleFonts.inter(),
                     ),
                     backgroundColor: const Color(0xFF161618),
@@ -2395,8 +2440,102 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           SafeArea(
             child: Column(
               children: [
-                _buildStatusBar(),
-                Expanded(child: _buildCombinedStream()),
+                Expanded(
+                  child: NestedScrollView(
+                    floatHeaderSlivers: true,
+                    headerSliverBuilder: (context, innerBoxIsScrolled) {
+                      return [
+                        SliverAppBar(
+                          floating: true,
+                          snap: true,
+                          elevation: 0,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).scaffoldBackgroundColor,
+                          bottom: PreferredSize(
+                            preferredSize: const Size.fromHeight(1.0),
+                            child: Container(
+                              color: Theme.of(context).colorScheme.outline,
+                              height: 1.0,
+                            ),
+                          ),
+                          title: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.zero,
+                                    child: Image.asset(
+                                      'assets/icon.png',
+                                      width: 26,
+                                      height: 26,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    'PointChat',
+                                    style: GoogleFonts.inter(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  Consumer(
+                                    builder: (context, ref, child) {
+                                      final themeMode = ref.watch(
+                                        themeModeProvider,
+                                      );
+                                      final isDark =
+                                          themeMode == ThemeMode.dark;
+                                      return IconButton(
+                                        icon: Icon(
+                                          isDark
+                                              ? Icons.light_mode
+                                              : Icons.dark_mode,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                          size: 20,
+                                        ),
+                                        onPressed: () {
+                                          ref
+                                              .read(themeModeProvider.notifier)
+                                              .toggle();
+                                        },
+                                      );
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.logout_rounded,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                      size: 20,
+                                    ),
+                                    onPressed: () => AuthService().signOut(),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ];
+                    },
+                    body: _buildCombinedStream(),
+                  ),
+                ),
                 _buildCommandBar(),
               ],
             ),
@@ -2413,80 +2552,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 ),
               ),
             ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline,
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // App icon + name (uses actual assets/icon.png)
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.zero,
-                child: Image.asset(
-                  'assets/icon.png',
-                  width: 26,
-                  height: 26,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'PointChat',
-                style: GoogleFonts.inter(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Consumer(
-                builder: (context, ref, child) {
-                  final themeMode = ref.watch(themeModeProvider);
-                  final isDark = themeMode == ThemeMode.dark;
-                  return IconButton(
-                    icon: Icon(
-                      isDark ? Icons.light_mode : Icons.dark_mode,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      size: 20,
-                    ),
-                    onPressed: () {
-                      ref.read(themeModeProvider.notifier).toggle();
-                    },
-                  );
-                },
-              ),
-              IconButton(
-                icon: Icon(
-                  Icons.logout_rounded,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  size: 20,
-                ),
-                onPressed: () => AuthService().signOut(),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
-            ],
-          ),
         ],
       ),
     );
@@ -2599,53 +2664,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           },
         );
       },
-    );
-  }
-
-  Widget _buildEmojiPopup() {
-    final emojis = ['👍', '❤️', '😂', '🔥', '🎉', '🚀'];
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E20),
-        borderRadius: BorderRadius.zero,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ...emojis.map(
-            (emoji) => InkWell(
-              onTap: () {
-                final text = _commandController.text;
-                final selection = _commandController.selection;
-                final start = selection.start >= 0
-                    ? selection.start
-                    : text.length;
-                final end = selection.end >= 0 ? selection.end : text.length;
-                final newText =
-                    text.substring(0, start) + emoji + text.substring(end);
-                _commandController.text = newText;
-                _commandController.selection = TextSelection.collapsed(
-                  offset: start + emoji.length,
-                );
-                _commandFocusNode.requestFocus();
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text(emoji, style: const TextStyle(fontSize: 22)),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -2952,8 +2970,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             ),
           ),
 
-        if (_showEmojiPopup) _buildEmojiPopup(),
-
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
           child: Row(
@@ -2967,7 +2983,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                     } else if (details.primaryDelta! > 5) {
                       setState(() {
                         _showActions = false;
-                        _showEmojiPopup = false;
                       });
                     }
                   },
@@ -2976,12 +2991,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                     decoration: BoxDecoration(
                       color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.zero,
-                      border: Border.all(
-                        color: isFocusModeActive
-                            ? AppTheme.focusBlue
-                            : AppTheme.purple,
-                        width: (isFocusModeActive || _isAiMode) ? 2.0 : 1.5,
-                      ),
+                      border: Border.all(color: Colors.transparent, width: 0),
                       boxShadow: isFocusModeActive
                           ? [
                               BoxShadow(
@@ -3039,20 +3049,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                             if (_showActions) ...[
                               IconButton(
                                 icon: Icon(
-                                  Icons.emoji_emotions_outlined,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                  size: 24,
-                                ),
-                                onPressed: () {
-                                  setState(
-                                    () => _showEmojiPopup = !_showEmojiPopup,
-                                  );
-                                },
-                              ),
-                              IconButton(
-                                icon: Icon(
                                   Icons.add_photo_alternate_outlined,
                                   color: Theme.of(
                                     context,
@@ -3080,16 +3076,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                                   size: 24,
                                 ),
                                 onPressed: _sendLocation,
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.group_add_outlined,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                  size: 24,
-                                ),
-                                onPressed: _showCreateGroupDialog,
                               ),
                             ],
                             if (!_showActions)
@@ -3414,129 +3400,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       ),
     );
   }
-
-  void _showCreateGroupDialog() {
-    String grpName = '';
-    bool isCreating = false;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              backgroundColor: const Color(0xFF1E1E20),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.zero,
-                side: BorderSide(
-                  color: colorScheme.onSurface.withValues(alpha: 0.2),
-                ),
-              ),
-              title: Text(
-                'CREATE GROUP',
-                style: GoogleFonts.spaceMono(color: colorScheme.onSurface),
-              ),
-              content: TextField(
-                autofocus: true,
-                enabled: !isCreating,
-                style: GoogleFonts.jetBrainsMono(color: colorScheme.onSurface),
-                decoration: InputDecoration(
-                  hintText: 'Group Name',
-                  hintStyle: GoogleFonts.jetBrainsMono(
-                    color: colorScheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ),
-                onChanged: (val) => grpName = val,
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isCreating ? null : () => Navigator.pop(context),
-                  child: Text(
-                    '  CANCEL  ',
-                    style: GoogleFonts.jetBrainsMono(
-                      color: colorScheme.onSurface.withValues(alpha: 0.5),
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: isCreating
-                      ? null
-                      : () async {
-                          final trimmedName = grpName.trim();
-                          if (trimmedName.isEmpty) return;
-
-                          // Check if group name is unique
-                          final exists = _allGroups.any(
-                            (g) =>
-                                g.name.toLowerCase() ==
-                                trimmedName.toLowerCase(),
-                          );
-                          if (exists) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Group name already exists!',
-                                  style: GoogleFonts.jetBrainsMono(),
-                                ),
-                                backgroundColor: const Color(0xFF161618),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.zero,
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-
-                          setState(() => isCreating = true);
-
-                          try {
-                            await _groupService.createGroup(
-                              name: trimmedName,
-                              description: '',
-                              createdBy: currentUserId,
-                              members: [],
-                            );
-                            if (!context.mounted) return;
-                            Navigator.pop(context);
-                          } catch (e) {
-                            setState(() => isCreating = false);
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Failed to create group.',
-                                  style: GoogleFonts.jetBrainsMono(),
-                                ),
-                                backgroundColor: colorScheme.error,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.zero,
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                  child: isCreating
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(
-                          '  CREATE  ',
-                          style: GoogleFonts.jetBrainsMono(
-                            color: colorScheme.onSurface,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
 }
 
 class DateSeparator extends StatelessWidget {
@@ -3656,13 +3519,15 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               ),
             ),
           // Arc for groups
-          if (isGroup && percentage > 0)
+          if (isGroup)
             CustomPaint(
               size: const Size.square(40),
               painter: _PresenceRingPainter(
                 percentage: percentage,
                 color: AppTheme.green,
-                trackColor: Theme.of(context).colorScheme.outline,
+                trackColor: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.3),
               ),
             ),
           innerAvatar,
@@ -3782,7 +3647,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              // Handle: coloured prefix symbol + white name
+                              // Handle: coloured prefix symbol + name
                               GestureDetector(
                                 onTap: () => widget.onHandleTap(handleText),
                                 child: RichText(
@@ -3800,10 +3665,14 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                       ),
                                       TextSpan(
                                         text: handleText.length > 1
-                                            ? ' ' + handleText.substring(1)
+                                            ? ' ${handleText.substring(1)}'
                                             : '',
                                         style: GoogleFonts.inter(
-                                          color: const Color(0xFFF0F0F0),
+                                          color:
+                                              Theme.of(context).brightness ==
+                                                  Brightness.light
+                                              ? Colors.black
+                                              : Colors.white,
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
                                           letterSpacing: -0.2,
@@ -3832,7 +3701,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                             overflow: TextOverflow.ellipsis,
                             text: TextSpan(
                               style: GoogleFonts.inter(
-                                color: const Color(0xFF9B9B9B),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                                 fontSize: 13,
                                 height: 1.4,
                               ),
@@ -3841,16 +3712,20 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                 if (isGroup)
                                   TextSpan(
                                     text: '${widget.item['sender']}  ',
-                                    style: const TextStyle(
-                                      color: Color(0xFF6B6B6B),
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 if (isImage)
-                                  const WidgetSpan(
+                                  WidgetSpan(
                                     child: Icon(
                                       Icons.image_outlined,
-                                      color: Color(0xFF9B9B9B),
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                                       size: 14,
                                     ),
                                   ),
@@ -4548,8 +4423,10 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                           ),
                           decoration: BoxDecoration(
                             color: isMe
-                                ? const Color(0xFF2A2A2E)
-                                : const Color(0xFF1E1E20),
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.only(
                               topLeft: const Radius.circular(12),
                               topRight: const Radius.circular(12),
@@ -4558,8 +4435,11 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                             ),
                             border: Border.all(
                               color: isMe
-                                  ? const Color(0xFF3A3A3E)
-                                  : Theme.of(context).colorScheme.outline,
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.primary.withValues(alpha: 0.2)
+                                  : Theme.of(context).colorScheme.outline
+                                        .withValues(alpha: 0.3),
                               width: 1,
                             ),
                           ),
@@ -4785,7 +4665,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         return Text(
           msg.text,
           style: GoogleFonts.inter(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            color: Theme.of(context).brightness == Brightness.light
+                ? Theme.of(context).colorScheme.onSurfaceVariant
+                : Theme.of(context).colorScheme.onSurface,
             fontSize: 11,
             fontStyle: FontStyle.italic,
           ),

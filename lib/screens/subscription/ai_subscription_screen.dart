@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
+import '../../appwrite_client.dart';
 import '../../services/subscription_service.dart';
 import '../../theme/app_theme.dart';
 
@@ -43,7 +46,7 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         title: Text(
-          'Unlock AI',
+          'AI Access',
           style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
         ),
       ),
@@ -76,7 +79,7 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'AI is paid only',
+                        'Upgrade to AI',
                         style: GoogleFonts.outfit(
                           color: Theme.of(context).colorScheme.onSurface,
                           fontSize: 28,
@@ -85,7 +88,7 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'There is no free AI tier. Subscribe to use AI prompts, AI bots, and future premium model features.',
+                        'Subscribe to use AI chat and AI bots.',
                         style: GoogleFonts.inter(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 14,
@@ -93,15 +96,10 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                         ),
                       ),
                       const SizedBox(height: 18),
+                      const _FeatureLine(label: 'AI chat included'),
+                      const _FeatureLine(label: 'AI bots included'),
                       const _FeatureLine(
-                        label: 'All AI prompts require an active subscription',
-                      ),
-                      const _FeatureLine(
-                        label: 'Bot chats use the same AI entitlement',
-                      ),
-                      const _FeatureLine(
-                        label:
-                            'Android purchases come from Google Play through RevenueCat',
+                        label: 'Fast activation after purchase',
                       ),
                     ],
                   ),
@@ -111,10 +109,12 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                   _MessageCard(
                     message:
                         state.message ??
-                        'RevenueCat is not configured yet. Add your API keys and offering in the app build.',
+                        (kIsWeb
+                            ? 'Purchases are available on mobile only.'
+                            : 'Subscription is not available right now.'),
                   )
                 else if (state.hasAiAccess)
-                  const _MessageCard(message: 'Your AI subscription is active.')
+                  const _MessageCard(message: 'AI access is active.')
                 else if (packages.isEmpty && state.isBusy)
                   const Center(
                     child: Padding(
@@ -125,8 +125,7 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                 else if (packages.isEmpty)
                   _MessageCard(
                     message:
-                        state.message ??
-                        'No subscription packages are available. Create an offering in RevenueCat and attach your Google Play products.',
+                        state.message ?? 'No plans are available right now.',
                   )
                 else
                   ...packages.map(
@@ -141,6 +140,50 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                     ),
                   ),
                 const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Account ID: ${cachedUserId.isEmpty ? 'Not signed in' : cachedUserId}',
+                          style: GoogleFonts.inter(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: cachedUserId.isEmpty
+                            ? null
+                            : () async {
+                                await Clipboard.setData(
+                                  ClipboardData(text: cachedUserId),
+                                );
+                                if (!context.mounted) {
+                                  return;
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Account ID copied.'),
+                                  ),
+                                );
+                              },
+                        child: const Text('Copy ID'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
                 OutlinedButton(
                   onPressed: state.isBusy
                       ? null
@@ -280,7 +323,7 @@ class _PackageCard extends StatelessWidget {
                 ),
               ),
               child: Text(
-                isBusy ? 'Processing...' : 'Subscribe',
+                isBusy ? 'Please wait...' : 'Continue',
                 style: GoogleFonts.inter(fontWeight: FontWeight.w700),
               ),
             ),

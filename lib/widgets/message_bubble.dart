@@ -157,7 +157,7 @@ class MessageBubble extends StatelessWidget {
             message,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: colorScheme.onSurfaceVariant,
+              color: colorScheme.onSurface,
               fontSize: 12,
               fontStyle: FontStyle.italic,
             ),
@@ -204,7 +204,9 @@ class DateSeparator extends StatelessWidget {
           child: Text(
             text,
             style: TextStyle(
-              color: colorScheme.onSurfaceVariant,
+              color: Theme.of(context).brightness == Brightness.light
+                  ? colorScheme.onSurfaceVariant
+                  : colorScheme.onSurface,
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),

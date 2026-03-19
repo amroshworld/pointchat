@@ -13,7 +13,7 @@ class AiService {
     try {
       final hasAccess = await SubscriptionService.instance.ensureAiAccess();
       if (!hasAccess) {
-        return 'AI requires an active PointChat AI subscription.';
+        return 'AI access is not active for this account.';
       }
 
       final payload = <String, dynamic>{'prompt': prompt};
@@ -32,13 +32,13 @@ class AiService {
         if (data['success'] == true) {
           return data['text'] as String;
         } else {
-          return '⚠️ AI error: ${data['error']}';
+          return 'AI is temporarily unavailable. Please try again.';
         }
       }
-      return 'Sorry, I couldn\'t generate a response.';
+      return 'AI is temporarily unavailable. Please try again.';
     } catch (e) {
       debugPrint('Appwrite AI function error: $e');
-      return '⚠️ AI error: ${e.toString().split('\n').first}';
+      return 'AI is temporarily unavailable. Please try again.';
     }
   }
 

@@ -33,7 +33,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     final CroppedFile? croppedFile = await ImageCropper().cropImage(
       sourcePath: pickedFile.path,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
       compressQuality: 80,
+      maxWidth: 1024,
+      maxHeight: 1024,
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: 'Crop Photo',
@@ -57,14 +60,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         bucketId: AppwriteConstants.chatFilesBucket,
         fileId: ID.unique(),
         file: InputFile.fromBytes(bytes: imageBytes, filename: '$fileName.jpg'),
-        permissions: signedInReadPermissions(),
+        permissions: publicReadPermissions(),
       );
 
-      final photoUrl = buildStorageFileUrl(file.$id);
+      final photoUrl = buildStoragePreviewUrl(
+        file.$id,
+        width: 320,
+        height: 320,
+      );
 
       await _userService.updateUserPhotoUrl(uid, photoUrl);
+      final updatedUser = await _userService.getUserById(uid);
+      if (updatedUser?.photoUrl != photoUrl) {
+        throw Exception('Photo update not persisted in Appwrite user record.');
+      }
       cachedUserPhotoUrl = photoUrl;
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile picture updated.')),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(

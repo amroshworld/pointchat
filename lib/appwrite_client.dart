@@ -31,9 +31,22 @@ final Functions appwriteFunctions = Functions(appwriteClient);
 
 List<String> signedInReadPermissions() => [Permission.read(Role.users())];
 
+List<String> publicReadPermissions() => [Permission.read(Role.any())];
+
 String buildStorageFileUrl(String fileId, {String? bucketId}) {
   final resolvedBucketId = bucketId ?? AppwriteConstants.chatFilesBucket;
   return '${AppwriteConstants.endpoint}/storage/buckets/$resolvedBucketId/files/$fileId/view?project=${AppwriteConstants.projectId}';
+}
+
+String buildStoragePreviewUrl(
+  String fileId, {
+  String? bucketId,
+  int width = 320,
+  int height = 320,
+  int quality = 90,
+}) {
+  final resolvedBucketId = bucketId ?? AppwriteConstants.chatFilesBucket;
+  return '${AppwriteConstants.endpoint}/storage/buckets/$resolvedBucketId/files/$fileId/preview?project=${AppwriteConstants.projectId}&width=$width&height=$height&gravity=center&quality=$quality';
 }
 
 // Cached current user info (populated after login)

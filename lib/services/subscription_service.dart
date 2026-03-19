@@ -8,7 +8,7 @@ class RevenueCatConfig {
   static const String entitlementId = 'ai_access';
   static const String androidApiKey = String.fromEnvironment(
     'REVENUECAT_ANDROID_API_KEY',
-    defaultValue: '',
+    defaultValue: 'goog_TERmGBEENicfFTgbipVDDIItzWL',
   );
   static const String iosApiKey = String.fromEnvironment(
     'REVENUECAT_IOS_API_KEY',
@@ -92,12 +92,14 @@ class SubscriptionService {
   Future<void> initialize({String? appUserId}) async {
     final apiKey = RevenueCatConfig.apiKey;
     if (apiKey == null || apiKey.isEmpty) {
+      final setupMessage = kIsWeb
+          ? 'Purchases are currently available on mobile only.'
+          : 'Subscription setup is incomplete. Please try again later.';
       state.value = state.value.copyWith(
         isReady: true,
         isConfigured: false,
         hasAiAccess: false,
-        message:
-            'Add RevenueCat API keys with --dart-define before using AI purchases.',
+        message: setupMessage,
         clearOffering: true,
       );
       return;
@@ -204,15 +206,15 @@ class SubscriptionService {
         isReady: true,
         isBusy: false,
         message: isCancelled
-            ? 'Purchase cancelled.'
-            : (error.message ?? error.toString()),
+            ? 'Purchase canceled.'
+            : 'Purchase could not be completed. Please try again.',
       );
       return false;
     } catch (error) {
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message: error.toString(),
+        message: 'Purchase could not be completed. Please try again.',
       );
       return false;
     }
@@ -233,13 +235,13 @@ class SubscriptionService {
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message: error.message ?? error.toString(),
+        message: 'Restore failed. Please try again.',
       );
     } catch (error) {
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message: error.toString(),
+        message: 'Restore failed. Please try again.',
       );
     }
   }
