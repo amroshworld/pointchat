@@ -161,17 +161,19 @@ class SubscriptionService {
       final customerInfo = await Purchases.getCustomerInfo();
       final offerings = await Purchases.getOfferings();
       _applyCustomerInfo(customerInfo, offerings.current);
-    } on PlatformException catch (error) {
+    } on PlatformException {
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message: error.message ?? error.toString(),
+        message:
+            'Subscription status is unavailable right now. Please try again.',
       );
-    } catch (error) {
+    } catch (_) {
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message: error.toString(),
+        message:
+            'Subscription status is unavailable right now. Please try again.',
       );
     }
   }
@@ -231,7 +233,7 @@ class SubscriptionService {
       final customerInfo = await Purchases.restorePurchases();
       final offerings = await Purchases.getOfferings();
       _applyCustomerInfo(customerInfo, offerings.current);
-    } on PlatformException catch (error) {
+    } on PlatformException {
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,

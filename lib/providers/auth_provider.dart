@@ -59,6 +59,38 @@ class AuthState {
 class AuthNotifier extends Notifier<AuthState> {
   late final AuthService _authService;
 
+  String _friendlyAuthError(Object error) {
+    if (error is AppwriteException) {
+      final type = (error.type ?? '').toLowerCase();
+      final message = (error.message ?? '').toLowerCase();
+
+      if (type.contains('user_invalid_credentials') ||
+          message.contains('invalid credentials')) {
+        return 'Incorrect email or password.';
+      }
+      if (type.contains('user_already_exists') ||
+          message.contains('already exists')) {
+        return 'This email is already in use. Please sign in instead.';
+      }
+      if (type.contains('user_password') || message.contains('password')) {
+        return 'Password must be at least 8 characters.';
+      }
+      if (type.contains('user_email') || message.contains('email')) {
+        return 'Please enter a valid email address.';
+      }
+      if (type.contains('general_rate_limit_exceeded') ||
+          message.contains('too many requests')) {
+        return 'Too many attempts. Please wait a moment and try again.';
+      }
+      if (type.contains('user_blocked')) {
+        return 'This account is currently restricted. Please contact support.';
+      }
+      return 'We could not complete authentication right now. Please try again.';
+    }
+
+    return 'Something went wrong. Please try again.';
+  }
+
   @override
   AuthState build() {
     _authService = AuthService();
@@ -75,7 +107,7 @@ class AuthNotifier extends Notifier<AuthState> {
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
       return false;
     }
   }
@@ -88,13 +120,10 @@ class AuthNotifier extends Notifier<AuthState> {
       state = state.copyWith(isLoading: false);
       return true;
     } on AppwriteException catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.message ?? e.toString(),
-      );
+      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
       return false;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
       return false;
     }
   }
@@ -115,15 +144,16 @@ class AuthNotifier extends Notifier<AuthState> {
       state = state.copyWith(isLoading: false);
       return true;
     } on AppwriteException catch (e) {
-      final errorMessage =
-          'Appwrite Error: ${e.message} (Code: ${e.code}, Type: ${e.type})';
-      debugPrint(errorMessage);
-      state = state.copyWith(isLoading: false, error: errorMessage);
+      if (kDebugMode) {
+        debugPrint('Registration error: ${e.message} (${e.type})');
+      }
+      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
       return false;
     } catch (e) {
-      final errorMessage = 'General Error: ${e.toString()}';
-      debugPrint(errorMessage);
-      state = state.copyWith(isLoading: false, error: errorMessage);
+      if (kDebugMode) {
+        debugPrint('Registration error: $e');
+      }
+      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
       return false;
     }
   }
@@ -134,7 +164,9 @@ class AuthNotifier extends Notifier<AuthState> {
       await _authService.signOut();
       ref.invalidate(authStateProvider);
     } catch (e) {
-      state = state.copyWith(error: e.toString());
+      state = state.copyWith(
+        error: 'Sign out could not be completed. Please try again.',
+      );
     }
     state = state.copyWith(isLoading: false);
   }

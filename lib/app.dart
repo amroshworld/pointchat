@@ -82,8 +82,9 @@ class AuthGate extends ConsumerWidget {
         backgroundColor: const Color(0xFF0A0A0A),
         body: Center(
           child: Text(
-            'Error: $error',
+            'We could not load your account right now. Please restart the app and try again.',
             style: GoogleFonts.inter(color: Colors.redAccent, fontSize: 14),
+            textAlign: TextAlign.center,
           ),
         ),
       ),

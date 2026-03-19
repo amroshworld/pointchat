@@ -24,42 +24,56 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _isUploading = false;
 
   Future<void> _updateProfilePicture(String uid) async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 70,
-    );
-    if (pickedFile == null) return;
-
-    final CroppedFile? croppedFile = await ImageCropper().cropImage(
-      sourcePath: pickedFile.path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      compressQuality: 80,
-      maxWidth: 1024,
-      maxHeight: 1024,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop Photo',
-          toolbarColor: const Color(0xFF161618),
-          toolbarWidgetColor: Colors.white,
-          initAspectRatio: CropAspectRatioPreset.square,
-          lockAspectRatio: true,
-        ),
-        IOSUiSettings(title: 'Crop Photo', aspectRatioLockEnabled: true),
-      ],
-    );
-    if (croppedFile == null) return;
-
-    setState(() => _isUploading = true);
-
     try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+      if (pickedFile == null) {
+        return;
+      }
+
+      final CroppedFile? croppedFile = await ImageCropper().cropImage(
+        sourcePath: pickedFile.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        compressQuality: 70,
+        maxWidth: 512,
+        maxHeight: 512,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Photo',
+            toolbarColor: const Color(0xFF161618),
+            toolbarWidgetColor: Colors.white,
+            backgroundColor: const Color(0xFF161618),
+            activeControlsWidgetColor: const Color(0xFF8B5CF6),
+            hideBottomControls: false,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+          ),
+          IOSUiSettings(title: 'Crop Photo', aspectRatioLockEnabled: true),
+        ],
+      );
+      if (croppedFile == null) {
+        return;
+      }
+
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isUploading = true);
+
       final fileName = const Uuid().v4();
-      final imageBytes = await XFile(croppedFile.path).readAsBytes();
 
       final file = await appwriteStorage.createFile(
         bucketId: AppwriteConstants.chatFilesBucket,
         fileId: ID.unique(),
-        file: InputFile.fromBytes(bytes: imageBytes, filename: '$fileName.jpg'),
+        file: InputFile.fromPath(
+          path: croppedFile.path,
+          filename: '$fileName.jpg',
+        ),
         permissions: publicReadPermissions(),
       );
 
@@ -70,10 +84,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       );
 
       await _userService.updateUserPhotoUrl(uid, photoUrl);
-      final updatedUser = await _userService.getUserById(uid);
-      if (updatedUser?.photoUrl != photoUrl) {
-        throw Exception('Photo update not persisted in Appwrite user record.');
-      }
       cachedUserPhotoUrl = photoUrl;
       if (mounted) {
         setState(() {});
@@ -81,11 +91,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SnackBar(content: Text('Profile picture updated.')),
         );
       }
-    } catch (e) {
+    } on AppwriteException {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to update picture: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not upload your photo right now. Please try again.',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not update your profile picture. Please try another image.',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isUploading = false);

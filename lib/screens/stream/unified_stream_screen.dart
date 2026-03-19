@@ -347,16 +347,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     return '${_focusedHandle!} $trimmed';
   }
 
-  void _clearFocusMode() {
-    if (_focusedHandle == null) {
-      return;
-    }
-
-    setState(() {
-      _focusedHandle = null;
-    });
-  }
-
   void _handleItemTap(String handle) {
     setState(() {
       _focusedHandle = _focusedHandle == handle ? null : handle;
@@ -1140,49 +1130,57 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   Future<String?> _pickAndUploadSquareImage({
     required String filePrefix,
   }) async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
-    );
-    if (pickedFile == null) {
-      return null;
-    }
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+      if (pickedFile == null) {
+        return null;
+      }
 
-    final croppedFile = await ImageCropper().cropImage(
-      sourcePath: pickedFile.path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      compressQuality: 82,
-      maxWidth: 1024,
-      maxHeight: 1024,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop Image',
-          toolbarColor: const Color(0xFF161618),
-          toolbarWidgetColor: Colors.white,
-          initAspectRatio: CropAspectRatioPreset.square,
-          lockAspectRatio: true,
+      final croppedFile = await ImageCropper().cropImage(
+        sourcePath: pickedFile.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        compressQuality: 70,
+        maxWidth: 512,
+        maxHeight: 512,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Image',
+            toolbarColor: const Color(0xFF161618),
+            toolbarWidgetColor: Colors.white,
+            backgroundColor: const Color(0xFF161618),
+            activeControlsWidgetColor: const Color(0xFF8B5CF6),
+            hideBottomControls: false,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+          ),
+          IOSUiSettings(title: 'Crop Image', aspectRatioLockEnabled: true),
+        ],
+      );
+      if (croppedFile == null) {
+        return null;
+      }
+
+      final file = await appwriteStorage.createFile(
+        bucketId: AppwriteConstants.chatFilesBucket,
+        fileId: ID.unique(),
+        file: InputFile.fromPath(
+          path: croppedFile.path,
+          filename: '$filePrefix-${const Uuid().v4()}.jpg',
         ),
-        IOSUiSettings(title: 'Crop Image', aspectRatioLockEnabled: true),
-      ],
-    );
-    if (croppedFile == null) {
-      return null;
+        // Avatars/icons should be readable by anyone who can see chat UI.
+        permissions: publicReadPermissions(),
+      );
+
+      return buildStoragePreviewUrl(file.$id, width: 320, height: 320);
+    } catch (_) {
+      throw Exception('Image upload unavailable');
     }
-
-    final imageBytes = await XFile(croppedFile.path).readAsBytes();
-    final file = await appwriteStorage.createFile(
-      bucketId: AppwriteConstants.chatFilesBucket,
-      fileId: ID.unique(),
-      file: InputFile.fromBytes(
-        bytes: imageBytes,
-        filename: '$filePrefix-${const Uuid().v4()}.jpg',
-      ),
-      // Avatars/icons should be readable by anyone who can see chat UI.
-      permissions: publicReadPermissions(),
-    );
-
-    return buildStoragePreviewUrl(file.$id, width: 320, height: 320);
   }
 
   Future<void> _updateMyProfilePhoto() async {
@@ -1193,10 +1191,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       }
 
       await _userService.updateUserPhotoUrl(currentUserId, photoUrl);
-      final updatedUser = await _userService.getUserById(currentUserId);
-      if (updatedUser?.photoUrl != photoUrl) {
-        throw Exception('Photo update not persisted in Appwrite user record.');
-      }
 
       cachedUserPhotoUrl = photoUrl;
       if (!mounted) {
@@ -1206,12 +1200,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Profile picture updated.')));
-    } catch (e) {
+    } catch (_) {
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update profile picture: $e')),
+        const SnackBar(
+          content: Text(
+            'Could not update your profile picture right now. Please try again.',
+          ),
+        ),
       );
     }
   }
@@ -1224,12 +1222,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       }
 
       await _groupService.updateGroup(groupId, {'photoUrl': photoUrl});
-      final updatedGroup = await _groupService.getGroupStream(groupId).first;
-      if (updatedGroup?.photoUrl != photoUrl) {
-        throw Exception(
-          'Group icon update not persisted in Appwrite group record.',
-        );
-      }
 
       if (!mounted) {
         return;
@@ -1238,12 +1230,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Group icon updated.')));
-    } catch (e) {
+    } catch (_) {
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update group icon: $e')),
+        const SnackBar(
+          content: Text(
+            'Could not update the group icon right now. Please try again.',
+          ),
+        ),
       );
     }
   }
@@ -1476,7 +1472,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           Switch.adaptive(
             value: value,
             onChanged: onChanged,
-            activeColor: Colors.black,
+            activeThumbColor: Colors.black,
             activeTrackColor: Colors.white,
             inactiveThumbColor: Colors.white54,
             inactiveTrackColor: Colors.white10,
@@ -1618,17 +1614,24 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
     final pickedFile = await picker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 70,
+      maxWidth: 1600,
+      maxHeight: 1600,
     );
     if (pickedFile == null) return;
 
     final CroppedFile? croppedFile = await ImageCropper().cropImage(
       sourcePath: pickedFile.path,
-      compressQuality: 80,
+      compressQuality: 70,
+      maxWidth: 1600,
+      maxHeight: 1600,
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: 'Crop Photo',
           toolbarColor: const Color(0xFF161618),
           toolbarWidgetColor: Colors.white,
+          backgroundColor: const Color(0xFF161618),
+          activeControlsWidgetColor: const Color(0xFF8B5CF6),
+          hideBottomControls: false,
           initAspectRatio: CropAspectRatioPreset.original,
           lockAspectRatio: false,
         ),
@@ -1644,11 +1647,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
     try {
       final fileName = const Uuid().v4();
-      final imageBytes = await XFile(croppedFile.path).readAsBytes();
       final file = await appwriteStorage.createFile(
         bucketId: AppwriteConstants.chatFilesBucket,
         fileId: ID.unique(),
-        file: InputFile.fromBytes(bytes: imageBytes, filename: '$fileName.jpg'),
+        file: InputFile.fromPath(
+          path: croppedFile.path,
+          filename: '$fileName.jpg',
+        ),
       );
       final downloadUrl =
           '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${file.$id}/view?project=${AppwriteConstants.projectId}';
@@ -2255,6 +2260,60 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       }
     }
 
+    // Direct Private AI Chat limit check
+    if (normalizedInput.toLowerCase().startsWith('@ai ')) {
+      final prompt = normalizedInput.substring(4).trim();
+      if (prompt.isNotEmpty) {
+        _commandController.clear();
+        setState(() => _isAiLoading = true);
+        try {
+          final chatId = await _chatService.getOrCreateChat(
+            currentUserId,
+            currentUserId,
+          );
+
+          await _chatService.sendMessage(
+            chatId: chatId,
+            senderId: currentUserId,
+            senderName: cachedUserName,
+            senderPhotoUrl: cachedUserPhotoUrl,
+            text: prompt,
+            type: MessageType.text,
+          );
+
+          final aiResponse = await _aiService.generateResponse(
+            prompt,
+            systemPrompt:
+                "You are PointChat's private AI assistant. Be helpful.",
+          );
+
+          await _chatService.sendMessage(
+            chatId: chatId,
+            senderId: 'ai-system',
+            senderName: 'PointChat AI',
+            senderPhotoUrl: '',
+            text: aiResponse,
+            type: MessageType.text,
+          );
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'AI is temporarily unavailable.',
+                  style: GoogleFonts.inter(),
+                ),
+                backgroundColor: const Color(0xFF161618),
+              ),
+            );
+          }
+        } finally {
+          if (mounted) setState(() => _isAiLoading = false);
+        }
+        return;
+      }
+    }
+
     // Check for AI mode: if text contains /, extract the AI prompt
     final slashIndex = normalizedInput.indexOf('/');
     if (slashIndex >= 0) {
@@ -2415,7 +2474,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('AI error: $e', style: GoogleFonts.inter()),
+                content: Text(
+                  'AI is temporarily unavailable. Please try again.',
+                  style: GoogleFonts.inter(),
+                ),
                 backgroundColor: const Color(0xFF161618),
               ),
             );
@@ -2564,9 +2626,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         if (snapshot.hasError) {
           debugPrint('Stream error: ${snapshot.error}');
           return Center(
-            child: SelectableText(
-              'ERROR: ${snapshot.error}',
+            child: Text(
+              'We could not load conversations right now.',
               style: GoogleFonts.inter(color: Colors.redAccent, fontSize: 13),
+              textAlign: TextAlign.center,
             ),
           );
         }
@@ -2674,70 +2737,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (isFocusModeActive)
-          Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppTheme.focusBlueGlow,
-              borderRadius: BorderRadius.zero,
-              border: Border.all(
-                color: AppTheme.focusBlue.withValues(alpha: 0.7),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.focusBlue.withValues(alpha: 0.14),
-                  blurRadius: 18,
-                  spreadRadius: 0,
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: AppTheme.focusBlue.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.zero,
-                  ),
-                  child: const Icon(
-                    Icons.my_location_rounded,
-                    color: AppTheme.focusBlue,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Focused on $_focusedHandle',
-                        style: GoogleFonts.inter(
-                          color: AppTheme.focusBlue,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  onPressed: _clearFocusMode,
-                  icon: Icon(
-                    Icons.close_rounded,
-                    color: AppTheme.focusBlue,
-                    size: 18,
-                  ),
-                  constraints: const BoxConstraints(),
-                  padding: EdgeInsets.zero,
-                ),
-              ],
-            ),
-          ),
-
         if (_replyingToMessage != null)
           Container(
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
@@ -3383,9 +3382,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                     }
                   } catch (e) {
                     if (context.mounted) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Could not save your bot right now. Please try again.',
+                          ),
+                        ),
+                      );
                     }
                   } finally {
                     if (mounted) setState(() => _isAiLoading = false);
@@ -3553,7 +3556,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               ? AppTheme.focusBlue.withValues(alpha: 0.8)
               : (isGroup
                     ? AppTheme.green.withValues(alpha: 0.3)
-                    : AppTheme.purple.withValues(alpha: 0.4)),
+                    : AppTheme.green.withValues(alpha: 0.4)),
           width: 1.5,
         ),
       ),
@@ -3563,7 +3566,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
           style: GoogleFonts.inter(
             color: widget.isFocusLocked
                 ? AppTheme.focusBlue
-                : (isGroup ? AppTheme.green : AppTheme.purpleLt),
+                : (isGroup ? AppTheme.green : AppTheme.green),
             fontWeight: FontWeight.w700,
             fontSize: 15,
           ),
@@ -4522,6 +4525,10 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   width: 200,
                   height: 150,
                   fit: BoxFit.cover,
+                  memCacheWidth: (200 * MediaQuery.devicePixelRatioOf(context))
+                      .toInt(),
+                  memCacheHeight: (150 * MediaQuery.devicePixelRatioOf(context))
+                      .toInt(),
                   cacheManager: MediaCacheManager.instance,
                   placeholder: (context, url) => Container(
                     width: 200,

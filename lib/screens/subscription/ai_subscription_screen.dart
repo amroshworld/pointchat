@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
-import '../../appwrite_client.dart';
 import '../../services/subscription_service.dart';
 import '../../theme/app_theme.dart';
 
@@ -140,49 +138,6 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                     ),
                   ),
                 const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Account ID: ${cachedUserId.isEmpty ? 'Not signed in' : cachedUserId}',
-                          style: GoogleFonts.inter(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: cachedUserId.isEmpty
-                            ? null
-                            : () async {
-                                await Clipboard.setData(
-                                  ClipboardData(text: cachedUserId),
-                                );
-                                if (!context.mounted) {
-                                  return;
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Account ID copied.'),
-                                  ),
-                                );
-                              },
-                        child: const Text('Copy ID'),
-                      ),
-                    ],
-                  ),
-                ),
                 const SizedBox(height: 12),
                 OutlinedButton(
                   onPressed: state.isBusy
@@ -243,6 +198,21 @@ class _PackageCard extends StatelessWidget {
     required this.isBusy,
     required this.onPressed,
   });
+
+  String _planHint(Package package) {
+    switch (package.packageType) {
+      case PackageType.annual:
+        return 'Best value for regular AI usage.';
+      case PackageType.monthly:
+        return 'Flexible monthly access.';
+      case PackageType.weekly:
+        return 'Short-term access for testing or light usage.';
+      case PackageType.lifetime:
+        return 'One-time payment for long-term access.';
+      default:
+        return 'Choose the plan that fits your usage.';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -309,6 +279,15 @@ class _PackageCard extends StatelessWidget {
               ),
             ),
           ],
+          const SizedBox(height: 6),
+          Text(
+            _planHint(package),
+            style: GoogleFonts.inter(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+              height: 1.3,
+            ),
+          ),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,

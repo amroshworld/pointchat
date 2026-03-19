@@ -72,13 +72,15 @@ class _HomeScreenState extends State<HomeScreen> {
             await appwriteClient.ping();
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Appwrite Ping Successful!')),
+                const SnackBar(content: Text('Connection is working.')),
               );
             }
-          } catch (e) {
+          } catch (_) {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Appwrite Ping Failed: $e')),
+                const SnackBar(
+                  content: Text('Could not reach the server right now.'),
+                ),
               );
             }
           }

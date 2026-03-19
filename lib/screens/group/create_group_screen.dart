@@ -96,12 +96,16 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           ),
         ),
       );
-    } catch (e) {
+    } catch (_) {
       setState(() => _isCreating = false);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error creating group: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not create the group right now. Please try again.',
+            ),
+          ),
+        );
       }
     }
   }

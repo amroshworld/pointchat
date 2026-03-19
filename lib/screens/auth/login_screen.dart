@@ -352,8 +352,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   ),
                                   TextSpan(
                                     text: _isLogin ? 'Sign up' : 'Sign in',
-                                    style: const TextStyle(
-                                      color: Colors.black,
+                                    style: TextStyle(
+                                      color:
+                                          Theme.of(context).brightness ==
+                                              Brightness.dark
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
+                                          : Colors.black,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),

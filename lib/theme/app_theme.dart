@@ -5,7 +5,9 @@ class AppTheme {
   // ── High-Contrast Black & White Palette ──────────────────────────────
 
   // Dark Theme Colors
-  static const Color darkBg = Color(0xFF000000); // True dark bg or slightly off black like 0F0F0F
+  static const Color darkBg = Color(
+    0xFF000000,
+  ); // True dark bg or slightly off black like 0F0F0F
   static const Color darkSurface = Color(0xFF121212);
   static const Color darkSurface2 = Color(0xFF222222);
   static const Color darkBorder = Color(0xFF333333);
@@ -23,7 +25,9 @@ class AppTheme {
   static const Color lightTextSec = Color(0xFF424242);
 
   // Accent & Semantic
-  static const Color primaryAccent = Color(0xFFFFFFFF); // White in dark, Black in light (handled via theme)
+  static const Color primaryAccent = Color(
+    0xFFFFFFFF,
+  ); // White in dark, Black in light (handled via theme)
   static const Color success = Color(0xFF4CAF50); // Deep green
   static const Color error = Color(0xFFF44336); // Deep red
   static const Color warning = Color(0xFFFF9800); // Orange/Yellow
@@ -38,7 +42,9 @@ class AppTheme {
   static const Color muted = darkMuted;
   static const Color textPri = darkTextPri;
   static const Color textSec = darkTextSec;
-  static const Color purple = Color(0xFF2196F3); // Fallback mapping, should avoid usage
+  static const Color purple = Color(
+    0xFF2196F3,
+  ); // Fallback mapping, should avoid usage
   static const Color purpleLt = Color(0xFF64B5F6); // Fallback mapping
   static const Color purpleDim = Color(0xFF0D47A1); // Fallback mapping
   static const Color purpleGlow = Colors.transparent; // Removed glow
@@ -50,7 +56,7 @@ class AppTheme {
   static const Color offlineDot = darkMuted;
   static const Color sentMessageColor = darkSurface2;
   static const Color receivedMessageColor = darkSurface2;
-  static const Color green = Color(0xFF9C27B0);
+  static const Color green = Color(0xFF4CAF50);
   static const Color red = error;
   static const Color yellow = warning;
   static const Color focusBlueGlow = Colors.transparent;
@@ -112,7 +118,9 @@ class AppTheme {
     required Color accentColor,
   }) {
     final isDark = brightness == Brightness.dark;
-    final invertedAccentColor = isDark ? black : white; // Text color on top of accent
+    final invertedAccentColor = isDark
+        ? black
+        : white; // Text color on top of accent
 
     return ThemeData(
       useMaterial3: true,
@@ -133,25 +141,78 @@ class AppTheme {
         surfaceContainerHighest: surface2Color,
         onSurfaceVariant: secondaryTextColor,
         outline: borderColor,
-        tertiaryContainer: isDark ? const Color(0xFF0D1C0D) : const Color(0xFFE8F5E9),
+        tertiaryContainer: isDark
+            ? const Color(0xFF0D1C0D)
+            : const Color(0xFFE8F5E9),
         onTertiaryContainer: success,
       ),
 
       textTheme: TextTheme(
-        displayLarge: _font(size: 36, weight: FontWeight.w800, letterSpacing: -1.0, color: primaryTextColor),
-        displayMedium: _font(size: 30, weight: FontWeight.w700, letterSpacing: -0.8, color: primaryTextColor),
-        displaySmall: _font(size: 24, weight: FontWeight.w700, letterSpacing: -0.5, color: primaryTextColor),
-        headlineLarge: _font(size: 22, weight: FontWeight.w700, letterSpacing: -0.5, color: primaryTextColor),
-        headlineMedium: _font(size: 18, weight: FontWeight.w600, color: primaryTextColor),
-        titleLarge: _font(size: 16, weight: FontWeight.w600, color: primaryTextColor),
-        titleMedium: _font(size: 15, weight: FontWeight.w500, color: primaryTextColor),
-        titleSmall: _font(size: 13, weight: FontWeight.w500, color: primaryTextColor),
+        displayLarge: _font(
+          size: 36,
+          weight: FontWeight.w800,
+          letterSpacing: -1.0,
+          color: primaryTextColor,
+        ),
+        displayMedium: _font(
+          size: 30,
+          weight: FontWeight.w700,
+          letterSpacing: -0.8,
+          color: primaryTextColor,
+        ),
+        displaySmall: _font(
+          size: 24,
+          weight: FontWeight.w700,
+          letterSpacing: -0.5,
+          color: primaryTextColor,
+        ),
+        headlineLarge: _font(
+          size: 22,
+          weight: FontWeight.w700,
+          letterSpacing: -0.5,
+          color: primaryTextColor,
+        ),
+        headlineMedium: _font(
+          size: 18,
+          weight: FontWeight.w600,
+          color: primaryTextColor,
+        ),
+        titleLarge: _font(
+          size: 16,
+          weight: FontWeight.w600,
+          color: primaryTextColor,
+        ),
+        titleMedium: _font(
+          size: 15,
+          weight: FontWeight.w500,
+          color: primaryTextColor,
+        ),
+        titleSmall: _font(
+          size: 13,
+          weight: FontWeight.w500,
+          color: primaryTextColor,
+        ),
         bodyLarge: _font(size: 15, height: 1.5, color: primaryTextColor),
         bodyMedium: _font(size: 14, height: 1.5, color: primaryTextColor),
         bodySmall: _font(size: 12, height: 1.4, color: secondaryTextColor),
-        labelLarge: _font(size: 14, weight: FontWeight.w600, letterSpacing: 0, color: primaryTextColor),
-        labelMedium: _font(size: 12, weight: FontWeight.w600, letterSpacing: 0, color: primaryTextColor),
-        labelSmall: _font(size: 11, weight: FontWeight.w500, letterSpacing: 0, color: secondaryTextColor),
+        labelLarge: _font(
+          size: 14,
+          weight: FontWeight.w600,
+          letterSpacing: 0,
+          color: primaryTextColor,
+        ),
+        labelMedium: _font(
+          size: 12,
+          weight: FontWeight.w600,
+          letterSpacing: 0,
+          color: primaryTextColor,
+        ),
+        labelSmall: _font(
+          size: 11,
+          weight: FontWeight.w500,
+          letterSpacing: 0,
+          color: secondaryTextColor,
+        ),
       ),
 
       // AppBar
@@ -201,7 +262,10 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: surfaceColor,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.zero,
           borderSide: BorderSide(color: borderColor, width: 1),
@@ -289,9 +353,7 @@ class AppTheme {
         highlightElevation: 0,
         backgroundColor: accentColor,
         foregroundColor: invertedAccentColor,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.zero,
-        ),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       ),
 
       // Icon
@@ -337,18 +399,14 @@ class AppTheme {
       drawerTheme: DrawerThemeData(
         backgroundColor: bgColor,
         elevation: 0,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.zero,
-        )
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       ),
 
       // Bottom Sheet
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: bgColor,
         elevation: 0,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.zero,
-        ),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       ),
 
       // Page transitions

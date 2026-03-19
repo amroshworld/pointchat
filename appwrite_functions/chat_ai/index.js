@@ -23,7 +23,7 @@ module.exports = async function ({ req, res, log }) {
     log('Missing GEMINI_API_KEY function variable');
     return res.json({
       success: false,
-      error: 'Missing GEMINI_API_KEY function variable.',
+      error: 'AI service is temporarily unavailable.',
     });
   }
 
@@ -49,6 +49,7 @@ module.exports = async function ({ req, res, log }) {
         },
         tools: [{ googleSearch: {} }],
         systemInstruction: systemPrompt,
+        maxOutputTokens: 250, // Added explicit token limit to prevent excessive API costs
       },
       contents: [
         {
@@ -67,6 +68,9 @@ module.exports = async function ({ req, res, log }) {
     return res.json({ success: true, text: text.trim() });
   } catch (error) {
     log(`Error generating text: ${error.message}`);
-    return res.json({ success: false, error: error.message });
+    return res.json({
+      success: false,
+      error: 'AI service is temporarily unavailable.',
+    });
   }
 };
