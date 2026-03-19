@@ -31,6 +31,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
+import '../../services/invite_service.dart';
 import '../../services/user_service.dart';
 import '../../services/bot_service.dart';
 import '../../models/group_model.dart';
@@ -50,14 +51,17 @@ class UnifiedStreamScreen extends StatefulWidget {
   State<UnifiedStreamScreen> createState() => _UnifiedStreamScreenState();
 }
 
-class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
+class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
+    with WidgetsBindingObserver {
   final TextEditingController _commandController = TextEditingController();
   final FocusNode _commandFocusNode = FocusNode();
 
   final _chatService = ChatService();
   final _groupService = GroupService();
+  final _inviteService = InviteService();
   final _userService = UserService();
   final _botService = BotService();
+  final _authService = AuthService();
   late final String currentUserId = widget.currentUserId;
 
   List<UserModel> _allUsers = [];
@@ -92,24 +96,41 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   late final Stream<List<UserModel>> _allUsersStream;
   late final Stream<List<ChatModel>> _chatsStream;
   late final Stream<List<GroupModel>> _groupsStream;
+  late final Stream<List<Map<String, dynamic>>> _pendingInvitesStream;
   late final Stream<List<Map<String, dynamic>>> _combinedStream;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_authService.setUserOnlineStatus(true));
 
     NotificationService.instance.bindToUser(currentUserId);
 
     _allUsersStream = _userService.getAllUsers(currentUserId);
     _chatsStream = _chatService.getUserChats(currentUserId);
     _groupsStream = _groupService.getUserGroups(currentUserId);
+    _pendingInvitesStream = _inviteService.getPendingInvitesForUser(
+      currentUserId,
+    );
 
-    _combinedStream = Rx.combineLatest3(
+    _combinedStream = Rx.combineLatest4(
       _chatsStream,
       _groupsStream,
       _allUsersStream,
-      (chats, groups, users) {
+      _pendingInvitesStream,
+      (chats, groups, users, pendingInvites) {
         List<Map<String, dynamic>> merged = [];
+
+        final Map<String, List<String>> pendingByGroup = {};
+        for (final invite in pendingInvites.cast<Map<String, dynamic>>()) {
+          final groupId = invite['groupId']?.toString() ?? '';
+          final userId = invite['userId']?.toString() ?? '';
+          if (groupId.isEmpty || userId.isEmpty) {
+            continue;
+          }
+          pendingByGroup.putIfAbsent(groupId, () => <String>[]).add(userId);
+        }
 
         for (var chat in chats) {
           if (chat.lastMessage.isEmpty) continue;
@@ -148,6 +169,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
         for (var group in groups) {
           if (group.lastMessage.isEmpty) continue;
 
+          final pendingInviteIds =
+              pendingByGroup[group.groupId] ?? const <String>[];
+
           int onlineCount = 0;
           for (var uid in group.members) {
             if (uid == currentUserId) {
@@ -172,7 +196,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             'sender': group.lastMessageSenderId == currentUserId
                 ? 'me'
                 : group.lastMessageSenderName,
-            'content': group.lastMessage,
+            'content': _sanitizeGroupPreviewMessage(group.lastMessage),
             'time': group.lastMessageTime != null
                 ? DateFormat('HH:mm').format(group.lastMessageTime!)
                 : '',
@@ -181,6 +205,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             'photoUrl': group.photoUrl,
             'isOnline': onlineCount > 0,
             'onlinePercentage': percentage,
+            'pendingInviteIds': pendingInviteIds,
             'groupMembers': group.members,
             'groupAdmins': group.admins,
             'groupDescription': group.description,
@@ -270,14 +295,20 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             .toList();
       });
     } else if (lastHash > lastSpace && lastHash >= 0) {
-      final query = textBeforeCursor.substring(lastHash + 1).toLowerCase();
+      final rawQuery = textBeforeCursor.substring(lastHash + 1);
+      final query = _normalizeHandleToken(rawQuery);
+      final groupMatches = _allGroups
+          .where((g) => _normalizeHandleToken(g.name).contains(query))
+          .toList();
+      final hasExactMatch = groupMatches.any(
+        (g) => _normalizeHandleToken(g.name) == query,
+      );
       setState(() {
         _isMentioning = true;
-        _mentionSuggestions = _allGroups
-            .where(
-              (g) => g.name.toLowerCase().replaceAll(' ', '').contains(query),
-            )
-            .toList();
+        _mentionSuggestions = [
+          ...groupMatches,
+          if (query.isNotEmpty && !hasExactMatch) _CreateGroupSuggestion(query),
+        ];
       });
     } else if (lastSlash > lastSpace && lastSlash >= 0) {
       final query = textBeforeCursor.substring(lastSlash + 1).toLowerCase();
@@ -310,12 +341,52 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _commandController.removeListener(_onCommandChanged);
     _commandController.dispose();
     _commandFocusNode.dispose();
     _recordingTimer?.cancel();
     _audioRecorder.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_authService.setUserOnlineStatus(true));
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(_authService.setUserOnlineStatus(false));
+    }
+  }
+
+  String _normalizeHandleToken(String value) {
+    return value.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9_]'), '');
+  }
+
+  String _displayGroupNameFromToken(String token) {
+    return token.trim().replaceAll('_', ' ');
+  }
+
+  List<String> _extractPendingInviteIds(String text) {
+    if (!text.startsWith('[invite-pending]:')) {
+      return const <String>[];
+    }
+
+    final payload = text.replaceFirst('[invite-pending]:', '');
+    return payload
+        .split(',')
+        .map((entry) => entry.trim())
+        .where((entry) => entry.isNotEmpty)
+        .toList();
+  }
+
+  String _sanitizeGroupPreviewMessage(String text) {
+    final pendingIds = _extractPendingInviteIds(text);
+    if (pendingIds.isNotEmpty) {
+      return 'Invitation pending approval';
+    }
+    return text;
   }
 
   String _formatHandle(String name) {
@@ -1353,12 +1424,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         activeColor: AppTheme.focusBlue,
                         title: Row(
                           children: [
-                            PixelSymbol(
-                              isGroup: handle.startsWith('#'),
-                              color: handle.startsWith('#')
-                                  ? Colors.purpleAccent
-                                  : Colors.blueAccent,
-                              size: 12,
+                            const Icon(
+                              Icons.person_outline_rounded,
+                              color: Colors.blueAccent,
+                              size: 14,
                             ),
                             const SizedBox(width: 6),
                             Expanded(child: Text(' ${handle.substring(1)}')),
@@ -2053,6 +2122,20 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       }
     }
 
+    final hasGroupTarget = handles.any((h) => h.startsWith('#'));
+    final mentionedUsersByHandle = <String, UserModel>{};
+
+    for (final handle in handles.where((h) => h.startsWith('@'))) {
+      final tHandle = _normalizeHandleToken(handle.substring(1));
+      final targetUser = _allUsers.cast<UserModel?>().firstWhere(
+        (u) => _normalizeHandleToken(u!.displayName) == tHandle,
+        orElse: () => null,
+      );
+      if (targetUser != null) {
+        mentionedUsersByHandle[handle] = targetUser;
+      }
+    }
+
     // Determine message type and content
     MessageType type;
     String content;
@@ -2086,7 +2169,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
       content = '> Reply: ${_replyPreview(_replyingToMessage!)}\n$content';
     }
 
-    if (content.isEmpty && type == MessageType.text) return;
+    if (content.isEmpty && type == MessageType.text && !hasGroupTarget) {
+      return;
+    }
 
     final currentUserName = cachedUserName;
     final currentUserPhoto = cachedUserPhotoUrl;
@@ -2094,6 +2179,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
 
     for (var handle in handles) {
       if (handle.startsWith('@')) {
+        if (hasGroupTarget) {
+          continue;
+        }
+
         final tHandle = handle.substring(1);
         final targetUser = _allUsers.cast<UserModel?>().firstWhere(
           (u) => u!.displayName.replaceAll(' ', '').toLowerCase() == tHandle,
@@ -2176,16 +2265,41 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
           }
         }
       } else if (handle.startsWith('#')) {
-        final tHandle = handle.substring(1);
-        final groups = await _groupService.getUserGroups(currentUserId).first;
-        final targetGroup = groups.cast<GroupModel?>().firstWhere(
-          (g) => g!.name.replaceAll(' ', '').toLowerCase() == tHandle,
+        final tHandle = _normalizeHandleToken(handle.substring(1));
+        final targetGroup = _allGroups.cast<GroupModel?>().firstWhere(
+          (g) => _normalizeHandleToken(g!.name) == tHandle,
           orElse: () => null,
         );
 
-        if (targetGroup != null) {
+        String targetGroupId = targetGroup?.groupId ?? '';
+
+        if (targetGroupId.isEmpty) {
+          final invitees = mentionedUsersByHandle.values
+              .where((u) => u.uid != currentUserId)
+              .map((u) => u.uid)
+              .toSet()
+              .toList();
+
+          targetGroupId = await _groupService.createGroup(
+            name: _displayGroupNameFromToken(tHandle),
+            description: 'Created from #$tHandle',
+            createdBy: currentUserId,
+            members: invitees,
+          );
+
+          if (invitees.isNotEmpty) {
+            await _inviteService.createPendingInvites(
+              groupId: targetGroupId,
+              invitedBy: currentUserId,
+              userIds: invitees,
+            );
+          }
+        }
+
+        if (targetGroupId.isNotEmpty &&
+            (content.isNotEmpty || type != MessageType.text)) {
           await _groupService.sendGroupMessage(
-            groupId: targetGroup.groupId,
+            groupId: targetGroupId,
             senderId: currentUserId,
             senderName: currentUserName,
             senderPhotoUrl: currentUserPhoto,
@@ -2197,6 +2311,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
             latitude: latitude,
             longitude: longitude,
           );
+        }
+
+        if (targetGroupId.isNotEmpty) {
           sentAtLeastOne = true;
         }
       }
@@ -2692,6 +2809,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
               currentUserId: currentUserId,
               chatService: _chatService,
               groupService: _groupService,
+              inviteService: _inviteService,
               userService: _userService,
               onTap: () {
                 setState(() {
@@ -2879,17 +2997,22 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                 final suggestion = _mentionSuggestions[index];
                 final isUser = suggestion is UserModel;
                 final isGroup = suggestion is GroupModel;
+                final isCreateGroup = suggestion is _CreateGroupSuggestion;
                 final isAction = suggestion is String;
                 final isSlashCommand = isAction && suggestion.startsWith('/');
                 final name = isUser
                     ? suggestion.displayName
                     : isGroup
                     ? suggestion.name
+                    : isCreateGroup
+                    ? suggestion.token
                     : suggestion.toString();
                 final handle = isUser
                     ? _formatHandle(name)
                     : isGroup
                     ? _formatGroupHandle(name)
+                    : isCreateGroup
+                    ? '#${suggestion.token}'
                     : name;
 
                 return ListTile(
@@ -2898,7 +3021,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                     isUser
                         ? Icons.person_outline_rounded
                         : isGroup
-                        ? Icons.tag_rounded
+                        ? Icons.groups_2_outlined
+                        : isCreateGroup
+                        ? Icons.group_add_outlined
                         : isSlashCommand
                         ? Icons.bolt_rounded
                         : Icons.location_on_outlined,
@@ -2906,13 +3031,15 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
                         ? AppTheme.purple
                         : isGroup
                         ? AppTheme.green
+                        : isCreateGroup
+                        ? AppTheme.focusBlue
                         : isSlashCommand
                         ? AppTheme.focusBlue
                         : Theme.of(context).colorScheme.primary,
                     size: 20, // larger
                   ),
                   title: Text(
-                    handle,
+                    isCreateGroup ? 'Create new group $handle' : handle,
                     style: GoogleFonts.inter(
                       color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 14, // larger
@@ -3405,6 +3532,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen> {
   }
 }
 
+class _CreateGroupSuggestion {
+  final String token;
+  const _CreateGroupSuggestion(this.token);
+}
+
 class DateSeparator extends StatelessWidget {
   final String dateText;
   const DateSeparator({super.key, required this.dateText});
@@ -3423,6 +3555,7 @@ class StreamItemWidget extends StatefulWidget {
   final String currentUserId;
   final ChatService chatService;
   final GroupService groupService;
+  final InviteService inviteService;
   final UserService userService;
   final VoidCallback onTap;
   final ValueChanged<String> onHandleTap;
@@ -3438,6 +3571,7 @@ class StreamItemWidget extends StatefulWidget {
     required this.currentUserId,
     required this.chatService,
     required this.groupService,
+    required this.inviteService,
     required this.userService,
     required this.onTap,
     required this.onHandleTap,
@@ -3512,13 +3646,20 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               ),
             ),
           // Online ring for DMs
-          if (!widget.isFocusLocked && !isGroup && percentage > 0)
+          if (!widget.isFocusLocked && !isGroup)
             Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: AppTheme.green, width: 2),
+                border: Border.all(
+                  color: percentage > 0
+                      ? AppTheme.green
+                      : Theme.of(
+                          context,
+                        ).colorScheme.outline.withValues(alpha: 0.35),
+                  width: 2,
+                ),
               ),
             ),
           // Arc for groups
@@ -3653,36 +3794,33 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                               // Handle: coloured prefix symbol + name
                               GestureDetector(
                                 onTap: () => widget.onHandleTap(handleText),
-                                child: RichText(
-                                  text: TextSpan(
-                                    children: [
-                                      TextSpan(
-                                        text: handleText.isNotEmpty
-                                            ? handleText.substring(0, 1)
-                                            : '',
-                                        style: GoogleFonts.inter(
-                                          color: handlePrefixColor,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isGroup
+                                          ? Icons.groups_2_outlined
+                                          : Icons.person_outline_rounded,
+                                      size: 14,
+                                      color: handlePrefixColor,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      handleText.length > 1
+                                          ? handleText.substring(1)
+                                          : handleText,
+                                      style: GoogleFonts.inter(
+                                        color:
+                                            Theme.of(context).brightness ==
+                                                Brightness.light
+                                            ? Colors.black
+                                            : Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: -0.2,
                                       ),
-                                      TextSpan(
-                                        text: handleText.length > 1
-                                            ? ' ${handleText.substring(1)}'
-                                            : '',
-                                        style: GoogleFonts.inter(
-                                          color:
-                                              Theme.of(context).brightness ==
-                                                  Brightness.light
-                                              ? Colors.black
-                                              : Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                          letterSpacing: -0.2,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
                               ),
                               Text(
@@ -3780,8 +3918,16 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     if (isGroup) {
       final members = widget.item['groupMembers'] as List<dynamic>? ?? [];
       final admins = widget.item['groupAdmins'] as List<dynamic>? ?? [];
+      final pendingInviteIds =
+          (widget.item['pendingInviteIds'] as List?)
+              ?.map((entry) => entry.toString())
+              .toList() ??
+          const <String>[];
       final desc = widget.item['groupDescription'] as String? ?? '';
       final isAdmin = admins.contains(widget.currentUserId);
+      final hasPendingApproval = pendingInviteIds.contains(
+        widget.currentUserId,
+      );
       final groupId = widget.item['id'] as String;
 
       return StreamBuilder<List<UserModel>>(
@@ -3823,6 +3969,109 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                     allUsers,
                   ),
                 ),
+              if (!isAdmin && hasPendingApproval) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.purple.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.zero,
+                    border: Border.all(
+                      color: AppTheme.purple.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'You were invited to this group. Approve to stay or exit now.',
+                        style: GoogleFonts.inter(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () async {
+                                await widget.inviteService.approveInvite(
+                                  groupId: groupId,
+                                  userId: widget.currentUserId,
+                                );
+                                await widget.groupService.sendGroupMessage(
+                                  groupId: groupId,
+                                  senderId: 'system',
+                                  senderName: 'System',
+                                  text:
+                                      '${cachedUserName.isEmpty ? 'User' : cachedUserName} approved invite',
+                                  type: MessageType.system,
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.green.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.zero,
+                                ),
+                                child: Text(
+                                  'Approve',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(
+                                    color: AppTheme.green,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () async {
+                                await widget.inviteService.exitInvite(
+                                  groupId: groupId,
+                                  userId: widget.currentUserId,
+                                );
+                                await widget.groupService.leaveGroup(
+                                  groupId,
+                                  widget.currentUserId,
+                                  cachedUserName.isEmpty
+                                      ? 'User'
+                                      : cachedUserName,
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.red.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.zero,
+                                ),
+                                child: Text(
+                                  'Exit',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(
+                                    color: AppTheme.red,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               _actionButton(
                 icon: Icons.exit_to_app,
                 label: 'Leave Group',

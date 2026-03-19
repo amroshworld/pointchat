@@ -1,29 +1,31 @@
 {
-  "projectId": "69a6d89d0007909f06f7",
-  "projectName": "pointchat",
-  "functions": [
-    {
-      "$id": "media_cleanup",
-      "name": "Media Cleanup",
-      "runtime": "node-18.0",
-      "path": "appwrite_functions/delete_old_media",
-      "entrypoint": "index.js",
-      "commands": "npm install",
-      "scopes": [
-        "documents.read",
-        "documents.write",
-        "files.read",
-        "files.write"
-      ]
-    },
-    {
-      "$id": "chat_ai",
-      "name": "Chat AI",
-      "runtime": "node-18.0",
-      "path": "appwrite_functions/chat_ai",
-      "entrypoint": "index.js",
-      "commands": "npm install",
-      "execute": ["users"]
-    }
-  ]
+    "projectId": "69a6d89d0007909f06f7",
+    "projectName": "pointchat",
+    "functions": [
+        {
+            "$id": "media_cleanup",
+            "name": "Media Cleanup",
+            "runtime": "node-18.0",
+            "path": "appwrite_functions/delete_old_media",
+            "entrypoint": "index.js",
+            "commands": "npm install",
+            "scopes": [
+                "documents.read",
+                "documents.write",
+                "files.read",
+                "files.write"
+            ]
+        },
+        {
+            "$id": "chat_ai",
+            "name": "Chat AI",
+            "runtime": "node-18.0",
+            "path": "appwrite_functions/chat_ai",
+            "entrypoint": "index.js",
+            "commands": "npm install",
+            "execute": [
+                "users"
+            ]
+        }
+    ]
 }
