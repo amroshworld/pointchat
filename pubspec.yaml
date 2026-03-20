@@ -57,6 +57,7 @@ dependencies:
   flutter_local_notifications: ^19.4.1
   purchases_flutter: 9.13.1
   flutter_web_auth_2: 5.0.1
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:

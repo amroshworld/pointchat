@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/theme_provider.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -44,8 +45,9 @@ import '../subscription/ai_subscription_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/voice_message_player.dart';
 import '../../utils/pointchat_tips.dart';
+import '../../utils/composer_preferences.dart';
 
-/// Shown when typing `@` so features like `@bot` are discoverable.
+/// Shown when typing `@` so features like `@bot` / `@ai` are discoverable.
 class _AtCommandSuggestion {
   final String insertStem;
   final String label;
@@ -61,27 +63,12 @@ const _kAtCommandHints = <_AtCommandSuggestion>[
   _AtCommandSuggestion(
     insertStem: 'bot ',
     label: '@bot',
-    hint: 'PointChat AI — @bot new Name or @makebot Name for a custom bot',
-  ),
-  _AtCommandSuggestion(
-    insertStem: 'bot new ',
-    label: '@bot new',
-    hint: 'Create a custom bot (type its name after)',
-  ),
-  _AtCommandSuggestion(
-    insertStem: 'bot create ',
-    label: '@bot create',
-    hint: 'Create a bot with a multi-word name after this',
-  ),
-  _AtCommandSuggestion(
-    insertStem: 'makebot ',
-    label: '@makebot',
-    hint: 'Legacy: same as @bot new (avoids @bot make … AI confusion)',
+    hint: 'Create a bot — type its name after @bot ',
   ),
   _AtCommandSuggestion(
     insertStem: 'ai ',
     label: '@ai',
-    hint: 'Same AI as @bot (private notes thread)',
+    hint: 'PointChat AI in your private notes thread',
   ),
 ];
 
@@ -144,6 +131,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   Timer? _composerTipTimer;
   int _composerTipIndex = 0;
   bool _composerTipsLoaded = false;
+  bool _tipsRotateEnabled = true;
 
   // Reply state
   MessageModel? _replyingToMessage;
@@ -238,7 +226,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                 ? 'PointChat AI'
                 : (otherUser?.displayName ?? 'Chat'),
             'handle': isAiSelfChat
-                ? '@bot'
+                ? '@ai'
                 : (otherUser != null
                       ? _formatHandle(otherUser.displayName)
                       : '@unknown'),
@@ -400,16 +388,50 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
     _commandController.addListener(_onCommandChanged);
 
-    unawaited(
-      PointchatTips.instance.ensureLoaded().then((_) {
-        if (mounted) setState(() => _composerTipsLoaded = true);
-      }),
-    );
-    _composerTipTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (!mounted) return;
-      final n = PointchatTips.instance.rotatingTips.length;
-      if (n <= 1) return;
-      setState(() => _composerTipIndex = (_composerTipIndex + 1) % n);
+    unawaited(_loadComposerPrefsAndTips());
+  }
+
+  Future<void> _loadComposerPrefsAndTips() async {
+    final rotate = await ComposerPreferences.getTipsRotateEnabled();
+    await PointchatTips.instance.ensureLoaded();
+    if (!mounted) return;
+    setState(() {
+      _composerTipsLoaded = true;
+      _tipsRotateEnabled = rotate;
+    });
+    _syncComposerTipTimer();
+  }
+
+  void _syncComposerTipTimer() {
+    _composerTipTimer?.cancel();
+    _composerTipTimer = null;
+    if (!_tipsRotateEnabled || !mounted) return;
+    final n = PointchatTips.instance.rotatingTips.length;
+    if (n <= 1) return;
+    _composerTipTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted || !_tipsRotateEnabled) return;
+      final n2 = PointchatTips.instance.rotatingTips.length;
+      if (n2 <= 1) return;
+      setState(() => _composerTipIndex = (_composerTipIndex + 1) % n2);
+    });
+  }
+
+  Future<void> _toggleTipRotation() async {
+    final next = !_tipsRotateEnabled;
+    await ComposerPreferences.setTipsRotateEnabled(next);
+    if (!mounted) return;
+    setState(() => _tipsRotateEnabled = next);
+    if (next) {
+      _syncComposerTipTimer();
+    } else {
+      _composerTipTimer?.cancel();
+      _composerTipTimer = null;
+    }
+  }
+
+  void _focusComposerAfterFrame() {
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _commandFocusNode.requestFocus();
     });
   }
 
@@ -476,14 +498,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               _helpRow(ctx, '#group', 'Post to a group (create if new)'),
               _helpRow(
                 ctx,
-                '@bot',
-                'AI in your notes — @bot new Name or @bot create Long Name for bots',
+                '@bot Name',
+                'Create a custom bot with that name (opens setup)',
               ),
-              _helpRow(ctx, '@ai', 'Same as @bot (private AI thread)'),
               _helpRow(
                 ctx,
-                '@makebot Name',
-                'Same as @bot new (kept for short "make" wording)',
+                '@ai',
+                'Ask PointChat AI in your private notes thread',
               ),
               _helpRow(ctx, '/location', 'Share GPS (select @user or #group first)'),
               const SizedBox(height: 8),
@@ -763,8 +784,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     if (_focusedHandle == null ||
         _hasExplicitTarget(trimmed) ||
         trimmed.toLowerCase().startsWith('@bot ') ||
-        trimmed.toLowerCase().startsWith('@ai ') ||
-        RegExp(r'^@makebot\s*', caseSensitive: false).hasMatch(trimmed)) {
+        trimmed.toLowerCase().startsWith('@ai ')) {
       return trimmed;
     }
 
@@ -2711,16 +2731,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
     final trimmedCmd = normalizedInput.trim();
 
-    if (RegExp(
-      r'^@bot\s+(new|create)\s*$',
-      caseSensitive: false,
-    ).hasMatch(trimmedCmd)) {
+    if (RegExp(r'^@bot\s*$', caseSensitive: false).hasMatch(trimmedCmd)) {
       if (mounted) {
         final cs = Theme.of(context).colorScheme;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Usage: @bot new AssistantName  or  @bot create Assistant Name',
+              'Usage: @bot AssistantName',
               style: GoogleFonts.inter(
                 color: cs.onInverseSurface,
                 fontWeight: FontWeight.w500,
@@ -2734,13 +2751,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       return;
     }
 
-    // new/create only — not "make" (so @bot make me a list stays as AI chat).
-    final botViaBot = RegExp(
-      r'^@bot\s+(new|create)\s+(.+)$',
+    final createBot = RegExp(
+      r'^@bot\s+(.+)$',
       caseSensitive: false,
     ).firstMatch(trimmedCmd);
-    if (botViaBot != null) {
-      final botName = botViaBot.group(2)!.trim();
+    if (createBot != null) {
+      final botName = createBot.group(1)!.trim();
       if (botName.isNotEmpty) {
         _showBotConfigDialog(botName);
         _commandController.clear();
@@ -2748,44 +2764,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       }
     }
 
-    // Legacy: @makebot Name
-    final makeBotMatch = RegExp(
-      r'^@makebot\s*',
-      caseSensitive: false,
-    ).firstMatch(trimmedCmd);
-    if (makeBotMatch != null) {
-      final botName = trimmedCmd.substring(makeBotMatch.end).trim();
-      if (botName.isNotEmpty) {
-        _showBotConfigDialog(botName);
-        _commandController.clear();
-        return;
-      }
-      if (mounted) {
-        final cs = Theme.of(context).colorScheme;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Usage: @bot new Name, @bot create Name, or @makebot Name',
-              style: GoogleFonts.inter(
-                color: cs.onInverseSurface,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: cs.inverseSurface,
-          ),
-        );
-      }
-      _commandController.clear();
-      return;
-    }
-
-    // Private AI (same thread): @ai … or @bot …
+    // Private AI (notes thread): @ai only
     final lowerCmd = normalizedInput.toLowerCase();
     String? privateAiPrompt;
     if (lowerCmd.startsWith('@ai ')) {
       privateAiPrompt = normalizedInput.substring(4).trim();
-    } else if (lowerCmd.startsWith('@bot ')) {
-      privateAiPrompt = normalizedInput.substring(5).trim();
     }
     if (privateAiPrompt != null && privateAiPrompt.isNotEmpty) {
       _commandController.clear();
@@ -3585,9 +3568,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                 fontSize: 14,
                               ),
                             ),
-                            subtitle: isAtCmd
+                            subtitle: suggestion is _AtCommandSuggestion
                                 ? Text(
-                                    (suggestion as _AtCommandSuggestion).hint,
+                                    suggestion.hint,
                                     style: GoogleFonts.inter(
                                       fontSize: 11,
                                       color: scheme.onSurfaceVariant,
@@ -3625,7 +3608,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                   _isMentioning = false;
                                   _mentionSuggestions = [];
                                 });
-                                _commandFocusNode.requestFocus();
+                                _focusComposerAfterFrame();
                                 return;
                               }
 
@@ -3680,7 +3663,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                 _isMentioning = false;
                                 _mentionSuggestions = [];
                               });
-                              _commandFocusNode.requestFocus();
+                              _focusComposerAfterFrame();
                             },
                           );
                         },
@@ -3691,6 +3674,70 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             );
           },
         ),
+
+        if (_composerTipsLoaded &&
+            PointchatTips.instance.rotatingTips.isNotEmpty &&
+            !_isAiMode &&
+            _replyingToMessage == null &&
+            _forwardingMessage == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 2, 8, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    Icons.tips_and_updates_outlined,
+                    size: 14,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withValues(alpha: 0.55),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    PointchatTips.instance.rotatingTips[_composerTipIndex %
+                        PointchatTips.instance.rotatingTips.length],
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      height: 1.25,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.72),
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Tooltip(
+                  message: _tipsRotateEnabled
+                      ? 'Pause tip rotation'
+                      : 'Resume tip rotation',
+                  child: InkWell(
+                    onTap: _toggleTipRotation,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 2, 4, 2),
+                      child: Icon(
+                        _tipsRotateEnabled
+                            ? Icons.pause_circle_outline_rounded
+                            : Icons.play_circle_outline_rounded,
+                        size: 20,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withValues(alpha: 0.65),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
@@ -3749,113 +3796,44 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                             ),
                             const SizedBox(width: 4),
                             Expanded(
-                              child: Builder(
-                                builder: (context) {
-                                  final hintColor = _isAiMode
-                                      ? AppTheme.focusBlue.withValues(
-                                          alpha: 0.85,
-                                        )
+                              child: TextField(
+                                controller: _commandController,
+                                focusNode: _commandFocusNode,
+                                style: GoogleFonts.inter(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  fontSize: 15,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: _isAiMode
+                                      ? 'Ask the AI…'
                                       : (isFocusModeActive
-                                            ? AppTheme.focusBlue.withValues(
-                                                alpha: 0.85,
-                                              )
-                                            : Theme.of(context)
-                                                  .colorScheme
-                                                  .onSurfaceVariant
-                                                  .withValues(alpha: 0.65));
-                                  final hintStyle = GoogleFonts.inter(
-                                    color: hintColor,
+                                            ? 'Message $_focusedHandle…'
+                                            : 'Message · @ name  # group'),
+                                  hintStyle: GoogleFonts.inter(
+                                    color: _isAiMode
+                                        ? AppTheme.focusBlue.withValues(
+                                            alpha: 0.85,
+                                          )
+                                        : (isFocusModeActive
+                                              ? AppTheme.focusBlue.withValues(
+                                                  alpha: 0.85,
+                                                )
+                                              : Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurfaceVariant
+                                                    .withValues(alpha: 0.65)),
                                     fontSize: 15,
-                                  );
-                                  final useRotating = _composerTipsLoaded &&
-                                      !_isAiMode &&
-                                      !isFocusModeActive &&
-                                      PointchatTips
-                                          .instance.rotatingTips.isNotEmpty;
-                                  return Stack(
-                                    alignment: Alignment.centerLeft,
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      TextField(
-                                        controller: _commandController,
-                                        focusNode: _commandFocusNode,
-                                        style: GoogleFonts.inter(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurface,
-                                          fontSize: 15,
-                                        ),
-                                        decoration: InputDecoration(
-                                          hintText: useRotating
-                                              ? ''
-                                              : (_isAiMode
-                                                    ? 'Ask the AI…'
-                                                    : (isFocusModeActive
-                                                          ? 'Message $_focusedHandle…'
-                                                          : 'Message · @ name  # group')),
-                                          hintStyle: hintStyle,
-                                          border: InputBorder.none,
-                                          enabledBorder: InputBorder.none,
-                                          focusedBorder: InputBorder.none,
-                                          contentPadding: EdgeInsets.zero,
-                                          fillColor: Colors.transparent,
-                                        ),
-                                        cursorColor: AppTheme.focusBlue,
-                                        onSubmitted: _sendCommand,
-                                      ),
-                                      if (useRotating)
-                                        ValueListenableBuilder<TextEditingValue>(
-                                          valueListenable: _commandController,
-                                          builder: (context, val, _) {
-                                            if (val.text.isNotEmpty) {
-                                              return const SizedBox.shrink();
-                                            }
-                                            final tips = PointchatTips
-                                                .instance.rotatingTips;
-                                            final idx =
-                                                _composerTipIndex % tips.length;
-                                            return IgnorePointer(
-                                              child: Align(
-                                                alignment: Alignment.centerLeft,
-                                                child: AnimatedSwitcher(
-                                                  duration: const Duration(
-                                                    milliseconds: 420,
-                                                  ),
-                                                  switchInCurve: Curves.easeOut,
-                                                  switchOutCurve: Curves.easeIn,
-                                                  transitionBuilder:
-                                                      (child, animation) {
-                                                    return FadeTransition(
-                                                      opacity: animation,
-                                                      child: SlideTransition(
-                                                        position:
-                                                            Tween<Offset>(
-                                                          begin: const Offset(
-                                                            0,
-                                                            0.12,
-                                                          ),
-                                                          end: Offset.zero,
-                                                        ).animate(animation),
-                                                        child: child,
-                                                      ),
-                                                    );
-                                                  },
-                                                  child: Text(
-                                                    tips[idx],
-                                                    key: ValueKey<int>(idx),
-                                                    style: hintStyle,
-                                                    maxLines: 2,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                    ],
-                                  );
-                                },
+                                  ),
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  contentPadding: EdgeInsets.zero,
+                                  fillColor: Colors.transparent,
+                                ),
+                                cursorColor: AppTheme.focusBlue,
+                                onSubmitted: _sendCommand,
                               ),
                             ),
                             if (_showActions) ...[
