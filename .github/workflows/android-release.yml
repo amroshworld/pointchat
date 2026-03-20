@@ -1,12 +1,11 @@
-# Build signed Android App Bundle for Google Play. Configure repository secrets
-# (see docs/RELEASE_PLAY_APPSTORE.md). Do not commit real keystore passwords in YAML.
-name: Android Release (AAB)
+# Signed Android AAB + unsigned iOS app (same triggers). Secrets: see docs/RELEASE_PLAY_APPSTORE.md
+name: Mobile Release (Android AAB + iOS)
 
 on:
   workflow_dispatch:
     inputs:
       track:
-        description: "Play track (internal testing recommended first)"
+        description: "Play track (for your notes; upload to Play is still manual)"
         required: true
         default: "internal"
         type: choice
@@ -21,7 +20,7 @@ on:
 
 jobs:
   build-aab:
-    name: Build signed AAB
+    name: Android — signed AAB
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,4 +71,38 @@ jobs:
         with:
           name: pointchat-release-aab
           path: build/app/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+  build-ios-unsigned:
+    name: iOS — release (no codesign)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build iOS (no codesign)
+        env:
+          REVENUECAT_ANDROID_API_KEY: ${{ secrets.REVENUECAT_ANDROID_API_KEY }}
+          REVENUECAT_IOS_API_KEY: ${{ secrets.REVENUECAT_IOS_API_KEY }}
+        run: |
+          flutter build ios --release --no-codesign --build-number=${{ github.run_number }} \
+            --dart-define=REVENUECAT_ANDROID_API_KEY=${REVENUECAT_ANDROID_API_KEY} \
+            --dart-define=REVENUECAT_IOS_API_KEY=${REVENUECAT_IOS_API_KEY}
+
+      - name: Zip Runner.app
+        run: |
+          cd build/ios/iphoneos
+          zip -r Runner.app.zip Runner.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pointchat-ios-unsigned-app
+          path: build/ios/iphoneos/Runner.app.zip
           if-no-files-found: error
