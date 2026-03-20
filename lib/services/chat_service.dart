@@ -26,7 +26,18 @@ class ChatService {
 
     for (final doc in result.rows) {
       final participants = List<String>.from(doc.data['participants'] ?? []);
-      if (participants.contains(otherUserId) && participants.length == 2) {
+      if (participants.length != 2) continue;
+
+      // Self / AI thread: [userId, userId] only. Do not match [me, someoneElse].
+      if (currentUserId == otherUserId) {
+        if (participants[0] == participants[1] &&
+            participants[0] == currentUserId) {
+          return doc.$id;
+        }
+        continue;
+      }
+
+      if (participants.contains(otherUserId)) {
         return doc.$id;
       }
     }
@@ -93,7 +104,7 @@ class ChatService {
     fetch();
 
     final sub = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.chatsCollection}.documents',
+      AppwriteRealtimeChannels.tableRows(AppwriteConstants.chatsCollection),
     ]);
     sub.stream.listen((_) => fetch());
     controller.onCancel = () => sub.close();
@@ -129,7 +140,10 @@ class ChatService {
     fetch();
 
     final sub = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.chatsCollection}.documents.$chatId',
+      AppwriteRealtimeChannels.tableRow(
+        AppwriteConstants.chatsCollection,
+        chatId,
+      ),
     ]);
     sub.stream.listen((_) => fetch());
     controller.onCancel = () => sub.close();
@@ -167,11 +181,12 @@ class ChatService {
     fetch();
 
     final sub = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.messagesCollection}.documents',
+      AppwriteRealtimeChannels.tableRows(AppwriteConstants.messagesCollection),
     ]);
     sub.stream.listen((event) {
-      if (event.payload['chatId'] == chatId ||
-          event.events.any((e) => e.contains('.delete'))) {
+      final payload = event.payload;
+      final chat = payload is Map ? payload['chatId'] : null;
+      if (chat == chatId || event.events.any((e) => e.contains('.delete'))) {
         fetch();
       }
     });

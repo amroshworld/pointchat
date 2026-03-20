@@ -1,6 +1,7 @@
 # Google Play & App Store release checklist
 
-New to Actions? Read **[GITHUB_ACTIONS_JUNIOR.md](GITHUB_ACTIONS_JUNIOR.md)** first.
+New to Actions? Read **[GITHUB_ACTIONS_JUNIOR.md](GITHUB_ACTIONS_JUNIOR.md)** first.  
+**What is “signed build”?** Read **[SIGNING_EXPLAINED.md](SIGNING_EXPLAINED.md)**.
 
 ## Google Play (Android)
 
@@ -34,7 +35,7 @@ New to Actions? Read **[GITHUB_ACTIONS_JUNIOR.md](GITHUB_ACTIONS_JUNIOR.md)** fi
 Edit `assets/pointchat_tips.json`:
 
 - `rotating_tips` — Shown in the composer (cycles like CLI hints).
-- `ai_knowledge` — Appended to AI system prompts so `@bot` / bots stay aligned with real features.
+- `ai_knowledge` — Appended to AI system prompts so `@ai` / bots stay aligned with real features.
 
 Run `flutter pub get` after asset changes.
 

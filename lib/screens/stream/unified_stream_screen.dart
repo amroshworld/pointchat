@@ -47,7 +47,7 @@ import '../../widgets/voice_message_player.dart';
 import '../../utils/pointchat_tips.dart';
 import '../../utils/composer_preferences.dart';
 
-/// Shown when typing `@` so features like `@bot` / `@ai` are discoverable.
+/// Shown when typing `@` so features like `@ai` are discoverable.
 class _AtCommandSuggestion {
   final String insertStem;
   final String label;
@@ -61,14 +61,9 @@ class _AtCommandSuggestion {
 
 const _kAtCommandHints = <_AtCommandSuggestion>[
   _AtCommandSuggestion(
-    insertStem: 'bot ',
-    label: '@bot',
-    hint: 'Create a bot — type its name after @bot ',
-  ),
-  _AtCommandSuggestion(
     insertStem: 'ai ',
     label: '@ai',
-    hint: 'PointChat AI in your private notes thread',
+    hint: 'PointChat AI — private notes thread (use /newbot for custom bots)',
   ),
 ];
 
@@ -498,13 +493,13 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               _helpRow(ctx, '#group', 'Post to a group (create if new)'),
               _helpRow(
                 ctx,
-                '@bot Name',
-                'Create a custom bot with that name (opens setup)',
+                '@ai',
+                'PointChat AI — messages go only to your private AI thread',
               ),
               _helpRow(
                 ctx,
-                '@ai',
-                'Ask PointChat AI in your private notes thread',
+                '/newbot Name',
+                'Create a custom bot (type after the command)',
               ),
               _helpRow(ctx, '/location', 'Share GPS (select @user or #group first)'),
               const SizedBox(height: 8),
@@ -676,6 +671,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       final slashOptions = <String>[
         '/setting',
         '/myprofile',
+        '/newbot',
         '/location',
         // AI commands hidden for now
         // '/summarize',
@@ -783,7 +779,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
     if (_focusedHandle == null ||
         _hasExplicitTarget(trimmed) ||
-        trimmed.toLowerCase().startsWith('@bot ') ||
+        trimmed.startsWith('/') ||
         trimmed.toLowerCase().startsWith('@ai ')) {
       return trimmed;
     }
@@ -841,6 +837,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       text: newText,
       selection: TextSelection.collapsed(offset: newOffset),
     );
+
+    // /newbot needs a name after it — don't auto-send.
+    if (command.trim().toLowerCase() == '/newbot') {
+      _commandFocusNode.requestFocus();
+      return;
+    }
 
     // Auto-submit command immediately so user doesn't have to press ok
     _sendCommand(newText);
@@ -2731,13 +2733,25 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
     final trimmedCmd = normalizedInput.trim();
 
-    if (RegExp(r'^@bot\s*$', caseSensitive: false).hasMatch(trimmedCmd)) {
+    final newBotSlash = RegExp(
+      r'^/newbot\s+(.+)$',
+      caseSensitive: false,
+    ).firstMatch(trimmedCmd);
+    if (newBotSlash != null) {
+      final botName = newBotSlash.group(1)!.trim();
+      if (botName.isNotEmpty) {
+        _showBotConfigDialog(botName);
+        _commandController.clear();
+        return;
+      }
+    }
+    if (RegExp(r'^/newbot\s*$', caseSensitive: false).hasMatch(trimmedCmd)) {
       if (mounted) {
         final cs = Theme.of(context).colorScheme;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Usage: @bot AssistantName',
+              'Usage: /newbot AssistantName',
               style: GoogleFonts.inter(
                 color: cs.onInverseSurface,
                 fontWeight: FontWeight.w500,
@@ -2751,20 +2765,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       return;
     }
 
-    final createBot = RegExp(
-      r'^@bot\s+(.+)$',
-      caseSensitive: false,
-    ).firstMatch(trimmedCmd);
-    if (createBot != null) {
-      final botName = createBot.group(1)!.trim();
-      if (botName.isNotEmpty) {
-        _showBotConfigDialog(botName);
-        _commandController.clear();
-        return;
-      }
-    }
-
-    // Private AI (notes thread): @ai only
+    // Private AI (notes thread): @ai …
     final lowerCmd = normalizedInput.toLowerCase();
     String? privateAiPrompt;
     if (lowerCmd.startsWith('@ai ')) {
@@ -2847,6 +2848,35 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           _commandController.clear();
           await _showSettingsOverlayForHandle(targetHandle);
         }
+        return;
+      }
+
+      final newBotFromSlash = RegExp(
+        r'^newbot\s+(.+)$',
+        caseSensitive: false,
+      ).firstMatch(aiPrompt);
+      if (newBotFromSlash != null) {
+        _commandController.clear();
+        _showBotConfigDialog(newBotFromSlash.group(1)!.trim());
+        return;
+      }
+      if (aiPrompt.toLowerCase().trim() == 'newbot') {
+        if (mounted) {
+          final cs = Theme.of(context).colorScheme;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Usage: /newbot AssistantName',
+                style: GoogleFonts.inter(
+                  color: cs.onInverseSurface,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              backgroundColor: cs.inverseSurface,
+            ),
+          );
+        }
+        _commandController.clear();
         return;
       }
 

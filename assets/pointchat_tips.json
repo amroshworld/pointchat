@@ -1,12 +1,12 @@
 {
   "rotating_tips": [
     "Message with @name or #group — tap a chat row to focus a target",
-    "@bot AssistantName — create a custom bot (opens setup)",
-    "@ai your question — PointChat AI in your private notes thread",
+    "@ai your question — PointChat AI (only your private AI thread)",
+    "/newbot AssistantName — create a custom bot",
     "/location — share position (pick @ or # first, or use focused chat)",
     "/setting @user or #group — conversation settings",
     "Voice notes: ±1s buttons and waveform tap to seek",
-    "Type @ to see people and commands"
+    "Type @ to see people; type / for slash commands"
   ],
-  "ai_knowledge": "PointChat supports DMs (@username), groups (#groupname), voice messages, photos/files, and /location. @bot followed by a name starts creating a custom bot with that name (setup dialog). @ai followed by a message talks to PointChat AI in the user's private self-chat thread. Custom bots reply automatically when messaged. Slash commands: /myprofile, /setting, /location. Users usually need an @ or # target or a focused chat before sending."
+  "ai_knowledge": "PointChat supports DMs (@username), groups (#groupname), voice messages, photos/files, and /location. /newbot Name opens creating a custom bot. @ai followed by a message talks to PointChat AI only in the user's private self-chat thread (participants are the same user twice in the database). Custom bots reply automatically when messaged. Slash commands: /myprofile, /setting, /location, /newbot. Users usually need an @ or # target or a focused chat before sending normal messages; slash commands and @ai do not use the focused DM target."
 }
