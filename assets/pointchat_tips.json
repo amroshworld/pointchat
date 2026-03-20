@@ -1,0 +1,12 @@
+{
+  "rotating_tips": [
+    "Message with @name or #group — tap a chat header to focus a target",
+    "@bot — PointChat AI in your notes thread",
+    "@bot new AssistantName — custom bot; @bot create Long Name — multi-word name",
+    "/location — share your position (slash menu or type after @target)",
+    "/setting @user or #group — open settings for that conversation",
+    "Voice notes: tap −1s / +1s or swipe the waveform to seek",
+    "Tip: type @ to see people, commands, and @bot"
+  ],
+  "ai_knowledge": "PointChat is a chat app with direct messages (@username), groups (#groupname), voice messages, photo/file attachments, and location sharing via /location. @bot sends a private message to PointChat AI in the user's self-chat thread. @bot new Name or @bot create Long Name opens the flow to create a custom bot DM with custom instructions; @makebot Name is a legacy alias for @bot new. Do not use @bot make for bot creation (that phrase is treated as normal AI chat). @ai behaves like @bot. Custom bots reply automatically when messaged. Slash commands include /myprofile, /setting, /location. Users need a selected @ or # target for most sends unless a conversation is focused."
+}

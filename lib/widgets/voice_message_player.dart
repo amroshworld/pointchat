@@ -3,6 +3,8 @@ import 'package:audioplayers/audioplayers.dart';
 import 'dart:async';
 import '../services/cache_service.dart';
 
+/// Voice bubble: tap waveform to jump, −1s / +1s buttons, optional speed (1×–2×),
+/// horizontal fling skips ~1s per strong fling.
 class VoiceMessagePlayer extends StatefulWidget {
   final String audioUrl;
   final bool isMe;
@@ -29,6 +31,11 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
 
   String? _localAudioPath;
 
+  static const List<double> _speedSteps = [1.0, 1.5, 2.0];
+  int _speedIndex = 0;
+
+  double get _playbackRate => _speedSteps[_speedIndex];
+
   @override
   void initState() {
     super.initState();
@@ -50,7 +57,8 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
           _isPlaying = false;
           _position = Duration.zero;
         });
-        _audioPlayer.setPlaybackRate(1.0);
+        unawaited(_audioPlayer.setPlaybackRate(1.0));
+        _speedIndex = 0;
       }
     });
 
@@ -64,18 +72,17 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
       }
     });
 
-    // Cache the audio file locally
     try {
       final fileInfo = await MediaCacheManager.instance.downloadFile(
         widget.audioUrl,
       );
       if (mounted) {
         _localAudioPath = fileInfo.file.path;
-        _audioPlayer.setSourceDeviceFile(_localAudioPath!);
+        await _audioPlayer.setSourceDeviceFile(_localAudioPath!);
       }
     } catch (e) {
       if (mounted) {
-        _audioPlayer.setSourceUrl(widget.audioUrl);
+        await _audioPlayer.setSourceUrl(widget.audioUrl);
       }
     }
   }
@@ -90,10 +97,11 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     super.dispose();
   }
 
-  void _togglePlay() async {
+  Future<void> _togglePlay() async {
     if (_isPlaying) {
       await _audioPlayer.pause();
     } else {
+      await _audioPlayer.setPlaybackRate(_playbackRate);
       if (_localAudioPath != null) {
         await _audioPlayer.play(DeviceFileSource(_localAudioPath!));
       } else {
@@ -102,26 +110,35 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     }
   }
 
-  void _onDragUpdate(DragUpdateDetails details, BoxConstraints constraints) {
+  Future<void> _seekBy(int deltaMs) async {
     if (_duration == Duration.zero) return;
+    var ms = _position.inMilliseconds + deltaMs;
+    if (ms < 0) ms = 0;
+    if (ms > _duration.inMilliseconds) ms = _duration.inMilliseconds;
+    await _audioPlayer.seek(Duration(milliseconds: ms));
+  }
 
-    final percent = details.delta.dx / constraints.maxWidth;
-    final change = _duration.inMilliseconds * percent;
+  void _seekToFraction(double fraction) {
+    if (_duration == Duration.zero) return;
+    final clamped = fraction.clamp(0.0, 1.0);
+    final ms = (_duration.inMilliseconds * clamped).round();
+    _audioPlayer.seek(Duration(milliseconds: ms));
+  }
 
-    int newPosition = _position.inMilliseconds + change.toInt();
-    if (newPosition < 0) newPosition = 0;
-    if (newPosition > _duration.inMilliseconds) {
-      newPosition = _duration.inMilliseconds;
+  void _cycleSpeed() {
+    setState(() {
+      _speedIndex = (_speedIndex + 1) % _speedSteps.length;
+    });
+    if (_isPlaying) {
+      _audioPlayer.setPlaybackRate(_playbackRate);
     }
-
-    _audioPlayer.seek(Duration(milliseconds: newPosition));
   }
 
   String _formatDuration(Duration d) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     String twoDigitMinutes = twoDigits(d.inMinutes.remainder(60));
     String twoDigitSeconds = twoDigits(d.inSeconds.remainder(60));
-    return "$twoDigitMinutes:$twoDigitSeconds";
+    return '$twoDigitMinutes:$twoDigitSeconds';
   }
 
   @override
@@ -131,53 +148,120 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
         ? colorScheme.onPrimaryContainer
         : colorScheme.onSurface;
 
-    return Container(
-      width: 220,
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: _togglePlay,
-            child: Icon(
-              _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-              color: fgColor,
-              size: 36,
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        final v = details.primaryVelocity ?? 0;
+        if (v > 700) {
+          unawaited(_seekBy(1000));
+        } else if (v < -700) {
+          unawaited(_seekBy(-1000));
+        }
+      },
+      child: SizedBox(
+        width: 260,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                GestureDetector(
+                  onLongPress: _cycleSpeed,
+                  onTap: _togglePlay,
+                  child: Icon(
+                    _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                    color: fgColor,
+                    size: 36,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: Icon(Icons.replay_5_rounded, color: fgColor, size: 22),
+                  onPressed: () => _seekBy(-1000),
+                ),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTapDown: (details) {
+                          final w = constraints.maxWidth;
+                          if (w <= 0) return;
+                          _seekToFraction(details.localPosition.dx / w);
+                        },
+                        child: SizedBox(
+                          height: 36,
+                          child: CustomPaint(
+                            painter: _WaveformPainter(
+                              progress: _duration.inMilliseconds == 0
+                                  ? 0.0
+                                  : _position.inMilliseconds /
+                                        _duration.inMilliseconds,
+                              color: fgColor.withValues(alpha: 0.3),
+                              progressColor: fgColor,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: Icon(Icons.forward_5_rounded, color: fgColor, size: 22),
+                  onPressed: () => _seekBy(1000),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _formatDuration(
+                    _position.inMilliseconds > 0 ? _position : _duration,
+                  ),
+                  style: TextStyle(
+                    color: fgColor.withValues(alpha: 0.8),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return GestureDetector(
-                  onHorizontalDragUpdate: (details) =>
-                      _onDragUpdate(details, constraints),
-                  child: Container(
-                    height: 36,
-                    color: Colors.transparent, // to catch drags
-                    child: CustomPaint(
-                      painter: _WaveformPainter(
-                        progress: _duration.inMilliseconds == 0
-                            ? 0.0
-                            : _position.inMilliseconds /
-                                  _duration.inMilliseconds,
-                        color: fgColor.withValues(alpha: 0.3),
-                        progressColor: fgColor,
+            Padding(
+              padding: const EdgeInsets.only(left: 40, top: 2),
+              child: Row(
+                children: [
+                  Text(
+                    'Tap bar to jump · fling ↔ ±1s',
+                    style: TextStyle(
+                      color: fgColor.withValues(alpha: 0.45),
+                      fontSize: 9,
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: _cycleSpeed,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: fgColor.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Text(
+                        '${_playbackRate == 1.0 || _playbackRate == 2.0 ? _playbackRate.toStringAsFixed(0) : _playbackRate}x',
+                        style: TextStyle(
+                          color: fgColor.withValues(alpha: 0.85),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                );
-              },
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            _formatDuration(_position.inSeconds > 0 ? _position : _duration),
-            style: TextStyle(
-              color: fgColor.withValues(alpha: 0.8),
-              fontSize: 12,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:appwrite/enums.dart';
 import '../appwrite_client.dart';
+import '../utils/pointchat_tips.dart';
 import 'subscription_service.dart';
 
 class AiService {
@@ -16,9 +18,17 @@ class AiService {
         return 'AI access is not active for this account.';
       }
 
+      await PointchatTips.instance.ensureLoaded();
+      final tipCtx = PointchatTips.instance.aiKnowledgeSuffix();
+      final mergedSystem = <String>[
+        if (systemPrompt != null && systemPrompt.trim().isNotEmpty)
+          systemPrompt.trim(),
+        if (tipCtx.isNotEmpty) tipCtx,
+      ].join('\n');
+
       final payload = <String, dynamic>{'prompt': prompt};
-      if (systemPrompt != null && systemPrompt.trim().isNotEmpty) {
-        payload['systemPrompt'] = systemPrompt.trim();
+      if (mergedSystem.isNotEmpty) {
+        payload['systemPrompt'] = mergedSystem;
       }
 
       final response = await appwriteFunctions.createExecution(
@@ -26,14 +36,35 @@ class AiService {
         body: jsonEncode(payload),
       );
 
+      if (response.status == ExecutionStatus.failed) {
+        if (kDebugMode) {
+          debugPrint(
+            'chat_ai execution failed: errors=${response.errors} logs=${response.logs}',
+          );
+        }
+        return 'AI is temporarily unavailable. Please try again.';
+      }
+
+      if (response.responseStatusCode < 200 ||
+          response.responseStatusCode >= 300) {
+        if (kDebugMode) {
+          debugPrint(
+            'chat_ai HTTP ${response.responseStatusCode} body=${response.responseBody} logs=${response.logs}',
+          );
+        }
+        return 'AI is temporarily unavailable. Please try again.';
+      }
+
       final responseBody = response.responseBody;
       if (responseBody.isNotEmpty) {
         final Map<String, dynamic> data = jsonDecode(responseBody);
         if (data['success'] == true) {
           return data['text'] as String;
-        } else {
-          return 'AI is temporarily unavailable. Please try again.';
         }
+        if (kDebugMode) {
+          debugPrint('chat_ai success=false payload=$data');
+        }
+        return 'AI is temporarily unavailable. Please try again.';
       }
       return 'AI is temporarily unavailable. Please try again.';
     } catch (e) {

@@ -28,6 +28,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:uuid/uuid.dart';
+import 'package:characters/characters.dart';
 
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
@@ -42,6 +43,47 @@ import '../../models/message_model.dart';
 import '../subscription/ai_subscription_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/voice_message_player.dart';
+import '../../utils/pointchat_tips.dart';
+
+/// Shown when typing `@` so features like `@bot` are discoverable.
+class _AtCommandSuggestion {
+  final String insertStem;
+  final String label;
+  final String hint;
+  const _AtCommandSuggestion({
+    required this.insertStem,
+    required this.label,
+    required this.hint,
+  });
+}
+
+const _kAtCommandHints = <_AtCommandSuggestion>[
+  _AtCommandSuggestion(
+    insertStem: 'bot ',
+    label: '@bot',
+    hint: 'PointChat AI — @bot new Name or @makebot Name for a custom bot',
+  ),
+  _AtCommandSuggestion(
+    insertStem: 'bot new ',
+    label: '@bot new',
+    hint: 'Create a custom bot (type its name after)',
+  ),
+  _AtCommandSuggestion(
+    insertStem: 'bot create ',
+    label: '@bot create',
+    hint: 'Create a bot with a multi-word name after this',
+  ),
+  _AtCommandSuggestion(
+    insertStem: 'makebot ',
+    label: '@makebot',
+    hint: 'Legacy: same as @bot new (avoids @bot make … AI confusion)',
+  ),
+  _AtCommandSuggestion(
+    insertStem: 'ai ',
+    label: '@ai',
+    hint: 'Same AI as @bot (private notes thread)',
+  ),
+];
 
 class UnifiedStreamScreen extends StatefulWidget {
   final String currentUserId;
@@ -74,6 +116,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
   bool _isMentioning = false;
   List<dynamic> _mentionSuggestions = [];
+  String? _activeMentionKind;
+
+  Set<String> _chatParticipantIds = {};
+  List<String> _recentParticipantOrder = [];
+  bool _mentionScopeEveryone = false;
+  List<UserModel> _globalMentionResults = [];
+  bool _globalMentionLoading = false;
+  Timer? _mentionSearchDebounce;
+  StreamSubscription<Set<String>>? _participantIdsSub;
+  StreamSubscription<List<Map<String, dynamic>>>? _recentOrderSub;
 
   // AI state
   bool _isAiMode = false;
@@ -89,6 +141,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   bool _recordingCancelled = false;
   final AudioRecorder _audioRecorder = AudioRecorder();
 
+  Timer? _composerTipTimer;
+  int _composerTipIndex = 0;
+  bool _composerTipsLoaded = false;
+
   // Reply state
   MessageModel? _replyingToMessage;
   MessageModel? _forwardingMessage;
@@ -98,21 +154,40 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   late final Stream<List<GroupModel>> _groupsStream;
   late final Stream<List<Map<String, dynamic>>> _pendingInvitesStream;
   late final Stream<List<Map<String, dynamic>>> _combinedStream;
+  Timer? _heartbeatTimer;
+
+  void _startHeartbeat() {
+    unawaited(_authService.setUserOnlineStatus(true));
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (_) {
+      if (mounted) {
+        unawaited(_authService.setUserOnlineStatus(true));
+      }
+    });
+  }
+
+  void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    unawaited(_authService.setUserOnlineStatus(false));
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_authService.setUserOnlineStatus(true));
+    _startHeartbeat();
 
     NotificationService.instance.bindToUser(currentUserId);
 
-    _allUsersStream = _userService.getAllUsers(currentUserId);
-    _chatsStream = _chatService.getUserChats(currentUserId);
-    _groupsStream = _groupService.getUserGroups(currentUserId);
-    _pendingInvitesStream = _inviteService.getPendingInvitesForUser(
-      currentUserId,
-    );
+    // Single-subscription streams cannot be listened to twice (e.g. combineLatest
+    // + StreamBuilder + separate .listen). Broadcast allows multiple listeners.
+    _allUsersStream = _userService.getAllUsers(currentUserId).asBroadcastStream();
+    _chatsStream = _chatService.getUserChats(currentUserId).asBroadcastStream();
+    _groupsStream = _groupService.getUserGroups(currentUserId).asBroadcastStream();
+    _pendingInvitesStream = _inviteService
+        .getPendingInvitesForUser(currentUserId)
+        .asBroadcastStream();
 
     _combinedStream = Rx.combineLatest4(
       _chatsStream,
@@ -133,28 +208,50 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
         }
 
         for (var chat in chats) {
-          if (chat.lastMessage.isEmpty) continue;
           final otherUserId = chat.getOtherUserId(currentUserId);
-          final otherUser = users.cast<UserModel?>().firstWhere(
-            (u) => u?.uid == otherUserId,
-            orElse: () => null,
-          );
+          final isAiSelfChat = chat.isSelfParticipantChat;
+          final otherUser = isAiSelfChat
+              ? null
+              : users.cast<UserModel?>().firstWhere(
+                  (u) => u?.uid == otherUserId,
+                  orElse: () => null,
+                );
+          final isBotDm = otherUser?.isBot ?? false;
+          // Hide empty DMs except AI thread and custom bots (newly created bots
+          // have no lastMessage yet and would otherwise never appear).
+          if (chat.lastMessage.isEmpty && !isAiSelfChat && !isBotDm) {
+            continue;
+          }
 
           final isOnline = otherUser?.isOnline ?? false;
           final photoUrl = otherUser?.photoUrl;
+          final emptyDmHint = isAiSelfChat
+              ? 'Tap to chat with AI'
+              : (isBotDm ? 'Tap to open bot' : '');
 
           merged.add({
             'type': 'dm',
             'id': chat.chatId,
             'otherUserId': otherUserId,
             'timeRaw': chat.lastMessageTime ?? DateTime.now(),
-            'handle': otherUser != null
-                ? _formatHandle(otherUser.displayName)
-                : '@unknown',
-            'sender': chat.lastMessageSenderId == currentUserId
-                ? 'me'
-                : (otherUser?.displayName ?? ''),
-            'content': chat.lastMessage,
+            'conversationTitle': isAiSelfChat
+                ? 'PointChat AI'
+                : (otherUser?.displayName ?? 'Chat'),
+            'handle': isAiSelfChat
+                ? '@bot'
+                : (otherUser != null
+                      ? _formatHandle(otherUser.displayName)
+                      : '@unknown'),
+            'isAiSelfChat': isAiSelfChat,
+            'isBotDm': isBotDm,
+            'sender': chat.lastMessage.isEmpty
+                ? ''
+                : (chat.lastMessageSenderId == currentUserId
+                      ? 'me'
+                      : (isAiSelfChat
+                            ? 'AI'
+                            : (otherUser?.displayName ?? ''))),
+            'content': chat.lastMessage.isEmpty ? emptyDmHint : chat.lastMessage,
             'time': chat.lastMessageTime != null
                 ? DateFormat('HH:mm').format(chat.lastMessageTime!)
                 : '',
@@ -192,6 +289,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'type': 'group',
             'id': group.groupId,
             'timeRaw': group.lastMessageTime ?? DateTime.now(),
+            'conversationTitle': group.name,
             'handle': _formatGroupHandle(group.name),
             'sender': group.lastMessageSenderId == currentUserId
                 ? 'me'
@@ -200,13 +298,14 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'time': group.lastMessageTime != null
                 ? DateFormat('HH:mm').format(group.lastMessageTime!)
                 : '',
-            'isUnread': false,
+            'isUnread': (group.unreadCount[currentUserId] ?? 0) > 0,
             'image': group.lastMessage.contains('📷'),
             'photoUrl': group.photoUrl,
             'isOnline': onlineCount > 0,
             'onlinePercentage': percentage,
             'pendingInviteIds': pendingInviteIds,
             'groupMembers': group.members,
+            'pendingMemberIds': group.pendingMemberIds,
             'groupAdmins': group.admins,
             'groupDescription': group.description,
           });
@@ -219,7 +318,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
         return merged;
       },
-    );
+    ).asBroadcastStream();
 
     _allUsersStream.listen((users) {
       if (mounted) {
@@ -245,7 +344,197 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       }
     });
 
+    _participantIdsSub = Rx.combineLatest2<
+        List<ChatModel>,
+        List<GroupModel>,
+        Set<String>>(
+      _chatsStream,
+      _groupsStream,
+      (chats, groups) {
+        final ids = <String>{};
+        for (final c in chats) {
+          for (final p in c.participants) {
+            if (p.isNotEmpty && p != currentUserId) {
+              ids.add(p);
+            }
+          }
+        }
+        for (final g in groups) {
+          for (final m in g.members) {
+            if (m != currentUserId) {
+              ids.add(m);
+            }
+          }
+        }
+        return ids;
+      },
+    ).listen((ids) {
+      if (mounted) {
+        setState(() => _chatParticipantIds = ids);
+      }
+    });
+
+    _recentOrderSub = _combinedStream.listen((items) {
+      final order = <String>[];
+      for (final item in items) {
+        if (item['type'] == 'dm') {
+          final id = item['otherUserId']?.toString();
+          if (id != null && id.isNotEmpty && id != currentUserId) {
+            if (!order.contains(id)) {
+              order.add(id);
+            }
+          }
+        } else if (item['type'] == 'group') {
+          for (final m in (item['groupMembers'] as List?) ?? const []) {
+            final id = m.toString();
+            if (id.isNotEmpty && id != currentUserId && !order.contains(id)) {
+              order.add(id);
+            }
+          }
+        }
+      }
+      if (mounted) {
+        setState(() => _recentParticipantOrder = order);
+      }
+    });
+
     _commandController.addListener(_onCommandChanged);
+
+    unawaited(
+      PointchatTips.instance.ensureLoaded().then((_) {
+        if (mounted) setState(() => _composerTipsLoaded = true);
+      }),
+    );
+    _composerTipTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (!mounted) return;
+      final n = PointchatTips.instance.rotatingTips.length;
+      if (n <= 1) return;
+      setState(() => _composerTipIndex = (_composerTipIndex + 1) % n);
+    });
+  }
+
+  void _scheduleMentionGlobalSearch(String rawQuery) {
+    _mentionSearchDebounce?.cancel();
+    final q = rawQuery.trim();
+    if (q.length < 2) {
+      if (mounted) {
+        setState(() {
+          _globalMentionResults = [];
+          _globalMentionLoading = false;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() => _globalMentionLoading = true);
+    }
+    _mentionSearchDebounce = Timer(const Duration(milliseconds: 320), () async {
+      try {
+        final list = await _userService.searchUsers(q, currentUserId);
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _globalMentionResults = list;
+          _globalMentionLoading = false;
+        });
+      } catch (_) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _globalMentionResults = [];
+          _globalMentionLoading = false;
+        });
+      }
+    });
+  }
+
+  void _showCommandHelpSheet() {
+    final scheme = Theme.of(context).colorScheme;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: scheme.surface,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Chat commands',
+                style: GoogleFonts.outfit(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _helpRow(ctx, '@name', 'Message someone from your chats'),
+              _helpRow(ctx, '#group', 'Post to a group (create if new)'),
+              _helpRow(
+                ctx,
+                '@bot',
+                'AI in your notes — @bot new Name or @bot create Long Name for bots',
+              ),
+              _helpRow(ctx, '@ai', 'Same as @bot (private AI thread)'),
+              _helpRow(
+                ctx,
+                '@makebot Name',
+                'Same as @bot new (kept for short "make" wording)',
+              ),
+              _helpRow(ctx, '/location', 'Share GPS (select @user or #group first)'),
+              const SizedBox(height: 8),
+              Text(
+                'Tip: use Chats vs Everyone when you type @.',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _helpRow(BuildContext ctx, String cmd, String desc) {
+    final scheme = Theme.of(ctx).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.bolt_rounded, size: 18, color: AppTheme.focusBlue),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  cmd,
+                  style: GoogleFonts.jetBrainsMono(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.focusBlue,
+                  ),
+                ),
+                Text(
+                  desc,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onCommandChanged() {
@@ -258,7 +547,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     final lastHash = textBeforeCursor.lastIndexOf('#');
     final lastSlash = textBeforeCursor.lastIndexOf('/');
     final lastSpace = textBeforeCursor.lastIndexOf(' ');
-    final lastToken = textBeforeCursor.split(' ').last.toLowerCase();
 
     // Detect /ai mode — check if text contains /
     /* AI FEATURE TEMPORARILY HIDDEN
@@ -282,19 +570,69 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     });
 
     if (lastAt > lastSpace && lastAt >= 0) {
-      final query = textBeforeCursor.substring(lastAt + 1).toLowerCase();
+      final rawAfterAt = textBeforeCursor.substring(lastAt + 1);
+      final query = _normalizeHandleToken(rawAfterAt);
+      final rawTrim = rawAfterAt.trim();
+
+      final cmdMatches = <_AtCommandSuggestion>[];
+      for (final c in _kAtCommandHints) {
+        final stemNorm = _normalizeHandleToken(c.insertStem);
+        if (query.isEmpty || stemNorm.startsWith(query)) {
+          cmdMatches.add(c);
+        }
+      }
+
+      if (_mentionScopeEveryone && rawTrim.length >= 2) {
+        _scheduleMentionGlobalSearch(rawTrim);
+      } else {
+        _mentionSearchDebounce?.cancel();
+        if (mounted &&
+            (_globalMentionResults.isNotEmpty || _globalMentionLoading)) {
+          setState(() {
+            _globalMentionResults = [];
+            _globalMentionLoading = false;
+          });
+        }
+      }
+
+      List<UserModel> userMatches;
+      if (_mentionScopeEveryone) {
+        userMatches = _globalMentionResults;
+      } else {
+        userMatches = _allUsers.where((u) {
+          if (!_chatParticipantIds.contains(u.uid)) {
+            return false;
+          }
+          if (query.isEmpty) {
+            return true;
+          }
+          return _normalizeHandleToken(u.displayName).contains(query);
+        }).toList();
+        userMatches.sort((a, b) {
+          final ia = _recentParticipantOrder.indexOf(a.uid);
+          final ib = _recentParticipantOrder.indexOf(b.uid);
+          if (ia == -1 && ib == -1) {
+            return a.displayName.toLowerCase().compareTo(
+                  b.displayName.toLowerCase(),
+                );
+          }
+          if (ia == -1) {
+            return 1;
+          }
+          if (ib == -1) {
+            return -1;
+          }
+          return ia.compareTo(ib);
+        });
+      }
+
       setState(() {
         _isMentioning = true;
-        _mentionSuggestions = _allUsers
-            .where(
-              (u) => u.displayName
-                  .toLowerCase()
-                  .replaceAll(' ', '')
-                  .contains(query),
-            )
-            .toList();
+        _activeMentionKind = '@';
+        _mentionSuggestions = [...cmdMatches, ...userMatches];
       });
     } else if (lastHash > lastSpace && lastHash >= 0) {
+      _mentionSearchDebounce?.cancel();
       final rawQuery = textBeforeCursor.substring(lastHash + 1);
       final query = _normalizeHandleToken(rawQuery);
       final groupMatches = _allGroups
@@ -305,16 +643,19 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       );
       setState(() {
         _isMentioning = true;
+        _activeMentionKind = '#';
         _mentionSuggestions = [
           ...groupMatches,
           if (query.isNotEmpty && !hasExactMatch) _CreateGroupSuggestion(query),
         ];
       });
     } else if (lastSlash > lastSpace && lastSlash >= 0) {
+      _mentionSearchDebounce?.cancel();
       final query = textBeforeCursor.substring(lastSlash + 1).toLowerCase();
       final slashOptions = <String>[
         '/setting',
         '/myprofile',
+        '/location',
         // AI commands hidden for now
         // '/summarize',
         // '/summarize unread',
@@ -322,19 +663,19 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       ];
       setState(() {
         _isMentioning = true;
+        _activeMentionKind = '/';
         _mentionSuggestions = slashOptions
             .where((option) => option.toLowerCase().contains(query))
             .toList();
       });
-    } else if ('location'.startsWith(lastToken) && lastToken.length >= 2) {
-      setState(() {
-        _isMentioning = true;
-        _mentionSuggestions = ['Share current location'];
-      });
     } else {
+      _mentionSearchDebounce?.cancel();
       setState(() {
         _isMentioning = false;
         _mentionSuggestions = [];
+        _activeMentionKind = null;
+        _globalMentionResults = [];
+        _globalMentionLoading = false;
       });
     }
   }
@@ -342,6 +683,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _stopHeartbeat();
+    _participantIdsSub?.cancel();
+    _recentOrderSub?.cancel();
+    _mentionSearchDebounce?.cancel();
+    _composerTipTimer?.cancel();
     _commandController.removeListener(_onCommandChanged);
     _commandController.dispose();
     _commandFocusNode.dispose();
@@ -353,19 +699,24 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_authService.setUserOnlineStatus(true));
+      _startHeartbeat();
     } else if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.detached) {
-      unawaited(_authService.setUserOnlineStatus(false));
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _stopHeartbeat();
     }
   }
 
+  /// Match handles to stored names (users / groups). Keeps all Unicode letters;
+  /// the old ASCII-only strip broke Arabic and other scripts entirely.
   String _normalizeHandleToken(String value) {
-    return value.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9_]'), '');
+    return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '');
   }
 
   String _displayGroupNameFromToken(String token) {
-    return token.trim().replaceAll('_', ' ');
+    final t = token.trim();
+    if (t.isEmpty) return '';
+    return t.replaceAll('_', ' ');
   }
 
   List<String> _extractPendingInviteIds(String text) {
@@ -411,7 +762,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
     if (_focusedHandle == null ||
         _hasExplicitTarget(trimmed) ||
-        trimmed.toLowerCase().startsWith('@bot ')) {
+        trimmed.toLowerCase().startsWith('@bot ') ||
+        trimmed.toLowerCase().startsWith('@ai ') ||
+        RegExp(r'^@makebot\s*', caseSensitive: false).hasMatch(trimmed)) {
       return trimmed;
     }
 
@@ -475,9 +828,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
   Map<String, dynamic>? _findItemByHandle(String handle) {
     if (handle.startsWith('@')) {
-      final targetName = handle.substring(1);
+      final normalized = _normalizeHandleToken(handle.substring(1));
       final user = _allUsers.cast<UserModel?>().firstWhere(
-        (u) => u!.displayName.replaceAll(' ', '').toLowerCase() == targetName,
+        (u) => _normalizeHandleToken(u!.displayName) == normalized,
         orElse: () => null,
       );
       if (user != null) {
@@ -491,9 +844,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     }
 
     if (handle.startsWith('#')) {
-      final targetName = handle.substring(1);
+      final normalized = _normalizeHandleToken(handle.substring(1));
       final group = _allGroups.cast<GroupModel?>().firstWhere(
-        (g) => g!.name.replaceAll(' ', '').toLowerCase() == targetName,
+        (g) => _normalizeHandleToken(g!.name) == normalized,
         orElse: () => null,
       );
       if (group != null) {
@@ -503,6 +856,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           'id': group.groupId,
           'photoUrl': group.photoUrl,
           'groupMembers': group.members,
+          'pendingMemberIds': group.pendingMemberIds,
           'groupAdmins': group.admins,
           'groupDescription': group.description,
         };
@@ -854,6 +1208,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                   removedByName: cachedUserName.isEmpty
                                       ? 'Admin'
                                       : cachedUserName,
+                                  skipUnreadIncrementForActor: currentUserId,
                                 );
                               },
                             ),
@@ -1224,8 +1579,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             toolbarTitle: 'Crop Image',
             toolbarColor: const Color(0xFF161618),
             toolbarWidgetColor: Colors.white,
-            backgroundColor: const Color(0xFF161618),
-            activeControlsWidgetColor: const Color(0xFF8B5CF6),
+            activeControlsWidgetColor: AppTheme.focusBlue,
             hideBottomControls: false,
             initAspectRatio: CropAspectRatioPreset.square,
             lockAspectRatio: true,
@@ -1397,7 +1751,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   Future<void> _showAddMembersOverlay(GroupModel group) async {
     final selectedIds = <String>{};
     final candidates = _allUsers
-        .where((user) => !group.members.contains(user.uid))
+        .where(
+          (user) =>
+              !group.members.contains(user.uid) &&
+              !group.pendingMemberIds.contains(user.uid),
+        )
         .toList();
 
     await showDialog<void>(
@@ -1464,6 +1822,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                         group.groupId,
                         selectedIds.toList(),
                         cachedUserName.isEmpty ? 'Admin' : cachedUserName,
+                        actorUserId: currentUserId,
                       );
                       if (context.mounted) Navigator.of(context).pop();
                     },
@@ -1672,7 +2031,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               'Please select a target (@user or #group) before attaching image',
               style: GoogleFonts.jetBrainsMono(),
             ),
-            backgroundColor: const Color(0xFF161618),
           ),
         );
       }
@@ -1698,8 +2056,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           toolbarTitle: 'Crop Photo',
           toolbarColor: const Color(0xFF161618),
           toolbarWidgetColor: Colors.white,
-          backgroundColor: const Color(0xFF161618),
-          activeControlsWidgetColor: const Color(0xFF8B5CF6),
+          activeControlsWidgetColor: AppTheme.focusBlue,
           hideBottomControls: false,
           initAspectRatio: CropAspectRatioPreset.original,
           lockAspectRatio: false,
@@ -1740,7 +2097,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'Image upload failed.',
             style: GoogleFonts.jetBrainsMono(),
           ),
-          backgroundColor: const Color(0xFF161618),
         ),
       );
     } finally {
@@ -1759,7 +2115,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               'Please select a target (@user or #group) before attaching file',
               style: GoogleFonts.jetBrainsMono(),
             ),
-            backgroundColor: const Color(0xFF161618),
           ),
         );
       }
@@ -1804,7 +2159,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'File upload failed.',
             style: GoogleFonts.jetBrainsMono(),
           ),
-          backgroundColor: const Color(0xFF161618),
         ),
       );
     } finally {
@@ -1880,7 +2234,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               'Please select a target (@user or #group) before recording',
               style: GoogleFonts.jetBrainsMono(),
             ),
-            backgroundColor: const Color(0xFF161618),
           ),
         );
       }
@@ -1922,7 +2275,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'Microphone permission denied.',
             style: GoogleFonts.jetBrainsMono(),
           ),
-          backgroundColor: const Color(0xFF161618),
         ),
       );
     }
@@ -1946,7 +2298,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'Max recording length reached ($_recordingMaxSeconds s)',
             style: GoogleFonts.jetBrainsMono(),
           ),
-          backgroundColor: const Color(0xFF161618),
         ),
       );
     }
@@ -1961,7 +2312,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               'Hold longer to record',
               style: GoogleFonts.jetBrainsMono(),
             ),
-            backgroundColor: const Color(0xFF161618),
           ),
         );
       }
@@ -2001,7 +2351,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'Audio upload failed: $e',
             style: GoogleFonts.jetBrainsMono(),
           ),
-          backgroundColor: const Color(0xFF161618),
         ),
       );
     } finally {
@@ -2027,15 +2376,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'Recording cancelled',
             style: GoogleFonts.jetBrainsMono(),
           ),
-          backgroundColor: const Color(0xFF161618),
         ),
       );
     }
   }
 
   // ── Send location ──
-  void _sendLocation() async {
-    final text = _applyFocusedHandle(_commandController.text);
+  Future<void> _sendLocation([String? composerSnapshot]) async {
+    final text = _applyFocusedHandle(
+      composerSnapshot ?? _commandController.text,
+    );
     if (!_hasExplicitTarget(text)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2044,7 +2394,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               'Please select a target (@user or #group) before sharing location',
               style: GoogleFonts.jetBrainsMono(),
             ),
-            backgroundColor: const Color(0xFF161618),
           ),
         );
       }
@@ -2088,7 +2437,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.toString(), style: GoogleFonts.jetBrainsMono()),
-          backgroundColor: const Color(0xFF161618),
         ),
       );
     } finally {
@@ -2176,6 +2524,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     final currentUserName = cachedUserName;
     final currentUserPhoto = cachedUserPhotoUrl;
     bool sentAtLeastOne = false;
+    final dmTargetsSent = <String>{};
 
     for (var handle in handles) {
       if (handle.startsWith('@')) {
@@ -2183,13 +2532,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           continue;
         }
 
-        final tHandle = handle.substring(1);
+        final tHandle = _normalizeHandleToken(handle.substring(1));
         final targetUser = _allUsers.cast<UserModel?>().firstWhere(
-          (u) => u!.displayName.replaceAll(' ', '').toLowerCase() == tHandle,
+          (u) => _normalizeHandleToken(u!.displayName) == tHandle,
           orElse: () => null,
         );
 
         if (targetUser != null) {
+          if (!dmTargetsSent.add(targetUser.uid)) {
+            continue;
+          }
           final chatId = await _chatService.getOrCreateChat(
             currentUserId,
             targetUser.uid,
@@ -2220,7 +2572,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                       'AI access is required to chat with bots.',
                       style: GoogleFonts.inter(),
                     ),
-                    backgroundColor: const Color(0xFF161618),
                   ),
                 );
               }
@@ -2286,14 +2637,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             createdBy: currentUserId,
             members: invitees,
           );
-
-          if (invitees.isNotEmpty) {
-            await _inviteService.createPendingInvites(
-              groupId: targetGroupId,
-              invitedBy: currentUserId,
-              userIds: invitees,
-            );
-          }
         }
 
         if (targetGroupId.isNotEmpty &&
@@ -2327,7 +2670,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'No valid targets found.',
             style: GoogleFonts.jetBrainsMono(),
           ),
-          backgroundColor: const Color(0xFF161618),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         ),
       );
@@ -2367,9 +2709,38 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       return;
     }
 
-    // AI/Bot creation re-enabled
-    if (normalizedInput.toLowerCase().startsWith('@bot ')) {
-      final botName = normalizedInput.substring(5).trim();
+    final trimmedCmd = normalizedInput.trim();
+
+    if (RegExp(
+      r'^@bot\s+(new|create)\s*$',
+      caseSensitive: false,
+    ).hasMatch(trimmedCmd)) {
+      if (mounted) {
+        final cs = Theme.of(context).colorScheme;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Usage: @bot new AssistantName  or  @bot create Assistant Name',
+              style: GoogleFonts.inter(
+                color: cs.onInverseSurface,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            backgroundColor: cs.inverseSurface,
+          ),
+        );
+      }
+      _commandController.clear();
+      return;
+    }
+
+    // new/create only — not "make" (so @bot make me a list stays as AI chat).
+    final botViaBot = RegExp(
+      r'^@bot\s+(new|create)\s+(.+)$',
+      caseSensitive: false,
+    ).firstMatch(trimmedCmd);
+    if (botViaBot != null) {
+      final botName = botViaBot.group(2)!.trim();
       if (botName.isNotEmpty) {
         _showBotConfigDialog(botName);
         _commandController.clear();
@@ -2377,58 +2748,92 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       }
     }
 
-    // Direct Private AI Chat limit check
-    if (normalizedInput.toLowerCase().startsWith('@ai ')) {
-      final prompt = normalizedInput.substring(4).trim();
-      if (prompt.isNotEmpty) {
+    // Legacy: @makebot Name
+    final makeBotMatch = RegExp(
+      r'^@makebot\s*',
+      caseSensitive: false,
+    ).firstMatch(trimmedCmd);
+    if (makeBotMatch != null) {
+      final botName = trimmedCmd.substring(makeBotMatch.end).trim();
+      if (botName.isNotEmpty) {
+        _showBotConfigDialog(botName);
         _commandController.clear();
-        setState(() => _isAiLoading = true);
-        try {
-          final chatId = await _chatService.getOrCreateChat(
-            currentUserId,
-            currentUserId,
-          );
-
-          await _chatService.sendMessage(
-            chatId: chatId,
-            senderId: currentUserId,
-            senderName: cachedUserName,
-            senderPhotoUrl: cachedUserPhotoUrl,
-            text: prompt,
-            type: MessageType.text,
-          );
-
-          final aiResponse = await _aiService.generateResponse(
-            prompt,
-            systemPrompt:
-                "You are PointChat's private AI assistant. Be helpful.",
-          );
-
-          await _chatService.sendMessage(
-            chatId: chatId,
-            senderId: 'ai-system',
-            senderName: 'PointChat AI',
-            senderPhotoUrl: '',
-            text: aiResponse,
-            type: MessageType.text,
-          );
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'AI is temporarily unavailable.',
-                  style: GoogleFonts.inter(),
-                ),
-                backgroundColor: const Color(0xFF161618),
-              ),
-            );
-          }
-        } finally {
-          if (mounted) setState(() => _isAiLoading = false);
-        }
         return;
       }
+      if (mounted) {
+        final cs = Theme.of(context).colorScheme;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Usage: @bot new Name, @bot create Name, or @makebot Name',
+              style: GoogleFonts.inter(
+                color: cs.onInverseSurface,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            backgroundColor: cs.inverseSurface,
+          ),
+        );
+      }
+      _commandController.clear();
+      return;
+    }
+
+    // Private AI (same thread): @ai … or @bot …
+    final lowerCmd = normalizedInput.toLowerCase();
+    String? privateAiPrompt;
+    if (lowerCmd.startsWith('@ai ')) {
+      privateAiPrompt = normalizedInput.substring(4).trim();
+    } else if (lowerCmd.startsWith('@bot ')) {
+      privateAiPrompt = normalizedInput.substring(5).trim();
+    }
+    if (privateAiPrompt != null && privateAiPrompt.isNotEmpty) {
+      _commandController.clear();
+      setState(() => _isAiLoading = true);
+      try {
+        final chatId = await _chatService.getOrCreateChat(
+          currentUserId,
+          currentUserId,
+        );
+
+        await _chatService.sendMessage(
+          chatId: chatId,
+          senderId: currentUserId,
+          senderName: cachedUserName,
+          senderPhotoUrl: cachedUserPhotoUrl,
+          text: privateAiPrompt,
+          type: MessageType.text,
+        );
+
+        final aiResponse = await _aiService.generateResponse(
+          privateAiPrompt,
+          systemPrompt:
+              "You are PointChat's private AI assistant. Be helpful and concise.",
+        );
+
+        await _chatService.sendMessage(
+          chatId: chatId,
+          senderId: 'ai-system',
+          senderName: 'PointChat AI',
+          senderPhotoUrl: '',
+          text: aiResponse,
+          type: MessageType.text,
+        );
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'AI is temporarily unavailable.',
+                style: GoogleFonts.inter(),
+              ),
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isAiLoading = false);
+      }
+      return;
     }
 
     // Check for AI mode: if text contains /, extract the AI prompt
@@ -2436,6 +2841,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     if (slashIndex >= 0) {
       final beforeSlash = normalizedInput.substring(0, slashIndex).trim();
       final aiPrompt = normalizedInput.substring(slashIndex + 1).trim();
+
+      if (aiPrompt.toLowerCase() == 'location') {
+        _commandController.clear();
+        await _sendLocation(normalizedInput);
+        return;
+      }
 
       if (aiPrompt.toLowerCase() == 'myprofile' && beforeSlash.isEmpty) {
         _commandController.clear();
@@ -2486,11 +2897,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
             for (var handle in handles) {
               if (handle.startsWith('@')) {
-                final tHandle = handle.substring(1).toLowerCase();
+                final tNorm = _normalizeHandleToken(handle.substring(1));
                 final targetUser = _allUsers.cast<UserModel?>().firstWhere(
-                  (u) =>
-                      u!.displayName.replaceAll(' ', '').toLowerCase() ==
-                      tHandle,
+                  (u) => _normalizeHandleToken(u!.displayName) == tNorm,
                   orElse: () => null,
                 );
                 if (targetUser != null) {
@@ -2529,9 +2938,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                   }
                 }
               } else if (handle.startsWith('#')) {
-                final tHandle = handle.substring(1).toLowerCase();
+                final tNorm = _normalizeHandleToken(handle.substring(1));
                 final targetGroup = _allGroups.cast<GroupModel?>().firstWhere(
-                  (g) => g!.name.replaceAll(' ', '').toLowerCase() == tHandle,
+                  (g) => _normalizeHandleToken(g!.name) == tNorm,
                   orElse: () => null,
                 );
                 if (targetGroup != null) {
@@ -2595,7 +3004,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                   'AI is temporarily unavailable. Please try again.',
                   style: GoogleFonts.inter(),
                 ),
-                backgroundColor: const Color(0xFF161618),
               ),
             );
           }
@@ -2981,120 +3389,308 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             ),
           ),
 
-        if (_isMentioning && _mentionSuggestions.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            constraints: const BoxConstraints(maxHeight: 150),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.zero,
-              border: Border.all(color: Theme.of(context).colorScheme.outline),
-            ),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: _mentionSuggestions.length,
-              itemBuilder: (context, index) {
-                final suggestion = _mentionSuggestions[index];
-                final isUser = suggestion is UserModel;
-                final isGroup = suggestion is GroupModel;
-                final isCreateGroup = suggestion is _CreateGroupSuggestion;
-                final isAction = suggestion is String;
-                final isSlashCommand = isAction && suggestion.startsWith('/');
-                final name = isUser
-                    ? suggestion.displayName
-                    : isGroup
-                    ? suggestion.name
-                    : isCreateGroup
-                    ? suggestion.token
-                    : suggestion.toString();
-                final handle = isUser
-                    ? _formatHandle(name)
-                    : isGroup
-                    ? _formatGroupHandle(name)
-                    : isCreateGroup
-                    ? '#${suggestion.token}'
-                    : name;
+        Builder(
+          builder: (context) {
+            final sel = _commandController.selection;
+            final txt = _commandController.text;
+            final safeOffset = sel.baseOffset.clamp(0, txt.length);
+            final tbc = txt.substring(0, safeOffset);
+            final atIdx = tbc.lastIndexOf('@');
+            final atQueryNorm = atIdx >= 0
+                ? _normalizeHandleToken(tbc.substring(atIdx + 1))
+                : '';
 
-                return ListTile(
-                  dense: true,
-                  leading: Icon(
-                    isUser
-                        ? Icons.person_outline_rounded
-                        : isGroup
-                        ? Icons.groups_2_outlined
-                        : isCreateGroup
-                        ? Icons.group_add_outlined
-                        : isSlashCommand
-                        ? Icons.bolt_rounded
-                        : Icons.location_on_outlined,
-                    color: isUser
-                        ? AppTheme.purple
-                        : isGroup
-                        ? AppTheme.green
-                        : isCreateGroup
-                        ? AppTheme.focusBlue
-                        : isSlashCommand
-                        ? AppTheme.focusBlue
-                        : Theme.of(context).colorScheme.primary,
-                    size: 20, // larger
-                  ),
-                  title: Text(
-                    isCreateGroup ? 'Create new group $handle' : handle,
-                    style: GoogleFonts.inter(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontSize: 14, // larger
+            final showAtExtras = _activeMentionKind == '@';
+            final showPanel = _isMentioning &&
+                (_mentionSuggestions.isNotEmpty ||
+                    (showAtExtras &&
+                        (_globalMentionLoading ||
+                            (_mentionScopeEveryone &&
+                                atQueryNorm.length < 2))));
+
+            if (!showPanel) {
+              return const SizedBox.shrink();
+            }
+
+            final scheme = Theme.of(context).colorScheme;
+
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              constraints: const BoxConstraints(maxHeight: 240),
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                borderRadius: BorderRadius.zero,
+                border: Border.all(color: scheme.outline),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (showAtExtras)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                      child: Row(
+                        children: [
+                          FilterChip(
+                            label: Text(
+                              'In your chats',
+                              style: GoogleFonts.inter(fontSize: 12),
+                            ),
+                            selected: !_mentionScopeEveryone,
+                            showCheckmark: false,
+                            onSelected: (v) {
+                              if (!v) {
+                                return;
+                              }
+                              setState(() {
+                                _mentionScopeEveryone = false;
+                                _globalMentionResults = [];
+                                _mentionSearchDebounce?.cancel();
+                                _globalMentionLoading = false;
+                              });
+                              _onCommandChanged();
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          FilterChip(
+                            label: Text(
+                              'Everyone',
+                              style: GoogleFonts.inter(fontSize: 12),
+                            ),
+                            selected: _mentionScopeEveryone,
+                            showCheckmark: false,
+                            onSelected: (v) {
+                              if (!v) {
+                                return;
+                              }
+                              setState(() => _mentionScopeEveryone = true);
+                              _onCommandChanged();
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  onTap: () {
-                    if (isAction) {
-                      if (isSlashCommand) {
-                        setState(() {
-                          _isMentioning = false;
-                          _mentionSuggestions = [];
-                        });
-                        _insertSlashCommand(suggestion);
-                        return;
-                      }
+                  if (showAtExtras &&
+                      _mentionScopeEveryone &&
+                      atQueryNorm.length < 2)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 2,
+                      ),
+                      child: Text(
+                        'Type at least 2 letters to search all users',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  if (showAtExtras && _globalMentionLoading)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppTheme.focusBlue,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_mentionSuggestions.isEmpty &&
+                      showAtExtras &&
+                      _mentionScopeEveryone &&
+                      atQueryNorm.length >= 2 &&
+                      !_globalMentionLoading)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                      child: Text(
+                        'No users match your search',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  if (_mentionSuggestions.isNotEmpty)
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _mentionSuggestions.length,
+                        itemBuilder: (context, index) {
+                          final suggestion = _mentionSuggestions[index];
+                          final isUser = suggestion is UserModel;
+                          final isGroup = suggestion is GroupModel;
+                          final isCreateGroup =
+                              suggestion is _CreateGroupSuggestion;
+                          final isAtCmd = suggestion is _AtCommandSuggestion;
+                          final isAction = suggestion is String;
+                          final isSlashCommand =
+                              isAction && suggestion.startsWith('/');
+                          final name = isUser
+                              ? suggestion.displayName
+                              : isGroup
+                              ? suggestion.name
+                              : isCreateGroup
+                              ? suggestion.token
+                              : isAtCmd
+                              ? suggestion.label
+                              : suggestion.toString();
+                          final handle = isUser
+                              ? _formatHandle(name)
+                              : isGroup
+                              ? _formatGroupHandle(name)
+                              : isCreateGroup
+                              ? '#${suggestion.token}'
+                              : isAtCmd
+                              ? suggestion.label
+                              : name;
 
-                      setState(() {
-                        _isMentioning = false;
-                        _mentionSuggestions = [];
-                      });
-                      _sendLocation();
-                      return;
-                    }
+                          return ListTile(
+                            dense: true,
+                            leading: Icon(
+                              isUser
+                                  ? Icons.person_outline_rounded
+                                  : isGroup
+                                  ? Icons.groups_2_outlined
+                                  : isCreateGroup
+                                  ? Icons.group_add_outlined
+                                  : isAtCmd
+                                  ? Icons.smart_toy_outlined
+                                  : isSlashCommand
+                                  ? Icons.bolt_rounded
+                                  : Icons.location_on_outlined,
+                              color: isUser
+                                  ? AppTheme.focusBlue
+                                  : isGroup
+                                  ? AppTheme.green
+                                  : isCreateGroup
+                                  ? AppTheme.focusBlue
+                                  : isAtCmd
+                                  ? AppTheme.focusBlue
+                                  : isSlashCommand
+                                  ? AppTheme.focusBlue
+                                  : scheme.primary,
+                              size: 20,
+                            ),
+                            title: Text(
+                              isCreateGroup
+                                  ? 'Create new group $handle'
+                                  : handle,
+                              style: GoogleFonts.inter(
+                                color: scheme.onSurface,
+                                fontSize: 14,
+                              ),
+                            ),
+                            subtitle: isAtCmd
+                                ? Text(
+                                    (suggestion as _AtCommandSuggestion).hint,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  )
+                                : null,
+                            onTap: () {
+                              if (isAtCmd) {
+                                final text = _commandController.text;
+                                final selection =
+                                    _commandController.selection;
+                                final textBeforeCursor = text.substring(
+                                  0,
+                                  selection.baseOffset,
+                                );
+                                final textAfterCursor = text.substring(
+                                  selection.baseOffset,
+                                );
+                                final lastAt =
+                                    textBeforeCursor.lastIndexOf('@');
+                                if (lastAt < 0) {
+                                  return;
+                                }
+                                final newText =
+                                    '${textBeforeCursor.substring(0, lastAt + 1)}${suggestion.insertStem}$textAfterCursor';
+                                final newOffset =
+                                    lastAt + 1 + suggestion.insertStem.length;
+                                _commandController.value = TextEditingValue(
+                                  text: newText,
+                                  selection: TextSelection.collapsed(
+                                    offset: newOffset,
+                                  ),
+                                );
+                                setState(() {
+                                  _isMentioning = false;
+                                  _mentionSuggestions = [];
+                                });
+                                _commandFocusNode.requestFocus();
+                                return;
+                              }
 
-                    final text = _commandController.text;
-                    final selection = _commandController.selection;
-                    final textBeforeCursor = text.substring(
-                      0,
-                      selection.baseOffset,
-                    );
-                    final textAfterCursor = text.substring(
-                      selection.baseOffset,
-                    );
+                              if (isAction) {
+                                if (isSlashCommand) {
+                                  setState(() {
+                                    _isMentioning = false;
+                                    _mentionSuggestions = [];
+                                  });
+                                  _insertSlashCommand(suggestion);
+                                  return;
+                                }
 
-                    final lastAt = textBeforeCursor.lastIndexOf('@');
-                    final lastHash = textBeforeCursor.lastIndexOf('#');
-                    final lastPrefixIndex = isUser ? lastAt : lastHash;
+                                setState(() {
+                                  _isMentioning = false;
+                                  _mentionSuggestions = [];
+                                });
+                                _sendLocation();
+                                return;
+                              }
 
-                    final newText =
-                        '${textBeforeCursor.substring(0, lastPrefixIndex)}$handle $textAfterCursor';
-                    _commandController.text = newText;
-                    _commandController.selection = TextSelection.fromPosition(
-                      TextPosition(offset: lastPrefixIndex + handle.length + 1),
-                    );
+                              final text = _commandController.text;
+                              final selection =
+                                  _commandController.selection;
+                              final textBeforeCursor = text.substring(
+                                0,
+                                selection.baseOffset,
+                              );
+                              final textAfterCursor = text.substring(
+                                selection.baseOffset,
+                              );
 
-                    setState(() {
-                      _isMentioning = false;
-                      _mentionSuggestions = [];
-                    });
-                    _commandFocusNode.requestFocus();
-                  },
-                );
-              },
-            ),
-          ),
+                              final lastAt =
+                                  textBeforeCursor.lastIndexOf('@');
+                              final lastHash =
+                                  textBeforeCursor.lastIndexOf('#');
+                              final lastPrefixIndex =
+                                  isUser ? lastAt : lastHash;
+
+                              final newText =
+                                  '${textBeforeCursor.substring(0, lastPrefixIndex)}$handle $textAfterCursor';
+                              _commandController.text = newText;
+                              _commandController.selection =
+                                  TextSelection.fromPosition(
+                                TextPosition(
+                                  offset:
+                                      lastPrefixIndex + handle.length + 1,
+                                ),
+                              );
+
+                              setState(() {
+                                _isMentioning = false;
+                                _mentionSuggestions = [];
+                              });
+                              _commandFocusNode.requestFocus();
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
 
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
@@ -3135,41 +3731,131 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                         // The normal text input field (always in tree to maintain keyboard focus)
                         Row(
                           children: [
-                            const SizedBox(width: 14),
+                            IconButton(
+                              tooltip: 'Commands & tips',
+                              icon: Icon(
+                                Icons.tips_and_updates_outlined,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                                size: 22,
+                              ),
+                              onPressed: _showCommandHelpSheet,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 40,
+                                minHeight: 40,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
                             Expanded(
-                              child: TextField(
-                                controller: _commandController,
-                                focusNode: _commandFocusNode,
-                                style: GoogleFonts.inter(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
-                                  fontSize: 15,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: _isAiMode
-                                      ? '✨ Type your AI prompt...'
+                              child: Builder(
+                                builder: (context) {
+                                  final hintColor = _isAiMode
+                                      ? AppTheme.focusBlue.withValues(
+                                          alpha: 0.85,
+                                        )
                                       : (isFocusModeActive
-                                            ? 'Focus mode: message $_focusedHandle directly'
-                                            : '@user or #group message... ( / for AI)'),
-                                  hintStyle: GoogleFonts.inter(
-                                    color: _isAiMode
-                                        ? AppTheme.purpleLt
-                                        : (isFocusModeActive
-                                              ? AppTheme.focusBlue
-                                              : Theme.of(
-                                                  context,
-                                                ).colorScheme.secondary),
+                                            ? AppTheme.focusBlue.withValues(
+                                                alpha: 0.85,
+                                              )
+                                            : Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurfaceVariant
+                                                  .withValues(alpha: 0.65));
+                                  final hintStyle = GoogleFonts.inter(
+                                    color: hintColor,
                                     fontSize: 15,
-                                  ),
-                                  border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
-                                  contentPadding: EdgeInsets.zero,
-                                  fillColor: Colors.transparent,
-                                ),
-                                cursorColor: AppTheme.purple,
-                                onSubmitted: _sendCommand,
+                                  );
+                                  final useRotating = _composerTipsLoaded &&
+                                      !_isAiMode &&
+                                      !isFocusModeActive &&
+                                      PointchatTips
+                                          .instance.rotatingTips.isNotEmpty;
+                                  return Stack(
+                                    alignment: Alignment.centerLeft,
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      TextField(
+                                        controller: _commandController,
+                                        focusNode: _commandFocusNode,
+                                        style: GoogleFonts.inter(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
+                                          fontSize: 15,
+                                        ),
+                                        decoration: InputDecoration(
+                                          hintText: useRotating
+                                              ? ''
+                                              : (_isAiMode
+                                                    ? 'Ask the AI…'
+                                                    : (isFocusModeActive
+                                                          ? 'Message $_focusedHandle…'
+                                                          : 'Message · @ name  # group')),
+                                          hintStyle: hintStyle,
+                                          border: InputBorder.none,
+                                          enabledBorder: InputBorder.none,
+                                          focusedBorder: InputBorder.none,
+                                          contentPadding: EdgeInsets.zero,
+                                          fillColor: Colors.transparent,
+                                        ),
+                                        cursorColor: AppTheme.focusBlue,
+                                        onSubmitted: _sendCommand,
+                                      ),
+                                      if (useRotating)
+                                        ValueListenableBuilder<TextEditingValue>(
+                                          valueListenable: _commandController,
+                                          builder: (context, val, _) {
+                                            if (val.text.isNotEmpty) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final tips = PointchatTips
+                                                .instance.rotatingTips;
+                                            final idx =
+                                                _composerTipIndex % tips.length;
+                                            return IgnorePointer(
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: AnimatedSwitcher(
+                                                  duration: const Duration(
+                                                    milliseconds: 420,
+                                                  ),
+                                                  switchInCurve: Curves.easeOut,
+                                                  switchOutCurve: Curves.easeIn,
+                                                  transitionBuilder:
+                                                      (child, animation) {
+                                                    return FadeTransition(
+                                                      opacity: animation,
+                                                      child: SlideTransition(
+                                                        position:
+                                                            Tween<Offset>(
+                                                          begin: const Offset(
+                                                            0,
+                                                            0.12,
+                                                          ),
+                                                          end: Offset.zero,
+                                                        ).animate(animation),
+                                                        child: child,
+                                                      ),
+                                                    );
+                                                  },
+                                                  child: Text(
+                                                    tips[idx],
+                                                    key: ValueKey<int>(idx),
+                                                    style: hintStyle,
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                    ],
+                                  );
+                                },
                               ),
                             ),
                             if (_showActions) ...[
@@ -3221,7 +3907,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                             width: 22,
                                             height: 22,
                                             child: CircularProgressIndicator(
-                                              color: AppTheme.purple,
+                                              color: AppTheme.focusBlue,
                                               strokeWidth: 2,
                                             ),
                                           ),
@@ -3241,7 +3927,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                                               .arrow_forward_rounded),
                                               color: isFocusModeActive
                                                   ? AppTheme.focusBlue
-                                                  : AppTheme.purple,
+                                                  : AppTheme.focusBlue,
                                               size: 26,
                                             ),
                                             onPressed: () => _sendCommand(
@@ -3364,8 +4050,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                     height: 54,
                     width: 54,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF5F5F5), // offwhite
-                      borderRadius: BorderRadius.zero, // Soft corner square
+                      color: const Color(0xFFF5F5F5),
+                      borderRadius: BorderRadius.zero,
                       border: Border.all(color: Colors.white, width: 1.5),
                     ),
                     child: const Icon(Icons.mic, color: Colors.black, size: 24),
@@ -3385,7 +4071,14 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     if (!isOwner) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You are not the owner of this bot.')),
+          SnackBar(
+            content: Text(
+              'You are not the owner of this bot.',
+              style: GoogleFonts.inter(
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ),
         );
       }
       return;
@@ -3435,7 +4128,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             const SizedBox(height: 10),
             Text(
               '@$botName',
-              style: GoogleFonts.outfit(color: AppTheme.purpleLt, fontSize: 16),
+              style: GoogleFonts.outfit(color: AppTheme.focusBlue, fontSize: 16),
             ),
             const SizedBox(height: 20),
             TextField(
@@ -3499,20 +4192,32 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                     _commandController.clear();
                     _commandFocusNode.requestFocus();
                     if (context.mounted) {
+                      final cs = Theme.of(context).colorScheme;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
+                          backgroundColor: cs.inverseSurface,
                           content: Text(
-                            'Bot @$botName is ready in your AI chat.',
+                            'Bot @$botName is ready — open it from the list.',
+                            style: GoogleFonts.inter(
+                              color: cs.onInverseSurface,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       );
                     }
                   } catch (e) {
                     if (context.mounted) {
+                      final cs = Theme.of(context).colorScheme;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
+                        SnackBar(
+                          backgroundColor: cs.errorContainer,
                           content: Text(
-                            'Could not save your bot right now. Please try again.',
+                            'Could not save your bot. Please try again.',
+                            style: GoogleFonts.inter(
+                              color: cs.onErrorContainer,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       );
@@ -3600,16 +4305,42 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     final isGroup = item['type'] == 'group' || handleText.startsWith('#');
     final double percentage = item['onlinePercentage'] ?? 0.0;
     final String photoUrl = item['photoUrl'] ?? '';
-    final String initials =
-        handleText.replaceAll(RegExp(r'[@#]'), '').isNotEmpty
-        ? handleText
-              .replaceAll(RegExp(r'[@#]'), '')
-              .substring(0, 1)
-              .toUpperCase()
+    final bool isAiSelfChat = item['isAiSelfChat'] == true;
+    final bool isBotDm = item['isBotDm'] == true;
+    final titleForInitial =
+        (item['conversationTitle'] as String?)?.trim() ?? '';
+    final fromHandle = handleText.replaceAll(RegExp(r'[@#]'), '').trim();
+    final String initialsSource =
+        titleForInitial.isNotEmpty ? titleForInitial : fromHandle;
+    final String initials = initialsSource.isNotEmpty
+        ? initialsSource.characters.first.toUpperCase()
         : '?';
 
     Widget innerAvatar;
-    if (photoUrl.isNotEmpty) {
+    if (isAiSelfChat || isBotDm) {
+      innerAvatar = Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            colors: [
+              AppTheme.focusBlue,
+              AppTheme.focusBlue.withValues(alpha: 0.65),
+            ],
+          ),
+          border: Border.all(
+            color: AppTheme.focusBlue.withValues(alpha: 0.5),
+            width: 1.5,
+          ),
+        ),
+        child: Icon(
+          Icons.smart_toy_rounded,
+          color: Colors.white,
+          size: 20,
+        ),
+      );
+    } else if (photoUrl.isNotEmpty) {
       innerAvatar = ClipOval(
         child: Image.network(
           photoUrl,
@@ -3684,20 +4415,29 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     final String handleText = widget.item['handle'] ?? '';
     final isGroup =
         widget.item['type'] == 'group' || handleText.startsWith('#');
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final dmFill = isLight
+        ? AppTheme.focusBlue.withValues(alpha: 0.12)
+        : AppTheme.focusBlue.withValues(alpha: 0.22);
+    final dmBorder = AppTheme.focusBlue.withValues(alpha: isLight ? 0.35 : 0.5);
     return Container(
       width: 34,
       height: 34,
       decoration: BoxDecoration(
         color: widget.isFocusLocked
             ? AppTheme.focusBlue.withValues(alpha: 0.18)
-            : (isGroup ? const Color(0xFF1A2A1A) : AppTheme.purpleDim),
+            : (isGroup
+                  ? (isLight
+                        ? AppTheme.green.withValues(alpha: 0.12)
+                        : const Color(0xFF1A2A1A))
+                  : dmFill),
         shape: BoxShape.circle,
         border: Border.all(
           color: widget.isFocusLocked
               ? AppTheme.focusBlue.withValues(alpha: 0.8)
               : (isGroup
-                    ? AppTheme.green.withValues(alpha: 0.3)
-                    : AppTheme.green.withValues(alpha: 0.4)),
+                    ? AppTheme.green.withValues(alpha: 0.35)
+                    : dmBorder),
           width: 1.5,
         ),
       ),
@@ -3707,7 +4447,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
           style: GoogleFonts.inter(
             color: widget.isFocusLocked
                 ? AppTheme.focusBlue
-                : (isGroup ? AppTheme.green : AppTheme.green),
+                : (isGroup ? AppTheme.green : AppTheme.focusBlue),
             fontWeight: FontWeight.w700,
             fontSize: 15,
           ),
@@ -3721,18 +4461,27 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     final isUnread = widget.item['isUnread'] ?? false;
     final isImage = widget.item['image'] == true;
     final String handleText = widget.item['handle'] ?? '';
+    final String conversationTitle =
+        (widget.item['conversationTitle'] as String?)?.trim() ?? '';
     final isGroup = handleText.startsWith('#');
-    // Purple for DM (@), emerald-ish green for group (#)
-    final handlePrefixColor = isGroup ? AppTheme.green : AppTheme.purple;
+    final pendingRowIds =
+        (widget.item['pendingInviteIds'] as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const <String>[];
+    final showInviteRow =
+        isGroup && pendingRowIds.contains(widget.currentUserId);
+    // Blue for DM (@), green for group (#); online rings stay green.
+    final handlePrefixColor = isGroup ? AppTheme.green : AppTheme.focusBlue;
     final tileBorderColor = widget.isFocusLocked
         ? AppTheme.focusBlue.withValues(alpha: 0.8)
         : (isUnread
-              ? AppTheme.purple.withValues(alpha: 0.5)
+              ? AppTheme.focusBlue.withValues(alpha: 0.45)
               : Theme.of(context).colorScheme.outline);
     final tileBackgroundColor = widget.isFocusLocked
         ? AppTheme.focusBlueGlow
         : (isUnread
-              ? AppTheme.purpleGlow
+              ? AppTheme.focusBlue.withValues(alpha: 0.07)
               : Theme.of(context).colorScheme.surface);
 
     return AnimatedContainer(
@@ -3800,24 +4549,21 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                     Icon(
                                       isGroup
                                           ? Icons.groups_2_outlined
-                                          : Icons.person_outline_rounded,
+                                          : (widget.item['isAiSelfChat'] == true
+                                                ? Icons.smart_toy_outlined
+                                                : Icons.person_outline_rounded),
                                       size: 14,
                                       color: handlePrefixColor,
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      handleText.length > 1
-                                          ? handleText.substring(1)
-                                          : handleText,
-                                      style: GoogleFonts.inter(
-                                        color:
-                                            Theme.of(context).brightness ==
-                                                Brightness.light
-                                            ? Colors.black
-                                            : Colors.white,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: -0.2,
+                                      conversationTitle.isNotEmpty
+                                          ? conversationTitle
+                                          : (handleText.length > 1
+                                                ? handleText.substring(1)
+                                                : handleText),
+                                      style: AppTheme.chatConversationTitleStyle(
+                                        context,
                                       ),
                                     ),
                                   ],
@@ -3890,6 +4636,57 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                       ),
                   ],
                 ),
+                if (showInviteRow) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _compactInviteAction(
+                          label: 'Accept',
+                          color: AppTheme.green,
+                          onTap: () async {
+                            final gid = widget.item['id'] as String;
+                            await widget.groupService.approvePendingMembership(
+                              gid,
+                              widget.currentUserId,
+                            );
+                            await widget.inviteService.approveInvite(
+                              groupId: gid,
+                              userId: widget.currentUserId,
+                            );
+                            await widget.groupService.sendGroupMessage(
+                              groupId: gid,
+                              senderId: 'system',
+                              senderName: 'System',
+                              text:
+                                  '${cachedUserName.isEmpty ? 'User' : cachedUserName} joined the group',
+                              type: MessageType.system,
+                              skipUnreadIncrementFor: widget.currentUserId,
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _compactInviteAction(
+                          label: 'Exit',
+                          color: AppTheme.red,
+                          onTap: () async {
+                            final gid = widget.item['id'] as String;
+                            await widget.inviteService.exitInvite(
+                              groupId: gid,
+                              userId: widget.currentUserId,
+                            );
+                            await widget.groupService.declinePendingMembership(
+                              gid,
+                              widget.currentUserId,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (widget.isExpanded)
                   AnimatedSize(
                     duration: const Duration(milliseconds: 260),
@@ -3906,6 +4703,33 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _compactInviteAction({
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.zero,
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
@@ -3966,6 +4790,10 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   onTap: () => _showAddMembersDialog(
                     groupId,
                     members.cast<String>(),
+                    (widget.item['pendingMemberIds'] as List?)
+                            ?.map((e) => e.toString())
+                            .toList() ??
+                        const <String>[],
                     allUsers,
                   ),
                 ),
@@ -3997,6 +4825,10 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                           Expanded(
                             child: GestureDetector(
                               onTap: () async {
+                                await widget.groupService.approvePendingMembership(
+                                  groupId,
+                                  widget.currentUserId,
+                                );
                                 await widget.inviteService.approveInvite(
                                   groupId: groupId,
                                   userId: widget.currentUserId,
@@ -4006,8 +4838,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                   senderId: 'system',
                                   senderName: 'System',
                                   text:
-                                      '${cachedUserName.isEmpty ? 'User' : cachedUserName} approved invite',
+                                      '${cachedUserName.isEmpty ? 'User' : cachedUserName} joined the group',
                                   type: MessageType.system,
+                                  skipUnreadIncrementFor: widget.currentUserId,
                                 );
                               },
                               child: Container(
@@ -4038,12 +4871,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                   groupId: groupId,
                                   userId: widget.currentUserId,
                                 );
-                                await widget.groupService.leaveGroup(
+                                await widget.groupService.declinePendingMembership(
                                   groupId,
                                   widget.currentUserId,
-                                  cachedUserName.isEmpty
-                                      ? 'User'
-                                      : cachedUserName,
                                 );
                               },
                               child: Container(
@@ -4152,6 +4982,8 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                               groupId,
                               mId as String,
                               removedByName: 'Admin',
+                              skipUnreadIncrementForActor:
+                                  widget.currentUserId,
                             );
                           },
                           child: Padding(
@@ -5074,7 +5906,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
             'Could not open file locally.',
             style: GoogleFonts.jetBrainsMono(),
           ),
-          backgroundColor: const Color(0xFF161618),
         ),
       );
     }
@@ -5185,10 +6016,15 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
   void _showAddMembersDialog(
     String groupId,
     List<String> currentMembers,
+    List<String> pendingMemberIds,
     List<UserModel> allUsers,
   ) {
     final availableUsers = allUsers
-        .where((u) => !currentMembers.contains(u.uid))
+        .where(
+          (u) =>
+              !currentMembers.contains(u.uid) &&
+              !pendingMemberIds.contains(u.uid),
+        )
         .toList();
     final selected = <String>{};
 
@@ -5301,6 +6137,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                             cachedUserName.isNotEmpty
                                 ? cachedUserName
                                 : 'Admin',
+                            actorUserId: widget.currentUserId,
                           );
                         },
                   child: Text(

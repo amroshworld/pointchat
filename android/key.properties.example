@@ -1,0 +1,5 @@
+# Copy to key.properties (gitignored) or set via CI secrets — see docs/RELEASE_PLAY_APPSTORE.md
+storePassword=your-store-password
+keyPassword=your-key-password
+keyAlias=upload
+storeFile=C:/path/to/upload-keystore.jks
