@@ -46,3 +46,6 @@ app.*.map.json
 
 # Passwords only — you may commit *.jks in a private repo if you accept the risk.
 
+# iOS signing files may be committed on purpose in this private repo.
+# See ios/ci/README.md for the supported filenames used by CI.
+
