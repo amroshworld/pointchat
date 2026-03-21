@@ -4,9 +4,19 @@ The app uses **entitlement id:** `ai_access` (see `RevenueCatConfig` in `lib/ser
 
 ## What you configure in RevenueCat (dashboard)
 
-1. **Products** — Create subscription products in **Google Play Console** and **App Store Connect** first, then link the same product IDs in RevenueCat.
-2. **Entitlement** — Name it exactly **`ai_access`** and attach your subscription products to it.
-3. **Offering** — Set a **current offering** with at least one **package** (e.g. monthly). The paywall reads `offerings.current.availablePackages`.
+1. **Products** — The RevenueCat project now has these product identifiers ready:
+   - Android monthly: `pointchat_ai:monthly`
+   - Android annual: `pointchat_ai:annual`
+   - iOS monthly: `com.amrosh.Pointchat.ai.monthly`
+   - iOS annual: `com.amrosh.Pointchat.ai.annual`
+   - Test Store monthly: `pointchat_ai_monthly_test`
+   - Test Store annual: `pointchat_ai_annual_test`
+2. **Entitlement** — `ai_access` exists and is attached to all monthly/annual products.
+3. **Offering** — Current offering `ai_access` now has packages `$rc_monthly` and `$rc_annual`. The paywall reads `offerings.current.availablePackages`.
+4. **Test Store prices** — Configured for development/testing:
+   - Monthly: `USD 4.99`
+   - Annual: `USD 39.99`
+5. **Store consoles still matter** — For real purchases, create the same IDs in **Google Play Console** and **App Store Connect** and set their live prices there. RevenueCat does not replace those store-side records.
 
 ## Suggested pricing mindset (Gemini 3.1 Flash Lite, no search)
 
@@ -30,8 +40,9 @@ That suggests:
 
 ## Flutter / keys
 
-- Android: `--dart-define=REVENUECAT_ANDROID_API_KEY=...` (or replace default in code for local dev only).
-- iOS: same pattern with `REVENUECAT_IOS_API_KEY`.
+- Android default key in code matches RevenueCat: `goog_TERmGBEENicfFTgbipVDDIItzWL`.
+- iOS default key in code is now set too: `appl_ADugYdOCqeDqvVufcLTapimDzGx`.
+- You can still override either one with `--dart-define`.
 - After changing products, call **Restore purchases** on a test device.
 
-There is **no RevenueCat MCP** in this workspace; verify everything in [app.revenuecat.com](https://app.revenuecat.com).
+This setup was created directly through the RevenueCat MCP and can also be verified in [app.revenuecat.com](https://app.revenuecat.com).

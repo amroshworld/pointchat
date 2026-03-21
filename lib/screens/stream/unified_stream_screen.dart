@@ -4286,7 +4286,8 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
           width: 32,
           height: 32,
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _buildInitials(initials, colorScheme),
+          errorBuilder: (_context, _error, _stackTrace) =>
+              _buildInitials(initials, colorScheme),
         ),
       );
     } else {
@@ -5772,7 +5773,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                 child: Image.network(
                   imageUrl,
                   fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => const SizedBox(
+                  errorBuilder: (_context, _error, _stackTrace) => const SizedBox(
                     height: 180,
                     child: Center(
                       child: Icon(

@@ -12,7 +12,7 @@ class RevenueCatConfig {
   );
   static const String iosApiKey = String.fromEnvironment(
     'REVENUECAT_IOS_API_KEY',
-    defaultValue: '',
+    defaultValue: 'appl_ADugYdOCqeDqvVufcLTapimDzGx',
   );
 
   static String? get apiKey {
