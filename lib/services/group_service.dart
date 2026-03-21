@@ -308,7 +308,7 @@ class GroupService {
     ]);
     sub.stream.listen((event) {
       final payload = event.payload;
-      final gid = payload is Map ? payload['groupId'] : null;
+      final gid = payload['groupId'];
       if (gid == groupId || event.events.any((e) => e.contains('.delete'))) {
         fetch();
       }

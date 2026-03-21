@@ -93,7 +93,6 @@ class NotificationService {
       }
       try {
         final raw = event.payload;
-        if (raw is! Map) return;
         final payload = Map<String, dynamic>.from(raw);
         if (payload['userId']?.toString() != userId) return;
         if (payload['status']?.toString() != 'pending') return;

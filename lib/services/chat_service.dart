@@ -185,7 +185,7 @@ class ChatService {
     ]);
     sub.stream.listen((event) {
       final payload = event.payload;
-      final chat = payload is Map ? payload['chatId'] : null;
+      final chat = payload['chatId'];
       if (chat == chatId || event.events.any((e) => e.contains('.delete'))) {
         fetch();
       }

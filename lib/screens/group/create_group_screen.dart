@@ -396,7 +396,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                               width: 96,
                               height: 96,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => Icon(
+                              errorBuilder: (context, error, stackTrace) => Icon(
                                 Icons.group,
                                 size: 48,
                                 color: colorScheme.onTertiaryContainer,

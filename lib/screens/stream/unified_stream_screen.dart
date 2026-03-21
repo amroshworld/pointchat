@@ -29,7 +29,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:uuid/uuid.dart';
-import 'package:characters/characters.dart';
 
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
@@ -4286,7 +4285,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
           width: 32,
           height: 32,
           fit: BoxFit.cover,
-          errorBuilder: (_context, _error, _stackTrace) =>
+          errorBuilder: (context, error, stackTrace) =>
               _buildInitials(initials, colorScheme),
         ),
       );
@@ -5773,7 +5772,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                 child: Image.network(
                   imageUrl,
                   fit: BoxFit.contain,
-                  errorBuilder: (_context, _error, _stackTrace) => const SizedBox(
+                  errorBuilder: (context, error, stackTrace) => const SizedBox(
                     height: 180,
                     child: Center(
                       child: Icon(

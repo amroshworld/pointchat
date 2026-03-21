@@ -43,7 +43,7 @@ class UserService {
 
     sub.stream.listen((event) {
       final raw = event.payload;
-      if (raw is Map && raw.isNotEmpty) {
+      if (raw.isNotEmpty) {
         controller.add(UserModel.fromMap(Map<String, dynamic>.from(raw)));
       }
     });
