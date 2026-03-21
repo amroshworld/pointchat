@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../services/group_service.dart';
 import '../../services/user_service.dart';
 import '../../models/user_model.dart';
+import '../../utils/chat_image_upload.dart';
 import '../../widgets/user_avatar.dart';
 import 'group_chat_screen.dart';
 
@@ -25,6 +26,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final Map<String, UserModel> _selectedUsers = {};
   List<UserModel> _searchResults = [];
   bool _isCreating = false;
+  bool _isPickingPhoto = false;
+  String? _groupPhotoUrl;
   int _currentStep = 0;
 
   @override
@@ -41,12 +44,34 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       setState(() => _searchResults = []);
       return;
     }
-    final results = await _userService.searchUsers(query, widget.currentUserId);
+    final results = await _userService.searchUsers(
+      query,
+      widget.currentUserId,
+      excludeNonHumanMembers: true,
+    );
     if (!mounted) return;
     setState(() => _searchResults = results);
   }
 
+  Future<void> _pickGroupPhoto() async {
+    setState(() => _isPickingPhoto = true);
+    try {
+      final url = await pickAndUploadSquareChatImage(filePrefix: 'group');
+      if (!mounted) return;
+      if (url != null) setState(() => _groupPhotoUrl = url);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not set group photo. Try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isPickingPhoto = false);
+    }
+  }
+
   void _toggleUser(UserModel user) {
+    if (user.isExcludedFromGroups) return;
     setState(() {
       if (_selectedUserIds.contains(user.uid)) {
         _selectedUserIds.remove(user.uid);
@@ -81,6 +106,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         description: _descriptionController.text.trim(),
         createdBy: widget.currentUserId,
         members: _selectedUserIds.toList(),
+        photoUrl: _groupPhotoUrl ?? '',
       );
 
       if (!mounted) return;
@@ -308,7 +334,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           );
         }
 
-        final users = snapshot.data!;
+        final users = snapshot.data!
+            .where((u) => !u.isExcludedFromGroups)
+            .toList();
 
         return ListView.builder(
           itemCount: users.length,
@@ -352,40 +380,63 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         children: [
           // Group icon
           Center(
-            child: Stack(
-              children: [
-                Container(
-                  width: 96,
-                  height: 96,
-                  decoration: BoxDecoration(
-                    color: colorScheme.tertiaryContainer,
+            child: GestureDetector(
+              onTap: _isPickingPhoto ? null : _pickGroupPhoto,
+              child: Stack(
+                children: [
+                  ClipRRect(
                     borderRadius: BorderRadius.circular(28),
-                  ),
-                  child: Icon(
-                    Icons.group,
-                    size: 48,
-                    color: colorScheme.onTertiaryContainer,
-                  ),
-                ),
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: colorScheme.surface, width: 2),
+                    child: Container(
+                      width: 96,
+                      height: 96,
+                      color: colorScheme.tertiaryContainer,
+                      child: _groupPhotoUrl != null && _groupPhotoUrl!.isNotEmpty
+                          ? Image.network(
+                              _groupPhotoUrl!,
+                              width: 96,
+                              height: 96,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => Icon(
+                                Icons.group,
+                                size: 48,
+                                color: colorScheme.onTertiaryContainer,
+                              ),
+                            )
+                          : Icon(
+                              Icons.group,
+                              size: 48,
+                              color: colorScheme.onTertiaryContainer,
+                            ),
                     ),
-                    child: Icon(
-                      Icons.camera_alt,
-                      size: 16,
-                      color: colorScheme.onPrimary,
+                  ),
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: colorScheme.surface, width: 2),
+                      ),
+                      child: _isPickingPhoto
+                          ? Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: colorScheme.onPrimary,
+                              ),
+                            )
+                          : Icon(
+                              Icons.camera_alt,
+                              size: 16,
+                              color: colorScheme.onPrimary,
+                            ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
 

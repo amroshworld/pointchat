@@ -28,6 +28,10 @@ class UserModel {
     this.isBot = false,
   });
 
+  /// AI system user and custom bots must not be invited into groups.
+  bool get isExcludedFromGroups =>
+      isBot || uid == 'ai-system' || uid == 'ai_system';
+
   /// Effective presence for UI: server flag must be true and [lastSeen] recent.
   bool get isOnline {
     if (isBot) return false;

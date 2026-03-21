@@ -4,6 +4,7 @@ import '../../services/group_service.dart';
 import '../../services/user_service.dart';
 import '../../models/group_model.dart';
 import '../../models/user_model.dart';
+import '../../utils/chat_image_upload.dart';
 import '../../widgets/user_avatar.dart';
 
 class GroupInfoScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class GroupInfoScreen extends StatefulWidget {
 class _GroupInfoScreenState extends State<GroupInfoScreen> {
   final GroupService _groupService = GroupService();
   final UserService _userService = UserService();
+  bool _uploadingGroupPhoto = false;
 
   @override
   Widget build(BuildContext context) {
@@ -69,10 +71,50 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                       ),
                     ),
                     child: Center(
-                      child: GroupAvatar(
-                        photoUrl: group.photoUrl,
-                        name: group.name,
-                        radius: 48,
+                      child: GestureDetector(
+                        onTap: isAdmin && !_uploadingGroupPhoto
+                            ? () => _changeGroupPhoto(group)
+                            : null,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            GroupAvatar(
+                              photoUrl: group.photoUrl,
+                              name: group.name,
+                              radius: 48,
+                            ),
+                            if (isAdmin)
+                              Positioned(
+                                right: -4,
+                                bottom: -4,
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primary,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: colorScheme.surface,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: _uploadingGroupPhoto
+                                      ? SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: colorScheme.onPrimary,
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.camera_alt,
+                                          size: 14,
+                                          color: colorScheme.onPrimary,
+                                        ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -140,9 +182,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                                 ),
                                 title: const Text('Add members'),
                                 trailing: const Icon(Icons.chevron_right),
-                                onTap: () {
-                                  // TODO: Add members dialog
-                                },
+                                onTap: () => _showAddMembers(group),
                               ),
                             ListTile(
                               leading: Icon(
@@ -318,6 +358,156 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           );
         },
       ),
+    );
+  }
+
+  Future<void> _changeGroupPhoto(GroupModel group) async {
+    setState(() => _uploadingGroupPhoto = true);
+    try {
+      final url = await pickAndUploadSquareChatImage(filePrefix: 'group');
+      if (!mounted) return;
+      if (url != null) {
+        await _groupService.updateGroup(widget.groupId, {'photoUrl': url});
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Group photo updated.')),
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not update group photo. Try again.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingGroupPhoto = false);
+    }
+  }
+
+  void _showAddMembers(GroupModel group) {
+    final selected = <String>{};
+    final searchController = TextEditingController();
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('Add members'),
+              content: SizedBox(
+                width: 320,
+                height: 380,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: searchController,
+                      decoration: const InputDecoration(
+                        hintText: 'Search by name or email',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: StreamBuilder<List<UserModel>>(
+                        stream: _userService.getAllUsers(widget.currentUserId),
+                        builder: (context, snap) {
+                          final all = snap.data ?? [];
+                          final q = searchController.text.trim().toLowerCase();
+                          final list = all
+                              .where(
+                                (u) =>
+                                    !u.isExcludedFromGroups &&
+                                    u.uid != widget.currentUserId &&
+                                    !group.members.contains(u.uid) &&
+                                    !group.pendingMemberIds.contains(u.uid) &&
+                                    (q.isEmpty ||
+                                        u.displayName.toLowerCase().contains(
+                                              q,
+                                            ) ||
+                                        u.email.toLowerCase().contains(q)),
+                              )
+                              .toList();
+                          if (list.isEmpty) {
+                            return Center(
+                              child: Text(
+                                'No people to add',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            );
+                          }
+                          return ListView.builder(
+                            itemCount: list.length,
+                            itemBuilder: (_, i) {
+                              final user = list[i];
+                              final on = selected.contains(user.uid);
+                              return CheckboxListTile(
+                                value: on,
+                                onChanged: (v) {
+                                  setDialogState(() {
+                                    if (v == true) {
+                                      selected.add(user.uid);
+                                    } else {
+                                      selected.remove(user.uid);
+                                    }
+                                  });
+                                },
+                                title: Text(user.displayName),
+                                subtitle: Text(
+                                  user.email,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                secondary: UserAvatar(
+                                  photoUrl: user.photoUrl,
+                                  name: user.displayName,
+                                  radius: 20,
+                                  isBot: user.isBot,
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: selected.isEmpty
+                      ? null
+                      : () async {
+                          await _groupService.addMembers(
+                            widget.groupId,
+                            selected.toList(),
+                            cachedUserName.isNotEmpty
+                                ? cachedUserName
+                                : 'Admin',
+                            actorUserId: widget.currentUserId,
+                          );
+                          if (ctx.mounted) Navigator.pop(ctx);
+                        },
+                  child: Text('Add (${selected.length})'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

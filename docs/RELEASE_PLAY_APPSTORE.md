@@ -1,7 +1,8 @@
 # Google Play & App Store release checklist
 
 New to Actions? Read **[GITHUB_ACTIONS_JUNIOR.md](GITHUB_ACTIONS_JUNIOR.md)** first.  
-**What is “signed build”?** Read **[SIGNING_EXPLAINED.md](SIGNING_EXPLAINED.md)**.
+**What is “signed build”?** Read **[SIGNING_EXPLAINED.md](SIGNING_EXPLAINED.md)**.  
+**RevenueCat / AI pricing:** **[REVENUECAT_SETUP.md](REVENUECAT_SETUP.md)**.
 
 ## Google Play (Android)
 

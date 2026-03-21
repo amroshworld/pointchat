@@ -41,15 +41,15 @@ module.exports = async function ({ req, res, log }) {
     log(`Generating response with locked model ${MODEL_NAME}`);
 
     const ai = new GoogleGenAI({ apiKey });
+    // No googleSearch / grounding — paid tier charges ~$14/1k queries after free quota.
     const response = await ai.models.generateContentStream({
       model: MODEL_NAME,
       config: {
         thinkingConfig: {
           thinkingLevel: ThinkingLevel.MINIMAL,
         },
-        tools: [{ googleSearch: {} }],
         systemInstruction: systemPrompt,
-        maxOutputTokens: 250, // Added explicit token limit to prevent excessive API costs
+        maxOutputTokens: 250,
       },
       contents: [
         {

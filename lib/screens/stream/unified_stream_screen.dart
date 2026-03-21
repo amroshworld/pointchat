@@ -46,6 +46,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/voice_message_player.dart';
 import '../../utils/pointchat_tips.dart';
 import '../../utils/composer_preferences.dart';
+import '../../utils/chat_image_upload.dart';
 
 /// Shown when typing `@` so features like `@ai` are discoverable.
 class _AtCommandSuggestion {
@@ -501,15 +502,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                 '/newbot Name',
                 'Create a custom bot (type after the command)',
               ),
-              _helpRow(ctx, '/location', 'Share GPS (select @user or #group first)'),
-              const SizedBox(height: 8),
-              Text(
-                'Tip: use Chats vs Everyone when you type @.',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
             ],
           ),
         ),
@@ -672,7 +664,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
         '/setting',
         '/myprofile',
         '/newbot',
-        '/location',
         // AI commands hidden for now
         // '/summarize',
         // '/summarize unread',
@@ -1578,56 +1569,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   Future<String?> _pickAndUploadSquareImage({
     required String filePrefix,
   }) async {
-    try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 80,
-        maxWidth: 1024,
-        maxHeight: 1024,
-      );
-      if (pickedFile == null) {
-        return null;
-      }
-
-      final croppedFile = await ImageCropper().cropImage(
-        sourcePath: pickedFile.path,
-        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-        compressQuality: 70,
-        maxWidth: 512,
-        maxHeight: 512,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'Crop Image',
-            toolbarColor: const Color(0xFF161618),
-            toolbarWidgetColor: Colors.white,
-            activeControlsWidgetColor: AppTheme.focusBlue,
-            hideBottomControls: false,
-            initAspectRatio: CropAspectRatioPreset.square,
-            lockAspectRatio: true,
-          ),
-          IOSUiSettings(title: 'Crop Image', aspectRatioLockEnabled: true),
-        ],
-      );
-      if (croppedFile == null) {
-        return null;
-      }
-
-      final file = await appwriteStorage.createFile(
-        bucketId: AppwriteConstants.chatFilesBucket,
-        fileId: ID.unique(),
-        file: InputFile.fromPath(
-          path: croppedFile.path,
-          filename: '$filePrefix-${const Uuid().v4()}.jpg',
-        ),
-        // Avatars/icons should be readable by anyone who can see chat UI.
-        permissions: publicReadPermissions(),
-      );
-
-      return buildStoragePreviewUrl(file.$id, width: 320, height: 320);
-    } catch (_) {
-      throw Exception('Image upload unavailable');
-    }
+    return pickAndUploadSquareChatImage(filePrefix: filePrefix);
   }
 
   Future<void> _updateMyProfilePhoto() async {
@@ -1775,6 +1717,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     final candidates = _allUsers
         .where(
           (user) =>
+              !user.isExcludedFromGroups &&
               !group.members.contains(user.uid) &&
               !group.pendingMemberIds.contains(user.uid),
         )
@@ -2826,12 +2769,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       final beforeSlash = normalizedInput.substring(0, slashIndex).trim();
       final aiPrompt = normalizedInput.substring(slashIndex + 1).trim();
 
-      if (aiPrompt.toLowerCase() == 'location') {
-        _commandController.clear();
-        await _sendLocation(normalizedInput);
-        return;
-      }
-
       if (aiPrompt.toLowerCase() == 'myprofile' && beforeSlash.isEmpty) {
         _commandController.clear();
         await _showMyProfileOverlay();
@@ -3651,12 +3588,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                   _insertSlashCommand(suggestion);
                                   return;
                                 }
-
-                                setState(() {
-                                  _isMentioning = false;
-                                  _mentionSuggestions = [];
-                                });
-                                _sendLocation();
                                 return;
                               }
 
@@ -6030,6 +5961,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     final availableUsers = allUsers
         .where(
           (u) =>
+              !u.isExcludedFromGroups &&
               !currentMembers.contains(u.uid) &&
               !pendingMemberIds.contains(u.uid),
         )

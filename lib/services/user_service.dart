@@ -71,8 +71,9 @@ class UserService {
   // Search users by name or email (server search when indexed; else bounded scan).
   Future<List<UserModel>> searchUsers(
     String query,
-    String currentUserId,
-  ) async {
+    String currentUserId, {
+    bool excludeNonHumanMembers = false,
+  }) async {
     final q = query.trim();
     if (q.length < 2) return [];
 
@@ -87,10 +88,14 @@ class UserService {
           Query.limit(40),
         ],
       );
-      return result.rows
+      var list = result.rows
           .where((doc) => doc.$id != currentUserId)
           .map((doc) => UserModel.fromMap(doc.data))
           .toList();
+      if (excludeNonHumanMembers) {
+        list = list.where((u) => !u.isExcludedFromGroups).toList();
+      }
+      return list;
     } on AppwriteException {
       // Missing fulltext index or attribute: fall through.
     }
@@ -101,7 +106,7 @@ class UserService {
       queries: [Query.limit(400)],
     );
 
-    return result.rows
+    var list = result.rows
         .where((doc) => doc.$id != currentUserId)
         .map((doc) => UserModel.fromMap(doc.data))
         .where(
@@ -111,6 +116,10 @@ class UserService {
         )
         .take(40)
         .toList();
+    if (excludeNonHumanMembers) {
+      list = list.where((u) => !u.isExcludedFromGroups).toList();
+    }
+    return list;
   }
 
   // Get all users (for creating groups and chat lists)
