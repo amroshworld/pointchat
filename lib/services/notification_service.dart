@@ -25,6 +25,7 @@ class NotificationService {
   final Realtime _realtime = appwriteRealtime;
 
   RealtimeSubscription? _subscription;
+  RealtimeSubscription? _inviteSubscription;
   String? _currentUserId;
   bool _initialized = false;
 
@@ -63,7 +64,7 @@ class NotificationService {
     await unbind();
     _currentUserId = userId;
     _subscription = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.messagesCollection}.documents',
+      AppwriteRealtimeChannels.tableRows(AppwriteConstants.messagesCollection),
     ]);
 
     _subscription!.stream.listen((event) async {
@@ -80,11 +81,63 @@ class NotificationService {
         debugPrint('Notification handling error: $error');
       }
     });
+
+    _inviteSubscription = _realtime.subscribe([
+      AppwriteRealtimeChannels.tableRows(
+        AppwriteConstants.groupInvitesCollection,
+      ),
+    ]);
+    _inviteSubscription!.stream.listen((event) async {
+      if (!event.events.any((e) => e.endsWith('.create'))) {
+        return;
+      }
+      try {
+        final raw = event.payload;
+        if (raw is! Map) return;
+        final payload = Map<String, dynamic>.from(raw);
+        if (payload['userId']?.toString() != userId) return;
+        if (payload['status']?.toString() != 'pending') return;
+        final groupId = payload['groupId']?.toString();
+        if (groupId == null || groupId.isEmpty) return;
+
+        String title = 'Group invite';
+        try {
+          final group = await _databases.getRow(
+            databaseId: AppwriteConstants.databaseId,
+            tableId: AppwriteConstants.groupsCollection,
+            rowId: groupId,
+          );
+          final name = group.data['name']?.toString();
+          if (name != null && name.isNotEmpty) {
+            title = 'Invited to "$name"';
+          }
+        } catch (_) {}
+
+        await _plugin.show(
+          DateTime.now().millisecondsSinceEpoch.remainder(1 << 31) + 1,
+          title,
+          'Open PointChat to accept or decline.',
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              _channel.id,
+              _channel.name,
+              channelDescription: _channel.description,
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
+          ),
+        );
+      } catch (error) {
+        debugPrint('Invite notification error: $error');
+      }
+    });
   }
 
   Future<void> unbind() async {
     _subscription?.close();
     _subscription = null;
+    _inviteSubscription?.close();
+    _inviteSubscription = null;
     _currentUserId = null;
   }
 

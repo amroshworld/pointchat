@@ -76,6 +76,30 @@ class AppTheme {
     letterSpacing: letterSpacing,
   );
 
+  /// Stream list titles (Arabic, emoji, etc.): Inter first, then system Arabic-capable fonts.
+  static TextStyle chatConversationTitleStyle(
+    BuildContext context, {
+    double fontSize = 14,
+    FontWeight fontWeight = FontWeight.w600,
+    double letterSpacing = -0.2,
+  }) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    return GoogleFonts.inter(
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      letterSpacing: letterSpacing,
+      color: isLight ? Colors.black : Colors.white,
+    ).copyWith(
+      fontFamilyFallback: const [
+        'Segoe UI',
+        'Roboto',
+        'Noto Sans Arabic',
+        'Noto Naskh Arabic',
+        'Arial Unicode MS',
+      ],
+    );
+  }
+
   // ── Theme ──────────────────────────────────────────────────────────
 
   static ThemeData get lightTheme {

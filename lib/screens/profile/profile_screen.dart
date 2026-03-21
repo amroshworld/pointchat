@@ -162,8 +162,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   userData?.photoUrl ?? cachedUserPhotoUrl,
                               name: userData?.displayName ?? cachedUserName,
                               radius: 48,
-                              isOnline: true,
-                              showOnlineIndicator: true,
+                              isOnline: userData?.isOnline ?? false,
+                              showOnlineIndicator: userData?.isOnline ?? false,
                             ),
                             if (_isUploading)
                               const CircularProgressIndicator(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../appwrite_client.dart';
 import '../../services/group_service.dart';
 import '../../services/user_service.dart';
 import '../../models/group_model.dart';
@@ -291,6 +292,12 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                                           _groupService.removeMember(
                                             widget.groupId,
                                             memberId,
+                                            removedByName:
+                                                cachedUserName.isNotEmpty
+                                                    ? cachedUserName
+                                                    : 'Admin',
+                                            skipUnreadIncrementForActor:
+                                                widget.currentUserId,
                                           );
                                           break;
                                       }

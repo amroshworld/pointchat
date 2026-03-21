@@ -74,6 +74,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
                 lastMessage: group.lastMessage,
                 lastSenderName: group.lastMessageSenderName,
                 lastMessageTime: group.lastMessageTime,
+                unreadCount: group.unreadCount[widget.currentUserId] ?? 0,
                 memberCount: group.members.length,
                 onTap: () {
                   Navigator.push(

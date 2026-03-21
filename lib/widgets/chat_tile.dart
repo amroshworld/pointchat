@@ -192,6 +192,12 @@ class GroupChatTile extends StatelessWidget {
                                 : FontWeight.w500,
                             fontSize: 16,
                             color: colorScheme.onSurface,
+                            fontFamilyFallback: const [
+                              'Segoe UI',
+                              'Roboto',
+                              'Noto Sans Arabic',
+                              'Noto Naskh Arabic',
+                            ],
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

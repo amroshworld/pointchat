@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/password_policy.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -44,11 +45,39 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return;
     }
 
+    if (!_isLogin) {
+      final pwdError = PasswordPolicy.validate(password);
+      if (pwdError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(pwdError)),
+        );
+        return;
+      }
+    }
+
     final notifier = ref.read(authProvider.notifier);
     if (_isLogin) {
       await notifier.signInWithEmailAndPassword(email, password);
     } else {
-      await notifier.registerWithEmailAndPassword(email, password, name);
+      final ok = await notifier.registerWithEmailAndPassword(
+        email,
+        password,
+        name,
+      );
+      if (!mounted) return;
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Account created. If verification is enabled in Appwrite, '
+              'check your inbox (and spam) for a confirmation link. '
+              'No email usually means SMTP is not configured in the Appwrite console.',
+              style: GoogleFonts.inter(fontSize: 14),
+            ),
+            duration: const Duration(seconds: 8),
+          ),
+        );
+      }
     }
   }
 
@@ -207,6 +236,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         const SizedBox(height: 24),
 
                         _label('Password'),
+                        if (!_isLogin) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'At least ${PasswordPolicy.minLength} chars with upper, lower, number & symbol.',
+                            style: GoogleFonts.inter(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         TextField(
                           controller: _passwordController,

@@ -187,6 +187,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                             photoUrl: user.photoUrl,
                             name: user.displayName,
                             radius: 22,
+                            isBot: user.isBot,
                           ),
                           Positioned(
                             right: -4,
@@ -266,6 +267,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                         name: user.displayName,
                         radius: 24,
                         isOnline: user.isOnline,
+                        isBot: user.isBot,
                         showOnlineIndicator: true,
                       ),
                       title: Text(
@@ -320,6 +322,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                 name: user.displayName,
                 radius: 24,
                 isOnline: user.isOnline,
+                isBot: user.isBot,
                 showOnlineIndicator: true,
               ),
               title: Text(
@@ -400,7 +403,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           const SizedBox(height: 8),
           TextField(
             controller: _nameController,
-            textCapitalization: TextCapitalization.words,
+            textCapitalization: TextCapitalization.none,
+            keyboardType: TextInputType.text,
             decoration: const InputDecoration(
               hintText: 'Enter group name',
               prefixIcon: Icon(Icons.group_outlined),
@@ -473,6 +477,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                 photoUrl: user.photoUrl,
                 name: user.displayName,
                 radius: 22,
+                isBot: user.isBot,
               ),
               title: Text(
                 user.displayName,

@@ -89,9 +89,21 @@ class ChatModel {
   }
 
   String getOtherUserId(String currentUserId) {
+    if (participants.isEmpty) return '';
+    final unique = participants.toSet().toList();
+    // Self-DM / AI thread: [userId, userId] — old code returned '' and broke UI.
+    if (unique.length == 1 && unique.first == currentUserId) {
+      return currentUserId;
+    }
     return participants.firstWhere(
       (id) => id != currentUserId,
-      orElse: () => '',
+      orElse: () => participants.first,
     );
+  }
+
+  /// True when this chat is the special same-user thread (AI / notes).
+  bool get isSelfParticipantChat {
+    if (participants.length != 2) return false;
+    return participants[0] == participants[1];
   }
 }

@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:appwrite/appwrite.dart';
 import '../appwrite_client.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
+import 'invite_service.dart';
 
 class GroupService {
   final TablesDB _databases = appwriteTablesDB;
   final Realtime _realtime = appwriteRealtime;
+  final InviteService _inviteService = InviteService();
 
   // Create a new group
   Future<String> createGroup({
@@ -19,8 +22,10 @@ class GroupService {
   }) async {
     final groupId = ID.unique();
 
-    // Include creator in members and admins
-    final allMembers = {...members, createdBy}.toList();
+    final invitees =
+        members.where((id) => id != createdBy).toList(growable: false);
+    final memberList = [createdBy];
+    final unreadInit = {createdBy: 0};
 
     final group = GroupModel(
       groupId: groupId,
@@ -28,9 +33,11 @@ class GroupService {
       description: description,
       photoUrl: photoUrl,
       createdBy: createdBy,
-      members: allMembers,
+      members: memberList,
+      pendingMemberIds: invitees,
       admins: [createdBy],
       isPublic: isPublic,
+      unreadCount: unreadInit,
     );
 
     await _databases.createRow(
@@ -40,22 +47,28 @@ class GroupService {
       data: group.toMap(),
     );
 
-    // Update all members' groupIds
-    for (final memberId in allMembers) {
-      await _addToArray(
-        AppwriteConstants.usersCollection,
-        memberId,
-        'groupIds',
-        groupId,
+    await _addToArray(
+      AppwriteConstants.usersCollection,
+      createdBy,
+      'groupIds',
+      groupId,
+    );
+
+    if (invitees.isNotEmpty) {
+      await _inviteService.createPendingInvites(
+        groupId: groupId,
+        invitedBy: createdBy,
+        userIds: invitees,
       );
     }
 
-    // Send system message
     await sendGroupMessage(
       groupId: groupId,
       senderId: createdBy,
       senderName: 'System',
-      text: 'Group "$name" created',
+      text: invitees.isEmpty
+          ? 'Group "$name" created'
+          : 'Group "$name" created — ${invitees.length} invite(s) pending',
       type: MessageType.system,
     );
 
@@ -68,7 +81,7 @@ class GroupService {
 
     Future<void> fetch() async {
       try {
-        final result = await _databases.listRows(
+        final memberRows = await _databases.listRows(
           databaseId: AppwriteConstants.databaseId,
           tableId: AppwriteConstants.groupsCollection,
           queries: [
@@ -77,12 +90,33 @@ class GroupService {
             Query.limit(100),
           ],
         );
+        final pendingRows = await _databases.listRows(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.groupsCollection,
+          queries: [
+            Query.contains('pendingMemberIds', [userId]),
+            Query.orderDesc('lastMessageTime'),
+            Query.limit(100),
+          ],
+        );
+
+        final byId = <String, GroupModel>{};
+        for (final doc in memberRows.rows) {
+          byId[doc.$id] = GroupModel.fromMap(doc.data, doc.$id);
+        }
+        for (final doc in pendingRows.rows) {
+          byId[doc.$id] = GroupModel.fromMap(doc.data, doc.$id);
+        }
+
+        final merged = byId.values.toList()
+          ..sort((a, b) {
+            final ta = a.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final tb = b.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return tb.compareTo(ta);
+          });
+
         if (!controller.isClosed) {
-          controller.add(
-            result.rows
-                .map((doc) => GroupModel.fromMap(doc.data, doc.$id))
-                .toList(),
-          );
+          controller.add(merged);
         }
       } catch (e) {
         if (!controller.isClosed) controller.addError(e);
@@ -92,12 +126,79 @@ class GroupService {
     fetch();
 
     final sub = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.groupsCollection}.documents',
+      AppwriteRealtimeChannels.tableRows(AppwriteConstants.groupsCollection),
     ]);
     sub.stream.listen((_) => fetch());
     controller.onCancel = () => sub.close();
 
     return controller.stream;
+  }
+
+  /// Adds [userId] from [pendingMemberIds] into [members] and links [groupIds] on the user.
+  Future<void> approvePendingMembership(String groupId, String userId) async {
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+    );
+
+    final members = List<String>.from(doc.data['members'] ?? []);
+    final pending = List<String>.from(doc.data['pendingMemberIds'] ?? []);
+    if (!pending.contains(userId)) return;
+
+    pending.remove(userId);
+    if (!members.contains(userId)) members.add(userId);
+
+    final unread = Map<String, int>.from(
+      GroupModel.decodeUnreadCount(doc.data['unreadCount']),
+    );
+    unread[userId] = 0;
+
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: {
+        'members': members,
+        'pendingMemberIds': pending,
+        'unreadCount': jsonEncode(unread),
+      },
+    );
+
+    await _addToArray(
+      AppwriteConstants.usersCollection,
+      userId,
+      'groupIds',
+      groupId,
+    );
+  }
+
+  /// Removes an invitee who declined (not a full member yet).
+  Future<void> declinePendingMembership(String groupId, String userId) async {
+    final doc = await _databases.getRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+    );
+
+    final pending = List<String>.from(doc.data['pendingMemberIds'] ?? []);
+    if (!pending.contains(userId)) return;
+
+    pending.remove(userId);
+    final unread = Map<String, int>.from(
+      GroupModel.decodeUnreadCount(doc.data['unreadCount']),
+    );
+    unread.remove(userId);
+
+    await _databases.updateRow(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
+      data: {
+        'pendingMemberIds': pending,
+        'unreadCount': jsonEncode(unread),
+      },
+    );
   }
 
   // Get group by ID stream
@@ -128,7 +229,10 @@ class GroupService {
     fetch();
 
     final sub = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.groupsCollection}.documents.$groupId',
+      AppwriteRealtimeChannels.tableRow(
+        AppwriteConstants.groupsCollection,
+        groupId,
+      ),
     ]);
     sub.stream.listen((_) => fetch());
     controller.onCancel = () => sub.close();
@@ -162,7 +266,7 @@ class GroupService {
     fetch();
 
     final sub = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.groupsCollection}.documents',
+      AppwriteRealtimeChannels.tableRows(AppwriteConstants.groupsCollection),
     ]);
     sub.stream.listen((_) => fetch());
     controller.onCancel = () => sub.close();
@@ -200,11 +304,12 @@ class GroupService {
     fetch();
 
     final sub = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.messagesCollection}.documents',
+      AppwriteRealtimeChannels.tableRows(AppwriteConstants.messagesCollection),
     ]);
     sub.stream.listen((event) {
-      if (event.payload['groupId'] == groupId ||
-          event.events.any((e) => e.contains('.delete'))) {
+      final payload = event.payload;
+      final gid = payload is Map ? payload['groupId'] : null;
+      if (gid == groupId || event.events.any((e) => e.contains('.delete'))) {
         fetch();
       }
     });
@@ -255,6 +360,7 @@ class GroupService {
     int? audioDuration,
     double? latitude,
     double? longitude,
+    String? skipUnreadIncrementFor,
   }) async {
     final messageId = ID.unique();
     final message = MessageModel(
@@ -280,6 +386,12 @@ class GroupService {
       data: message.toMap(),
     );
 
+    final unreadExtra = await _incrementGroupUnreadPayload(
+      groupId,
+      senderId,
+      skipIncrementForUserId: skipUnreadIncrementFor,
+    );
+
     await _databases.updateRow(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.groupsCollection,
@@ -289,8 +401,60 @@ class GroupService {
         'lastMessageTime': DateTime.now().toUtc().toIso8601String(),
         'lastMessageSenderId': senderId,
         'lastMessageSenderName': senderName,
+        ...unreadExtra,
       },
     );
+  }
+
+  /// Returns map with `unreadCount` key for merging into a group [updateRow].
+  Future<Map<String, dynamic>> _incrementGroupUnreadPayload(
+    String groupId,
+    String senderId, {
+    String? skipIncrementForUserId,
+  }) async {
+    try {
+      final doc = await _databases.getRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.groupsCollection,
+        rowId: groupId,
+      );
+      final members = List<String>.from(doc.data['members'] ?? []);
+      final unread = Map<String, int>.from(
+        GroupModel.decodeUnreadCount(doc.data['unreadCount']),
+      );
+      for (final m in members) {
+        if (m == senderId) continue;
+        if (skipIncrementForUserId != null && m == skipIncrementForUserId) {
+          continue;
+        }
+        unread[m] = (unread[m] ?? 0) + 1;
+      }
+      return {'unreadCount': jsonEncode(unread)};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Clears unread count for [userId] when they open the group chat.
+  Future<void> markGroupAsRead(String groupId, String userId) async {
+    try {
+      final doc = await _databases.getRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.groupsCollection,
+        rowId: groupId,
+      );
+      final unread = Map<String, int>.from(
+        GroupModel.decodeUnreadCount(doc.data['unreadCount']),
+      );
+      if ((unread[userId] ?? 0) == 0) return;
+      unread[userId] = 0;
+      await _databases.updateRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.groupsCollection,
+        rowId: groupId,
+        data: {'unreadCount': jsonEncode(unread)},
+      );
+    } catch (_) {}
   }
 
   Future<void> deleteMessage(String messageId, {String? groupId}) async {
@@ -347,12 +511,13 @@ class GroupService {
     );
   }
 
-  // Add members to group
+  // Add members to group (invited as pending until they approve)
   Future<void> addMembers(
     String groupId,
     List<String> newMembers,
-    String addedByName,
-  ) async {
+    String addedByName, {
+    String? actorUserId,
+  }) async {
     final doc = await _databases.getRow(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.groupsCollection,
@@ -360,23 +525,42 @@ class GroupService {
     );
 
     final members = List<String>.from(doc.data['members'] ?? []);
+    final pending = List<String>.from(doc.data['pendingMemberIds'] ?? []);
+    final toInvite = <String>[];
+
     for (final m in newMembers) {
-      if (!members.contains(m)) members.add(m);
+      if (members.contains(m) || pending.contains(m)) continue;
+      pending.add(m);
+      toInvite.add(m);
+    }
+
+    if (toInvite.isEmpty) return;
+
+    final unread = Map<String, int>.from(
+      GroupModel.decodeUnreadCount(doc.data['unreadCount']),
+    );
+    for (final m in toInvite) {
+      unread.putIfAbsent(m, () => 0);
     }
 
     await _databases.updateRow(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.groupsCollection,
       rowId: groupId,
-      data: {'members': members},
+      data: {
+        'pendingMemberIds': pending,
+        'unreadCount': jsonEncode(unread),
+      },
     );
 
-    for (final memberId in newMembers) {
-      await _addToArray(
-        AppwriteConstants.usersCollection,
-        memberId,
-        'groupIds',
-        groupId,
+    final inviter = actorUserId != null && actorUserId.isNotEmpty
+        ? actorUserId
+        : doc.data['createdBy']?.toString() ?? '';
+    if (inviter.isNotEmpty) {
+      await _inviteService.createPendingInvites(
+        groupId: groupId,
+        invitedBy: inviter,
+        userIds: toInvite,
       );
     }
 
@@ -384,8 +568,9 @@ class GroupService {
       groupId: groupId,
       senderId: 'system',
       senderName: 'System',
-      text: '$addedByName added ${newMembers.length} member(s)',
+      text: '$addedByName invited ${toInvite.length} member(s)',
       type: MessageType.system,
+      skipUnreadIncrementFor: actorUserId,
     );
   }
 
@@ -394,6 +579,7 @@ class GroupService {
     String groupId,
     String memberId, {
     String? removedByName,
+    String? skipUnreadIncrementForActor,
   }) async {
     final doc = await _databases.getRow(
       databaseId: AppwriteConstants.databaseId,
@@ -406,11 +592,20 @@ class GroupService {
     members.remove(memberId);
     admins.remove(memberId);
 
+    final unread = Map<String, int>.from(
+      GroupModel.decodeUnreadCount(doc.data['unreadCount']),
+    );
+    unread.remove(memberId);
+
     await _databases.updateRow(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.groupsCollection,
       rowId: groupId,
-      data: {'members': members, 'admins': admins},
+      data: {
+        'members': members,
+        'admins': admins,
+        'unreadCount': jsonEncode(unread),
+      },
     );
 
     await _removeFromArray(
@@ -427,6 +622,7 @@ class GroupService {
         senderName: 'System',
         text: '$removedByName removed a member',
         type: MessageType.system,
+        skipUnreadIncrementFor: skipUnreadIncrementForActor,
       );
     }
   }
@@ -459,11 +655,19 @@ class GroupService {
     final members = List<String>.from(doc.data['members'] ?? []);
     if (!members.contains(userId)) members.add(userId);
 
+    final unread = Map<String, int>.from(
+      GroupModel.decodeUnreadCount(doc.data['unreadCount']),
+    );
+    unread.putIfAbsent(userId, () => 0);
+
     await _databases.updateRow(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.groupsCollection,
       rowId: groupId,
-      data: {'members': members},
+      data: {
+        'members': members,
+        'unreadCount': jsonEncode(unread),
+      },
     );
 
     await _addToArray(
@@ -479,6 +683,7 @@ class GroupService {
       senderName: 'System',
       text: '$userName joined the group',
       type: MessageType.system,
+      skipUnreadIncrementFor: userId,
     );
   }
 

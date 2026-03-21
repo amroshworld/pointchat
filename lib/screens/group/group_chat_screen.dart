@@ -29,6 +29,15 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => _groupService.markGroupAsRead(
+          widget.groupId,
+          widget.currentUserId,
+        ));
+  }
+
+  @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();

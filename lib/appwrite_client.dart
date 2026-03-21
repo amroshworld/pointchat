@@ -7,7 +7,7 @@ class AppwriteConstants {
   // Database
   static const String databaseId = 'pointchat_db';
 
-  // Collections
+  // Table IDs (Tables DB)
   static const String usersCollection = 'users';
   static const String chatsCollection = 'chats';
   static const String messagesCollection = 'messages';
@@ -17,6 +17,23 @@ class AppwriteConstants {
 
   // Storage
   static const String chatFilesBucket = 'chat_files';
+
+  /// Used by [Account.createEmailVerification]. Must be an authorized URL in
+  /// Appwrite Console → Auth → URLs. Replace with your deployed verify page or deep link.
+  static const String emailVerificationRedirectUrl =
+      'https://pointchat.app/verify';
+}
+
+/// Realtime paths for [TablesDB] rows. Legacy `collections.*.documents` channels
+/// do not fire for table row updates.
+class AppwriteRealtimeChannels {
+  AppwriteRealtimeChannels._();
+
+  static String tableRows(String tableId) =>
+      'databases.${AppwriteConstants.databaseId}.tables.$tableId.rows';
+
+  static String tableRow(String tableId, String rowId) =>
+      '${tableRows(tableId)}.$rowId';
 }
 
 final Client appwriteClient = Client()
@@ -24,7 +41,6 @@ final Client appwriteClient = Client()
     .setProject(AppwriteConstants.projectId);
 
 final Account appwriteAccount = Account(appwriteClient);
-final Databases appwriteDatabases = Databases(appwriteClient);
 final TablesDB appwriteTablesDB = TablesDB(appwriteClient);
 final Storage appwriteStorage = Storage(appwriteClient);
 final Realtime appwriteRealtime = Realtime(appwriteClient);

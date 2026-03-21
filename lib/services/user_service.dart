@@ -35,34 +35,70 @@ class UserService {
         });
 
     final sub = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.usersCollection}.documents.$uid',
+      AppwriteRealtimeChannels.tableRow(
+        AppwriteConstants.usersCollection,
+        uid,
+      ),
     ]);
 
     sub.stream.listen((event) {
-      if (event.payload.isNotEmpty) {
-        controller.add(UserModel.fromMap(event.payload));
+      final raw = event.payload;
+      if (raw is Map && raw.isNotEmpty) {
+        controller.add(UserModel.fromMap(Map<String, dynamic>.from(raw)));
       }
     });
 
-    controller.onCancel = () => sub.close();
+    // Re-fetch so [UserModel.fromMap] presence TTL (lastSeen window) stays accurate
+    // without requiring another row update.
+    final ttlTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      getUserById(uid)
+          .then((user) {
+            if (!controller.isClosed) controller.add(user);
+          })
+          .catchError((e) {
+            if (!controller.isClosed) controller.addError(e);
+          });
+    });
+
+    controller.onCancel = () {
+      ttlTimer.cancel();
+      sub.close();
+    };
 
     return controller.stream;
   }
 
-  // Search users by name or email
+  // Search users by name or email (server search when indexed; else bounded scan).
   Future<List<UserModel>> searchUsers(
     String query,
     String currentUserId,
   ) async {
-    if (query.isEmpty) return [];
+    final q = query.trim();
+    if (q.length < 2) return [];
 
-    final queryLower = query.toLowerCase();
+    final queryLower = q.toLowerCase();
 
-    // Fetch all users and filter locally for substring search
+    try {
+      final result = await _databases.listRows(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.usersCollection,
+        queries: [
+          Query.search('displayName', q),
+          Query.limit(40),
+        ],
+      );
+      return result.rows
+          .where((doc) => doc.$id != currentUserId)
+          .map((doc) => UserModel.fromMap(doc.data))
+          .toList();
+    } on AppwriteException {
+      // Missing fulltext index or attribute: fall through.
+    }
+
     final result = await _databases.listRows(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.usersCollection,
-      queries: [Query.limit(500)],
+      queries: [Query.limit(400)],
     );
 
     return result.rows
@@ -73,6 +109,7 @@ class UserService {
               user.displayName.toLowerCase().contains(queryLower) ||
               user.email.toLowerCase().contains(queryLower),
         )
+        .take(40)
         .toList();
   }
 
@@ -103,10 +140,16 @@ class UserService {
     fetch();
 
     final sub = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.usersCollection}.documents',
+      AppwriteRealtimeChannels.tableRows(AppwriteConstants.usersCollection),
     ]);
     sub.stream.listen((_) => fetch());
-    controller.onCancel = () => sub.close();
+
+    final ttlTimer = Timer.periodic(const Duration(minutes: 1), (_) => fetch());
+
+    controller.onCancel = () {
+      ttlTimer.cancel();
+      sub.close();
+    };
 
     return controller.stream;
   }

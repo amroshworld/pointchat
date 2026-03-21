@@ -8,6 +8,7 @@ class UserAvatar extends StatelessWidget {
   final double radius;
   final bool isOnline;
   final bool showOnlineIndicator;
+  final bool isBot;
 
   const UserAvatar({
     super.key,
@@ -16,6 +17,7 @@ class UserAvatar extends StatelessWidget {
     this.radius = 24,
     this.isOnline = false,
     this.showOnlineIndicator = false,
+    this.isBot = false,
   });
 
   @override
@@ -34,7 +36,15 @@ class UserAvatar extends StatelessWidget {
             ),
           ),
           child: ClipRect(
-            child: (photoUrl != null && photoUrl!.isNotEmpty)
+            child: isBot
+                ? Center(
+                    child: Icon(
+                      Icons.smart_toy_rounded,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      size: radius * 1.05,
+                    ),
+                  )
+                : (photoUrl != null && photoUrl!.isNotEmpty)
                 ? CachedNetworkImage(
                     imageUrl: photoUrl!,
                     width: radius * 2,

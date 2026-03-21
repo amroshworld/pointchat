@@ -1,0 +1,31 @@
+---
+description: PointChat Appwrite TablesDB, Realtime, and presence rules
+globs: lib/**/*.dart
+alwaysApply: false
+---
+
+# PointChat + Appwrite
+
+## Data layer
+
+- All app data uses **Tables DB** (`TablesDB`, `listRows` / `getRow` / `updateRow` / `createRow`). Do **not** use the legacy `Databases` document API for app tables.
+- Constants under `AppwriteConstants` (`usersCollection`, `chatsCollection`, etc.) are **table IDs**, not classic collection names.
+
+## Realtime (critical)
+
+- Realtime channels for table rows **must** use `AppwriteRealtimeChannels.tableRows(tableId)` or `tableRow(tableId, rowId)` in `appwrite_client.dart`.
+- **Never** subscribe with `databases.*.collections.*.documents*` for these tables; those channels do not fire for Tables DB row changes, so the UI will look “stuck” and not live.
+
+## Presence
+
+- `UserModel.onlineFlag` is what gets written with `toMap()` / `isOnline` in Appwrite. UI presence uses the **`isOnline` getter** (TTL + `lastSeen`).
+- Heartbeat / offline is owned by `UnifiedStreamScreen` (`_startHeartbeat` / `_stopHeartbeat`). Call `_stopHeartbeat` on dispose and on `paused`, `detached`, and `hidden` lifecycle states so users do not stay “online” after leaving the app.
+
+## End-user expectations
+
+- Prefer **streams + Realtime** for lists the user expects to update live (chats, messages, users, groups, invites).
+- After auth, Realtime subscriptions use the current session; avoid subscribing before the session exists.
+
+## Groups
+
+- Per-member unread is stored in the `groups.unreadCount` JSON string (same idea as `chats.unreadCount`). `GroupService.sendGroupMessage` increments counts; `markGroupAsRead` clears for the current user when opening `GroupChatScreen`.

@@ -70,7 +70,9 @@ class InviteService {
     fetch();
 
     final sub = _realtime.subscribe([
-      'databases.${AppwriteConstants.databaseId}.collections.${AppwriteConstants.groupInvitesCollection}.documents',
+      AppwriteRealtimeChannels.tableRows(
+        AppwriteConstants.groupInvitesCollection,
+      ),
     ]);
     sub.stream.listen((_) => fetch());
     controller.onCancel = () => sub.close();

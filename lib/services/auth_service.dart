@@ -69,13 +69,15 @@ class AuthService {
 
     await _account.createEmailPasswordSession(email: email, password: password);
 
-    // Send email verification (URL should be your app's deep link or website)
+    // Requires SMTP (or a provider) configured in Appwrite Console → Messaging.
     try {
       await _account.createEmailVerification(
-        url: 'https://pointchat.app/verify',
+        url: AppwriteConstants.emailVerificationRedirectUrl,
       );
     } catch (e) {
-      debugPrint('Failed to send verification email: $e');
+      debugPrint(
+        'Verification email was not sent (check Appwrite SMTP/messaging & authorized redirect URL): $e',
+      );
     }
 
     await _saveUserToDatabase(user, isNew: true);
@@ -223,7 +225,7 @@ class AuthService {
           uid: user.$id,
           displayName: displayName,
           email: user.email,
-          isOnline: true,
+          onlineFlag: true,
         );
         await _databases.createRow(
           databaseId: AppwriteConstants.databaseId,
