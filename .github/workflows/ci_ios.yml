@@ -35,16 +35,14 @@ jobs:
       # Secrets must be base64 of the *binary* .p12 / .mobileprovision (not PEM text).
       # Use: base64 -i YourCert.p12 | pbcopy   then paste into CERTIFICATE_P12 secret.
       # Avoid `echo "$SECRET" | base64` — echo can add a newline and corrupt the file.
+      # No openssl verify here: Keychain-exported .p12 often fails OpenSSL 3 / LibreSSL but still imports via security(1).
       - name: Decode signing certificate
         env:
           CERT_P12_B64: ${{ secrets.CERTIFICATE_P12 }}
-          CERT_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
         run: |
           set -euo pipefail
           printf '%s' "$CERT_P12_B64" | tr -d '\r\n' | base64 -d > certificate.p12
           test -s certificate.p12
-          openssl pkcs12 -in certificate.p12 -nokeys -passin pass:"$CERT_PASSWORD" -out /dev/null 2>/dev/null \
-            || { echo "::error::certificate.p12 is not valid PKCS#12, or CERTIFICATE_PASSWORD is wrong. Store GitHub secret CERTIFICATE_P12 as base64 of the binary .p12 only (not PEM text). macOS: base64 -i cert.p12 | pbcopy"; exit 1; }
 
       - name: Decode provisioning profile
         env:
