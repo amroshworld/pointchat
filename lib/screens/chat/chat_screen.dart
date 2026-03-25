@@ -173,8 +173,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemBuilder: (context, index) {
                     final message = messages[index];
                     final isMe = message.senderId == widget.currentUserId;
-                    final showDate =
-                        index == messages.length - 1 ||
+                    final showDate = index == messages.length - 1 ||
                         !_isSameDay(
                           message.timestamp,
                           messages[index + 1].timestamp,
@@ -316,9 +315,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 _isRecording
                     ? Icons.stop
                     : (_isComposing ? Icons.send_rounded : Icons.mic),
-                color: _isRecording
-                    ? colorScheme.onError
-                    : colorScheme.onPrimary,
+                color:
+                    _isRecording ? colorScheme.onError : colorScheme.onPrimary,
               ),
               onPressed: () {
                 if (_isRecording) {
@@ -365,9 +363,9 @@ class _ChatScreenState extends State<ChatScreen> {
           Text(
             'Say hello! 👋',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w600,
-            ),
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
           ),
           const SizedBox(height: 8),
           Text(

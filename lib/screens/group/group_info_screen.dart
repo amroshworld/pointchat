@@ -292,58 +292,58 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                             subtitle: Text(user.email),
                             trailing:
                                 isAdmin && memberId != widget.currentUserId
-                                ? PopupMenuButton(
-                                    itemBuilder: (_) => [
-                                      if (!isMemberAdmin)
-                                        const PopupMenuItem(
-                                          value: 'make_admin',
-                                          child: Text('Make admin'),
-                                        ),
-                                      if (isMemberAdmin)
-                                        const PopupMenuItem(
-                                          value: 'remove_admin',
-                                          child: Text('Remove admin'),
-                                        ),
-                                      PopupMenuItem(
-                                        value: 'remove',
-                                        child: Text(
-                                          'Remove from group',
-                                          style: TextStyle(
-                                            color: colorScheme.error,
+                                    ? PopupMenuButton(
+                                        itemBuilder: (_) => [
+                                          if (!isMemberAdmin)
+                                            const PopupMenuItem(
+                                              value: 'make_admin',
+                                              child: Text('Make admin'),
+                                            ),
+                                          if (isMemberAdmin)
+                                            const PopupMenuItem(
+                                              value: 'remove_admin',
+                                              child: Text('Remove admin'),
+                                            ),
+                                          PopupMenuItem(
+                                            value: 'remove',
+                                            child: Text(
+                                              'Remove from group',
+                                              style: TextStyle(
+                                                color: colorScheme.error,
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                      ),
-                                    ],
-                                    onSelected: (value) {
-                                      switch (value) {
-                                        case 'make_admin':
-                                          _groupService.makeAdmin(
-                                            widget.groupId,
-                                            memberId,
-                                          );
-                                          break;
-                                        case 'remove_admin':
-                                          _groupService.removeAdmin(
-                                            widget.groupId,
-                                            memberId,
-                                          );
-                                          break;
-                                        case 'remove':
-                                          _groupService.removeMember(
-                                            widget.groupId,
-                                            memberId,
-                                            removedByName:
-                                                cachedUserName.isNotEmpty
-                                                    ? cachedUserName
-                                                    : 'Admin',
-                                            skipUnreadIncrementForActor:
-                                                widget.currentUserId,
-                                          );
-                                          break;
-                                      }
-                                    },
-                                  )
-                                : null,
+                                        ],
+                                        onSelected: (value) {
+                                          switch (value) {
+                                            case 'make_admin':
+                                              _groupService.makeAdmin(
+                                                widget.groupId,
+                                                memberId,
+                                              );
+                                              break;
+                                            case 'remove_admin':
+                                              _groupService.removeAdmin(
+                                                widget.groupId,
+                                                memberId,
+                                              );
+                                              break;
+                                            case 'remove':
+                                              _groupService.removeMember(
+                                                widget.groupId,
+                                                memberId,
+                                                removedByName:
+                                                    cachedUserName.isNotEmpty
+                                                        ? cachedUserName
+                                                        : 'Admin',
+                                                skipUnreadIncrementForActor:
+                                                    widget.currentUserId,
+                                              );
+                                              break;
+                                          }
+                                        },
+                                      )
+                                    : null,
                           ),
                         ),
                       );

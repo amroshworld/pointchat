@@ -56,16 +56,15 @@ class AuthService {
   Future<void> _signInWithGoogleMobile() async {
     final callbackUrl = Uri.parse(_oauthCallbackUrl);
     final failureUrl = callbackUrl.replace(queryParameters: {'error': 'oauth'});
-    final authUri =
-        Uri.parse(
-          '${AppwriteConstants.endpoint}/account/tokens/oauth2/google',
-        ).replace(
-          queryParameters: {
-            'project': AppwriteConstants.projectId,
-            'success': callbackUrl.toString(),
-            'failure': failureUrl.toString(),
-          },
-        );
+    final authUri = Uri.parse(
+      '${AppwriteConstants.endpoint}/account/tokens/oauth2/google',
+    ).replace(
+      queryParameters: {
+        'project': AppwriteConstants.projectId,
+        'success': callbackUrl.toString(),
+        'failure': failureUrl.toString(),
+      },
+    );
 
     final result = await FlutterWebAuth2.authenticate(
       url: authUri.toString(),
@@ -135,8 +134,7 @@ class AuthService {
   }
 
   // Save user data to Appwrite database
-  Future<void> _saveUserToDatabase(
-    models.User user) async {
+  Future<void> _saveUserToDatabase(models.User user) async {
     final displayName = user.name.isNotEmpty ? user.name : 'User';
 
     try {

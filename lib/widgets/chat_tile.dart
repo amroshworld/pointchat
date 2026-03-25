@@ -223,8 +223,8 @@ class GroupChatTile extends StatelessWidget {
                           lastMessage.isEmpty
                               ? '$memberCount members'
                               : lastSenderName.isNotEmpty
-                              ? '$lastSenderName: $lastMessage'
-                              : lastMessage,
+                                  ? '$lastSenderName: $lastMessage'
+                                  : lastMessage,
                           style: TextStyle(
                             color: colorScheme.onSurfaceVariant,
                             fontSize: 14,

@@ -31,7 +31,9 @@ class UserAvatar extends StatelessWidget {
             shape: BoxShape.rectangle,
             color: AppTheme.purpleDim,
             border: Border.all(
-              color: isOnline ? AppTheme.green : Theme.of(context).colorScheme.outline,
+              color: isOnline
+                  ? AppTheme.green
+                  : Theme.of(context).colorScheme.outline,
               width: 1.5,
             ),
           ),
@@ -45,21 +47,23 @@ class UserAvatar extends StatelessWidget {
                     ),
                   )
                 : (photoUrl != null && photoUrl!.isNotEmpty)
-                ? CachedNetworkImage(
-                    imageUrl: photoUrl!,
-                    width: radius * 2,
-                    height: radius * 2,
-                    fit: BoxFit.cover,
-                    memCacheWidth:
-                        (radius * 2 * MediaQuery.devicePixelRatioOf(context))
+                    ? CachedNetworkImage(
+                        imageUrl: photoUrl!,
+                        width: radius * 2,
+                        height: radius * 2,
+                        fit: BoxFit.cover,
+                        memCacheWidth: (radius *
+                                2 *
+                                MediaQuery.devicePixelRatioOf(context))
                             .toInt(),
-                    memCacheHeight:
-                        (radius * 2 * MediaQuery.devicePixelRatioOf(context))
+                        memCacheHeight: (radius *
+                                2 *
+                                MediaQuery.devicePixelRatioOf(context))
                             .toInt(),
-                    errorWidget: (context, url, error) =>
-                        _buildFallbackText(context),
-                  )
-                : _buildFallbackText(context),
+                        errorWidget: (context, url, error) =>
+                            _buildFallbackText(context),
+                      )
+                    : _buildFallbackText(context),
           ),
         ),
         if (showOnlineIndicator)

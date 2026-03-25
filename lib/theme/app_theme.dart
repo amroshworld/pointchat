@@ -68,13 +68,14 @@ class AppTheme {
     Color? color,
     double? height,
     double? letterSpacing,
-  }) => GoogleFonts.inter(
-    fontSize: size,
-    fontWeight: weight,
-    color: color,
-    height: height,
-    letterSpacing: letterSpacing,
-  );
+  }) =>
+      GoogleFonts.inter(
+        fontSize: size,
+        fontWeight: weight,
+        color: color,
+        height: height,
+        letterSpacing: letterSpacing,
+      );
 
   /// Stream list titles (Arabic, emoji, etc.): Inter first, then system Arabic-capable fonts.
   static TextStyle chatConversationTitleStyle(
@@ -142,9 +143,8 @@ class AppTheme {
     required Color accentColor,
   }) {
     final isDark = brightness == Brightness.dark;
-    final invertedAccentColor = isDark
-        ? black
-        : white; // Text color on top of accent
+    final invertedAccentColor =
+        isDark ? black : white; // Text color on top of accent
 
     return ThemeData(
       useMaterial3: true,
@@ -165,9 +165,8 @@ class AppTheme {
         surfaceContainerHighest: surface2Color,
         onSurfaceVariant: secondaryTextColor,
         outline: borderColor,
-        tertiaryContainer: isDark
-            ? const Color(0xFF0D1C0D)
-            : const Color(0xFFE8F5E9),
+        tertiaryContainer:
+            isDark ? const Color(0xFF0D1C0D) : const Color(0xFFE8F5E9),
         onTertiaryContainer: success,
       ),
 

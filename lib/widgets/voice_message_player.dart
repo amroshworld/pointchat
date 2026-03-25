@@ -144,9 +144,8 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final fgColor = widget.isMe
-        ? colorScheme.onPrimaryContainer
-        : colorScheme.onSurface;
+    final fgColor =
+        widget.isMe ? colorScheme.onPrimaryContainer : colorScheme.onSurface;
 
     return GestureDetector(
       onHorizontalDragEnd: (details) {
@@ -169,7 +168,9 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                   onLongPress: _cycleSpeed,
                   onTap: _togglePlay,
                   child: Icon(
-                    _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                    _isPlaying
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_fill,
                     color: fgColor,
                     size: 36,
                   ),
@@ -177,7 +178,8 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                 const SizedBox(width: 4),
                 IconButton(
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
                   icon: Icon(Icons.replay_5_rounded, color: fgColor, size: 22),
                   onPressed: () => _seekBy(-1000),
                 ),
@@ -198,7 +200,7 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                               progress: _duration.inMilliseconds == 0
                                   ? 0.0
                                   : _position.inMilliseconds /
-                                        _duration.inMilliseconds,
+                                      _duration.inMilliseconds,
                               color: fgColor.withValues(alpha: 0.3),
                               progressColor: fgColor,
                             ),
@@ -210,7 +212,8 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                 ),
                 IconButton(
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
                   icon: Icon(Icons.forward_5_rounded, color: fgColor, size: 22),
                   onPressed: () => _seekBy(1000),
                 ),
@@ -241,7 +244,8 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
                   GestureDetector(
                     onTap: _cycleSpeed,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         border: Border.all(
                           color: fgColor.withValues(alpha: 0.35),

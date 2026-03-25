@@ -26,13 +26,11 @@ class UserService {
   Stream<UserModel?> getUserStream(String uid) {
     final controller = StreamController<UserModel?>.broadcast();
 
-    getUserById(uid)
-        .then((user) {
-          if (!controller.isClosed) controller.add(user);
-        })
-        .catchError((e) {
-          if (!controller.isClosed) controller.addError(e);
-        });
+    getUserById(uid).then((user) {
+      if (!controller.isClosed) controller.add(user);
+    }).catchError((e) {
+      if (!controller.isClosed) controller.addError(e);
+    });
 
     final sub = _realtime.subscribe([
       AppwriteRealtimeChannels.tableRow(
@@ -51,13 +49,11 @@ class UserService {
     // Re-fetch so [UserModel.fromMap] presence TTL (lastSeen window) stays accurate
     // without requiring another row update.
     final ttlTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      getUserById(uid)
-          .then((user) {
-            if (!controller.isClosed) controller.add(user);
-          })
-          .catchError((e) {
-            if (!controller.isClosed) controller.addError(e);
-          });
+      getUserById(uid).then((user) {
+        if (!controller.isClosed) controller.add(user);
+      }).catchError((e) {
+        if (!controller.isClosed) controller.addError(e);
+      });
     });
 
     controller.onCancel = () {
