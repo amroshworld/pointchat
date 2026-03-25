@@ -89,6 +89,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   late final String currentUserId = widget.currentUserId;
 
   List<UserModel> _allUsers = [];
+  final Map<String, UserModel> _normalizedUsersMap = {};
   List<GroupModel> _allGroups = [];
   UserModel? _currentUserModel;
   bool _isUploading = false;
@@ -311,6 +312,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       if (mounted) {
         setState(() {
           _allUsers = users;
+          _normalizedUsersMap.clear();
+          for (final u in _allUsers) {
+            _normalizedUsersMap[_normalizeHandleToken(u.displayName)] = u;
+          }
         });
       }
     });
@@ -934,10 +939,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   Map<String, dynamic>? _findItemByHandle(String handle) {
     if (handle.startsWith('@')) {
       final normalized = _normalizeHandleToken(handle.substring(1));
-      final user = _allUsers.cast<UserModel?>().firstWhere(
-            (u) => _normalizeHandleToken(u!.displayName) == normalized,
-            orElse: () => null,
-          );
+      final user = _normalizedUsersMap[normalized];
       if (user != null) {
         return {
           'type': 'dm',
@@ -2655,10 +2657,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
     for (final handle in handles.where((h) => h.startsWith('@'))) {
       final tHandle = _normalizeHandleToken(handle.substring(1));
-      final targetUser = _allUsers.cast<UserModel?>().firstWhere(
-            (u) => _normalizeHandleToken(u!.displayName) == tHandle,
-            orElse: () => null,
-          );
+      final targetUser = _normalizedUsersMap[tHandle];
       if (targetUser != null) {
         mentionedUsersByHandle[handle] = targetUser;
       }
@@ -2712,10 +2711,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
         }
 
         final tHandle = _normalizeHandleToken(handle.substring(1));
-        final targetUser = _allUsers.cast<UserModel?>().firstWhere(
-              (u) => _normalizeHandleToken(u!.displayName) == tHandle,
-              orElse: () => null,
-            );
+        final targetUser = _normalizedUsersMap[tHandle];
 
         if (targetUser != null) {
           if (!dmTargetsSent.add(targetUser.uid)) {
@@ -3124,10 +3120,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             for (var handle in handles) {
               if (handle.startsWith('@')) {
                 final tNorm = _normalizeHandleToken(handle.substring(1));
-                final targetUser = _allUsers.cast<UserModel?>().firstWhere(
-                      (u) => _normalizeHandleToken(u!.displayName) == tNorm,
-                      orElse: () => null,
-                    );
+                final targetUser = _normalizedUsersMap[tNorm];
                 if (targetUser != null) {
                   final chatId = await _chatService.getOrCreateChat(
                     currentUserId,
@@ -4414,6 +4407,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                               status: 'Custom AI Bot',
                             ),
                           ];
+                          _normalizedUsersMap.clear();
+                          for (final u in _allUsers) {
+                            _normalizedUsersMap[_normalizeHandleToken(u.displayName)] = u;
+                          }
                         }
                         _focusedHandle = _formatHandle(botName);
                       });
