@@ -1,33 +1,39 @@
 import re
 
-def main():
-    login_screen = "lib/screens/auth/login_screen.dart"
-    with open(login_screen, "r", encoding="utf-8") as f:
-        content = f.read()
-    content = content.replace("const BorderSide(", "BorderSide(")
-    with open(login_screen, "w", encoding="utf-8") as f:
-        f.write(content)
-        
-    ai_sub = "lib/screens/subscription/ai_subscription_screen.dart"
-    with open(ai_sub, "r", encoding="utf-8") as f:
-        content = f.read()
-    content = content.replace("const BorderSide(color: Theme.of(context)", "BorderSide(color: Theme.of(context)")
-    with open(ai_sub, "w", encoding="utf-8") as f:
-        f.write(content)
+with open('lib/screens/chat/chat_list_screen.dart', 'r') as f:
+    content = f.read()
 
-    chat_list = "lib/screens/chat/chat_list_screen.dart"
-    with open(chat_list, "r", encoding="utf-8") as f:
-        content = f.read()
-    content = content.replace("const Icon(Icons.close, color: _textSecondary)", "Icon(Icons.close, color: _textSecondary)")
-    content = content.replace("child: const CircularProgressIndicator(color: _accent)", "child: CircularProgressIndicator(color: _accent)")
-    content = content.replace("const TextStyle(color: _textSecondary, fontSize: 13)", "TextStyle(color: _textSecondary, fontSize: 13)")
-    content = content.replace("const TextStyle(color: _textPrimary, fontSize: 13)", "TextStyle(color: _textPrimary, fontSize: 13)")
-    content = content.replace("const TextStyle(color: _textPrimary, fontSize: 15)", "TextStyle(color: _textPrimary, fontSize: 15)")
-    content = content.replace("const TextStyle(color: _textSecondary, fontSize: 15)", "TextStyle(color: _textSecondary, fontSize: 15)")
-    content = content.replace("const Icon(Icons.chat_bubble_outline, size: 60, color: _textSecondary)", "Icon(Icons.chat_bubble_outline, size: 60, color: _textSecondary)")
-    
-    with open(chat_list, "w", encoding="utf-8") as f:
-        f.write(content)
+old_code = """    if (_isSelectionMode && _selectedChatIds.isNotEmpty) {
+      for (final chatId in _selectedChatIds) {
+        await _chatService.sendMessage(
+          chatId: chatId,
+          senderId: widget.currentUserId,
+          senderName: senderName,
+          senderPhotoUrl: senderPhoto,
+          text: text,
+        );
+      }
+      _clearSelection();"""
 
-if __name__ == '__main__':
-    main()
+new_code = """    if (_isSelectionMode && _selectedChatIds.isNotEmpty) {
+      await Future.wait(
+        _selectedChatIds.map(
+          (chatId) => _chatService.sendMessage(
+            chatId: chatId,
+            senderId: widget.currentUserId,
+            senderName: senderName,
+            senderPhotoUrl: senderPhoto,
+            text: text,
+          ),
+        ),
+      );
+      _clearSelection();"""
+
+new_content = content.replace(old_code, new_code)
+
+if old_code in content:
+    with open('lib/screens/chat/chat_list_screen.dart', 'w') as f:
+        f.write(new_content)
+    print("Success")
+else:
+    print("Code not found")
