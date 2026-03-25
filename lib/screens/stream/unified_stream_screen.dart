@@ -195,15 +195,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           pendingByGroup.putIfAbsent(groupId, () => <String>[]).add(userId);
         }
 
+        final usersMap = {for (var u in users.cast<UserModel>()) u.uid: u};
+
         for (var chat in chats) {
           final otherUserId = chat.getOtherUserId(currentUserId);
           final isAiSelfChat = chat.isSelfParticipantChat;
-          final otherUser = isAiSelfChat
-              ? null
-              : users.cast<UserModel?>().firstWhere(
-                    (u) => u?.uid == otherUserId,
-                    orElse: () => null,
-                  );
+          final otherUser = isAiSelfChat ? null : usersMap[otherUserId];
           final isBotDm = otherUser?.isBot ?? false;
           // Hide empty DMs except AI thread and custom bots (newly created bots
           // have no lastMessage yet and would otherwise never appear).
@@ -259,10 +256,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             if (uid == currentUserId) {
               if (_currentUserModel?.isOnline == true) onlineCount++;
             } else {
-              final member = users.cast<UserModel?>().firstWhere(
-                    (u) => u?.uid == uid,
-                    orElse: () => null,
-                  );
+              final member = usersMap[uid];
               if (member != null && member.isOnline) onlineCount++;
             }
           }

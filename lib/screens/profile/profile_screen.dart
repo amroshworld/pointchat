@@ -13,6 +13,7 @@ import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
 import '../../appwrite_client.dart';
 import '../../utils/composer_preferences.dart';
+import '../../providers/theme_provider.dart';
 import '../subscription/ai_subscription_screen.dart';
 import 'chat_privacy_settings_screen.dart';
 
@@ -131,6 +132,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final authState = ref.watch(authProvider);
     final authNotifier = ref.read(authProvider.notifier);
+    final currentThemeMode = ref.watch(themeModeProvider);
 
     if (cachedUserId.isEmpty) return const SizedBox.shrink();
 
@@ -347,10 +349,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                         ),
                         title: const Text('Theme'),
-                        subtitle: const Text('System default'),
+                        subtitle: Text(
+                          currentThemeMode == ThemeMode.system
+                              ? 'System default'
+                              : currentThemeMode == ThemeMode.light
+                                  ? 'Light'
+                                  : 'Dark',
+                        ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () {
-                          // TODO: Theme selector
+                          showModalBottomSheet(
+                            context: context,
+                            builder: (context) => _ThemeSelectorSheet(
+                              currentMode: currentThemeMode,
+                              onModeSelected: (mode) => ref.read(themeModeProvider.notifier).setMode(mode),
+                            ),
+                          );
                         },
                       ),
                       const Divider(height: 1, indent: 72),
@@ -563,6 +577,49 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ],
         );
       },
+    );
+  }
+}
+
+class _ThemeSelectorSheet extends StatelessWidget {
+  final ThemeMode currentMode;
+  final ValueChanged<ThemeMode> onModeSelected;
+
+  const _ThemeSelectorSheet({
+    required this.currentMode,
+    required this.onModeSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              'Choose Theme',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          for (final mode in ThemeMode.values)
+            RadioListTile<ThemeMode>(
+              title: Text(
+                mode.name[0].toUpperCase() + mode.name.substring(1).toLowerCase() +
+                    (mode == ThemeMode.system ? ' default' : ''),
+              ),
+              value: mode,
+              groupValue: currentMode,
+              onChanged: (selectedMode) {
+                if (selectedMode != null) {
+                  onModeSelected(selectedMode);
+                  Navigator.pop(context);
+                }
+              },
+            ),
+        ],
+      ),
     );
   }
 }

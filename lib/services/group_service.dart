@@ -22,8 +22,9 @@ class GroupService {
   }) async {
     final groupId = ID.unique();
 
-    final invitees =
-        members.where((id) => id != createdBy).toList(growable: false);
+    final invitees = members
+        .where((id) => id != createdBy)
+        .toList(growable: false);
     final memberList = [createdBy];
     final unreadInit = {createdBy: 0};
 
@@ -196,10 +197,7 @@ class GroupService {
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.groupsCollection,
       rowId: groupId,
-      data: {
-        'pendingMemberIds': pending,
-        'unreadCount': jsonEncode(unread),
-      },
+      data: {'pendingMemberIds': pending, 'unreadCount': jsonEncode(unread)},
     );
   }
 
@@ -549,10 +547,7 @@ class GroupService {
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.groupsCollection,
       rowId: groupId,
-      data: {
-        'pendingMemberIds': pending,
-        'unreadCount': jsonEncode(unread),
-      },
+      data: {'pendingMemberIds': pending, 'unreadCount': jsonEncode(unread)},
     );
 
     final inviter = actorUserId != null && actorUserId.isNotEmpty
@@ -666,10 +661,7 @@ class GroupService {
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.groupsCollection,
       rowId: groupId,
-      data: {
-        'members': members,
-        'unreadCount': jsonEncode(unread),
-      },
+      data: {'members': members, 'unreadCount': jsonEncode(unread)},
     );
 
     await _addToArray(
@@ -758,35 +750,33 @@ class GroupService {
     final invites = await _databases.listRows(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.groupInvitesCollection,
-      queries: [
-        Query.equal('groupId', groupId),
-        Query.limit(500),
-      ],
+      queries: [Query.equal('groupId', groupId), Query.limit(500)],
     );
     await Future.wait(
-      invites.rows.map((row) => _databases.deleteRow(
-            databaseId: AppwriteConstants.databaseId,
-            tableId: AppwriteConstants.groupInvitesCollection,
-            rowId: row.$id,
-          )),
+      invites.rows.map(
+        (row) => _databases.deleteRow(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.groupInvitesCollection,
+          rowId: row.$id,
+        ),
+      ),
     );
 
     while (true) {
       final batch = await _databases.listRows(
         databaseId: AppwriteConstants.databaseId,
         tableId: AppwriteConstants.messagesCollection,
-        queries: [
-          Query.equal('groupId', groupId),
-          Query.limit(100),
-        ],
+        queries: [Query.equal('groupId', groupId), Query.limit(100)],
       );
       if (batch.rows.isEmpty) break;
       await Future.wait(
-        batch.rows.map((m) => _databases.deleteRow(
-              databaseId: AppwriteConstants.databaseId,
-              tableId: AppwriteConstants.messagesCollection,
-              rowId: m.$id,
-            )),
+        batch.rows.map(
+          (m) => _databases.deleteRow(
+            databaseId: AppwriteConstants.databaseId,
+            tableId: AppwriteConstants.messagesCollection,
+            rowId: m.$id,
+          ),
+        ),
       );
     }
 
@@ -797,12 +787,14 @@ class GroupService {
     );
 
     await Future.wait(
-      affected.map((uid) => _removeFromArray(
-            AppwriteConstants.usersCollection,
-            uid,
-            'groupIds',
-            groupId,
-          )),
+      affected.map(
+        (uid) => _removeFromArray(
+          AppwriteConstants.usersCollection,
+          uid,
+          'groupIds',
+          groupId,
+        ),
+      ),
     );
   }
 
