@@ -230,15 +230,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
     _messageController.clear();
 
     if (_isSelectionMode && _selectedChatIds.isNotEmpty) {
-      for (final chatId in _selectedChatIds) {
-        await _chatService.sendMessage(
-          chatId: chatId,
-          senderId: widget.currentUserId,
-          senderName: senderName,
-          senderPhotoUrl: senderPhoto,
-          text: text,
-        );
-      }
+      await Future.wait(
+        _selectedChatIds.map(
+          (chatId) => _chatService.sendMessage(
+            chatId: chatId,
+            senderId: widget.currentUserId,
+            senderName: senderName,
+            senderPhotoUrl: senderPhoto,
+            text: text,
+          ),
+        ),
+      );
       _clearSelection();
     } else if (_expandedChatId != null) {
       await _chatService.sendMessage(
