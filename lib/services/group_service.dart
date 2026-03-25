@@ -85,7 +85,7 @@ class GroupService {
           databaseId: AppwriteConstants.databaseId,
           tableId: AppwriteConstants.groupsCollection,
           queries: [
-            Query.contains('members', [userId]),
+            Query.contains('members', userId),
             Query.orderDesc('lastMessageTime'),
             Query.limit(100),
           ],
@@ -94,7 +94,7 @@ class GroupService {
           databaseId: AppwriteConstants.databaseId,
           tableId: AppwriteConstants.groupsCollection,
           queries: [
-            Query.contains('pendingMemberIds', [userId]),
+            Query.contains('pendingMemberIds', userId),
             Query.orderDesc('lastMessageTime'),
             Query.limit(100),
           ],
@@ -741,35 +741,63 @@ class GroupService {
     );
   }
 
-  // Delete group
-  Future<void> deleteGroup(String groupId, List<String> members) async {
-    // Delete all messages for this group
-    final messages = await _databases.listRows(
+  /// Deletes the group, its messages (batched), invite rows, and clears [groupIds] on every
+  /// affected user (members + pending invitees).
+  Future<void> deleteGroup(String groupId) async {
+    final doc = await _databases.getRow(
       databaseId: AppwriteConstants.databaseId,
-      tableId: AppwriteConstants.messagesCollection,
-      queries: [Query.equal('groupId', groupId), Query.limit(500)],
+      tableId: AppwriteConstants.groupsCollection,
+      rowId: groupId,
     );
+    final members = List<String>.from(doc.data['members'] ?? []);
+    final pending = List<String>.from(doc.data['pendingMemberIds'] ?? []);
+    final affected = <String>{...members, ...pending};
 
-    for (final doc in messages.rows) {
+    final invites = await _databases.listRows(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.groupInvitesCollection,
+      queries: [
+        Query.equal('groupId', groupId),
+        Query.limit(500),
+      ],
+    );
+    for (final row in invites.rows) {
       await _databases.deleteRow(
         databaseId: AppwriteConstants.databaseId,
-        tableId: AppwriteConstants.messagesCollection,
-        rowId: doc.$id,
+        tableId: AppwriteConstants.groupInvitesCollection,
+        rowId: row.$id,
       );
     }
 
-    // Delete group
+    while (true) {
+      final batch = await _databases.listRows(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.messagesCollection,
+        queries: [
+          Query.equal('groupId', groupId),
+          Query.limit(100),
+        ],
+      );
+      if (batch.rows.isEmpty) break;
+      for (final m in batch.rows) {
+        await _databases.deleteRow(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.messagesCollection,
+          rowId: m.$id,
+        );
+      }
+    }
+
     await _databases.deleteRow(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.groupsCollection,
       rowId: groupId,
     );
 
-    // Remove groupId from all members
-    for (final memberId in members) {
+    for (final uid in affected) {
       await _removeFromArray(
         AppwriteConstants.usersCollection,
-        memberId,
+        uid,
         'groupIds',
         groupId,
       );

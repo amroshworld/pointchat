@@ -2,7 +2,6 @@ import '../../widgets/pixel_symbol.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -46,6 +45,7 @@ import '../../widgets/voice_message_player.dart';
 import '../../utils/pointchat_tips.dart';
 import '../../utils/composer_preferences.dart';
 import '../../utils/chat_image_upload.dart';
+import '../../utils/group_handle_resolver.dart';
 
 /// Shown when typing `@` so features like `@ai` are discoverable.
 class _AtCommandSuggestion {
@@ -158,6 +158,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   @override
   void initState() {
     super.initState();
+    ComposerPreferences.tipsHiddenListenable.addListener(
+      _onComposerTipsHiddenChanged,
+    );
     WidgetsBinding.instance.addObserver(this);
     _startHeartbeat();
 
@@ -247,8 +250,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
         }
 
         for (var group in groups) {
-          if (group.lastMessage.isEmpty) continue;
-
           final pendingInviteIds =
               pendingByGroup[group.groupId] ?? const <String>[];
 
@@ -268,21 +269,30 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               ? 0.0
               : onlineCount / group.members.length;
 
+          final hasPreview = group.lastMessage.isNotEmpty;
+          final preview = hasPreview
+              ? _sanitizeGroupPreviewMessage(group.lastMessage)
+              : (group.pendingMemberIds.isNotEmpty
+                    ? 'Invite pending · open to view'
+                    : 'New group — open to chat');
+
           merged.add({
             'type': 'group',
             'id': group.groupId,
             'timeRaw': group.lastMessageTime ?? DateTime.now(),
             'conversationTitle': group.name,
             'handle': _formatGroupHandle(group.name),
-            'sender': group.lastMessageSenderId == currentUserId
-                ? 'me'
-                : group.lastMessageSenderName,
-            'content': _sanitizeGroupPreviewMessage(group.lastMessage),
+            'sender': hasPreview
+                ? (group.lastMessageSenderId == currentUserId
+                      ? 'me'
+                      : group.lastMessageSenderName)
+                : '',
+            'content': preview,
             'time': group.lastMessageTime != null
                 ? DateFormat('HH:mm').format(group.lastMessageTime!)
                 : '',
             'isUnread': (group.unreadCount[currentUserId] ?? 0) > 0,
-            'image': group.lastMessage.contains('📷'),
+            'image': hasPreview && group.lastMessage.contains('📷'),
             'photoUrl': group.photoUrl,
             'isOnline': onlineCount > 0,
             'onlinePercentage': percentage,
@@ -386,7 +396,18 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     unawaited(_loadComposerPrefsAndTips());
   }
 
+  void _onComposerTipsHiddenChanged() {
+    if (ComposerPreferences.tipsHiddenListenable.value) {
+      _composerTipTimer?.cancel();
+      _composerTipTimer = null;
+    } else {
+      _syncComposerTipTimer();
+    }
+    if (mounted) setState(() {});
+  }
+
   Future<void> _loadComposerPrefsAndTips() async {
+    await ComposerPreferences.syncListenableFromPrefs();
     final rotate = await ComposerPreferences.getTipsRotateEnabled();
     await PointchatTips.instance.ensureLoaded();
     if (!mounted) return;
@@ -400,6 +421,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   void _syncComposerTipTimer() {
     _composerTipTimer?.cancel();
     _composerTipTimer = null;
+    if (ComposerPreferences.tipsHiddenListenable.value) return;
     if (!_tipsRotateEnabled || !mounted) return;
     final n = PointchatTips.instance.rotatingTips.length;
     if (n <= 1) return;
@@ -490,7 +512,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               ),
               const SizedBox(height: 12),
               _helpRow(ctx, '@name', 'Message someone from your chats'),
-              _helpRow(ctx, '#group', 'Post to a group (create if new)'),
+              _helpRow(
+                ctx,
+                '#group or #group~id',
+                'Same name twice? Pick from the sheet or use #name~first8id chars',
+              ),
               _helpRow(
                 ctx,
                 '@ai',
@@ -689,6 +715,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
   @override
   void dispose() {
+    ComposerPreferences.tipsHiddenListenable.removeListener(
+      _onComposerTipsHiddenChanged,
+    );
     WidgetsBinding.instance.removeObserver(this);
     _stopHeartbeat();
     _participantIdsSub?.cancel();
@@ -745,6 +774,80 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       return 'Invitation pending approval';
     }
     return text;
+  }
+
+  Future<GroupModel?> _pickGroupWhenAmbiguous(List<GroupModel> matches) async {
+    if (!mounted || matches.isEmpty) {
+      return null;
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return showModalBottomSheet<GroupModel>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                child: Text(
+                  'Several groups share this name. Pick one:',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+              ...matches.map((g) {
+                final hint =
+                    GroupHandleResolver.composerHandleForGroup(g, _allGroups);
+                final idFrag = g.groupId.length <= 8
+                    ? g.groupId
+                    : '${g.groupId.substring(0, 8)}…';
+                return ListTile(
+                  title: Text(g.name, style: GoogleFonts.inter()),
+                  subtitle: Text(
+                    '$hint · $idFrag',
+                    style: GoogleFonts.jetBrainsMono(fontSize: 11),
+                  ),
+                  onTap: () => Navigator.pop(ctx, g),
+                );
+              }),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<GroupModel?> _resolveGroupForAiContext(String handleWithHash) async {
+    final parsed = GroupHandleResolver.parseAfterHash(
+      handleWithHash.substring(1),
+    );
+    final matches = GroupHandleResolver.matchingByName(
+      _allGroups,
+      parsed.nameToken,
+    );
+    if (matches.isEmpty) {
+      return null;
+    }
+    if (parsed.idSuffix != null && parsed.idSuffix!.isNotEmpty) {
+      return GroupHandleResolver.pickByIdSuffix(matches, parsed.idSuffix!);
+    }
+    if (matches.length == 1) {
+      return matches.first;
+    }
+    return _pickGroupWhenAmbiguous(matches);
   }
 
   String _formatHandle(String name) {
@@ -856,11 +959,17 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     }
 
     if (handle.startsWith('#')) {
-      final normalized = _normalizeHandleToken(handle.substring(1));
-      final group = _allGroups.cast<GroupModel?>().firstWhere(
-        (g) => _normalizeHandleToken(g!.name) == normalized,
-        orElse: () => null,
+      final parsed = GroupHandleResolver.parseAfterHash(handle.substring(1));
+      final matches = GroupHandleResolver.matchingByName(
+        _allGroups,
+        parsed.nameToken,
       );
+      if (matches.isEmpty) {
+        return null;
+      }
+      final group = parsed.idSuffix != null && parsed.idSuffix!.isNotEmpty
+          ? GroupHandleResolver.pickByIdSuffix(matches, parsed.idSuffix!)
+          : (matches.length == 1 ? matches.first : null);
       if (group != null) {
         return {
           'type': 'group',
@@ -909,9 +1018,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
         return Stack(
           children: [
             Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(color: Colors.black.withValues(alpha: 0.6)),
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.72),
               ),
             ),
             Center(
@@ -999,25 +1107,28 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     required IconData icon,
     required String label,
     required VoidCallback onTap,
+    bool danger = false,
   }) {
+    final fg = danger ? const Color(0xFFFFB4AB) : Colors.white;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.zero,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white12, // High contrast button bg without border
+          color: danger ? Colors.white10 : Colors.white12,
           borderRadius: BorderRadius.zero,
+          border: danger ? Border.all(color: fg.withValues(alpha: 0.35)) : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: Colors.white, size: 18),
+            Icon(icon, color: fg, size: 18),
             const SizedBox(width: 8),
             Text(
               label,
               style: GoogleFonts.inter(
-                color: Colors.white,
+                color: fg,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -1116,6 +1227,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                       icon: Icons.person_add_alt_1_rounded,
                       label: 'Add Member',
                       onTap: () => _showAddMembersOverlay(group),
+                    ),
+                    _overlayActionButton(
+                      icon: Icons.delete_forever_outlined,
+                      label: 'Delete group',
+                      danger: true,
+                      onTap: () => _confirmDeleteGroupFromOverlay(group),
                     ),
                   ],
                 ),
@@ -1230,11 +1347,121 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                   ),
                 );
               }),
+              if (group.pendingMemberIds.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Text(
+                  'Pending invites',
+                  style: GoogleFonts.inter(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'They must accept the invite before they appear in Members.',
+                  style: GoogleFonts.inter(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withValues(alpha: 0.85),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...group.pendingMemberIds.map((pid) {
+                  final user = _allUsers.cast<UserModel?>().firstWhere(
+                    (u) => u?.uid == pid,
+                    orElse: () => null,
+                  );
+                  final label = user != null
+                      ? _formatHandle(user.displayName)
+                      : 'User ${pid.length > 8 ? pid.substring(0, 8) : pid}…';
+                  return Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.zero,
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                    child: Text(
+                      '$label · waiting to accept',
+                      style: GoogleFonts.inter(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+                }),
+              ],
             ],
           ),
         );
       },
     );
+  }
+
+  Future<void> _confirmDeleteGroupFromOverlay(GroupModel group) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete group?'),
+        content: Text(
+          '“${group.name}” will be removed for everyone. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _groupService.deleteGroup(group.groupId);
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Group deleted',
+              style: GoogleFonts.inter(),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not delete group: $e',
+              style: GoogleFonts.inter(),
+            ),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildUserSettingsContent(Map<String, dynamic> item) {
@@ -2580,15 +2807,30 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           }
         }
       } else if (handle.startsWith('#')) {
-        final tHandle = _normalizeHandleToken(handle.substring(1));
-        final targetGroup = _allGroups.cast<GroupModel?>().firstWhere(
-          (g) => _normalizeHandleToken(g!.name) == tHandle,
-          orElse: () => null,
+        final parsed = GroupHandleResolver.parseAfterHash(handle.substring(1));
+        final matches = GroupHandleResolver.matchingByName(
+          _allGroups,
+          parsed.nameToken,
         );
 
-        String targetGroupId = targetGroup?.groupId ?? '';
+        String targetGroupId = '';
+        var didGroupAction = false;
 
-        if (targetGroupId.isEmpty) {
+        if (matches.isEmpty) {
+          if (parsed.idSuffix != null && parsed.idSuffix!.isNotEmpty) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'No group matches #${parsed.nameToken}~${parsed.idSuffix}',
+                    style: GoogleFonts.jetBrainsMono(),
+                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+                ),
+              );
+            }
+            continue;
+          }
           final invitees = mentionedUsersByHandle.values
               .where((u) => u.uid != currentUserId)
               .map((u) => u.uid)
@@ -2596,11 +2838,57 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               .toList();
 
           targetGroupId = await _groupService.createGroup(
-            name: _displayGroupNameFromToken(tHandle),
-            description: 'Created from #$tHandle',
+            name: _displayGroupNameFromToken(parsed.nameToken),
+            description: 'Created from #${parsed.nameToken}',
             createdBy: currentUserId,
             members: invitees,
           );
+          didGroupAction = true;
+        } else {
+          GroupModel? targetGroup;
+          if (parsed.idSuffix != null && parsed.idSuffix!.isNotEmpty) {
+            targetGroup =
+                GroupHandleResolver.pickByIdSuffix(matches, parsed.idSuffix!);
+            if (targetGroup == null) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'No match for #${parsed.nameToken}~${parsed.idSuffix}',
+                      style: GoogleFonts.jetBrainsMono(),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.zero,
+                    ),
+                  ),
+                );
+              }
+              continue;
+            }
+          } else if (matches.length == 1) {
+            targetGroup = matches.first;
+          } else {
+            targetGroup = await _pickGroupWhenAmbiguous(matches);
+            if (targetGroup == null) {
+              continue;
+            }
+          }
+
+          targetGroupId = targetGroup.groupId;
+          final inviteUids = mentionedUsersByHandle.values
+              .map((u) => u.uid)
+              .where((id) => id != currentUserId)
+              .toSet()
+              .toList();
+          if (inviteUids.isNotEmpty) {
+            await _groupService.addMembers(
+              targetGroupId,
+              inviteUids,
+              currentUserName.isEmpty ? 'Member' : currentUserName,
+              actorUserId: currentUserId,
+            );
+            didGroupAction = true;
+          }
         }
 
         if (targetGroupId.isNotEmpty &&
@@ -2618,9 +2906,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             latitude: latitude,
             longitude: longitude,
           );
+          didGroupAction = true;
         }
 
-        if (targetGroupId.isNotEmpty) {
+        if (didGroupAction) {
           sentAtLeastOne = true;
         }
       }
@@ -2887,11 +3176,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                   }
                 }
               } else if (handle.startsWith('#')) {
-                final tNorm = _normalizeHandleToken(handle.substring(1));
-                final targetGroup = _allGroups.cast<GroupModel?>().firstWhere(
-                  (g) => _normalizeHandleToken(g!.name) == tNorm,
-                  orElse: () => null,
-                );
+                final targetGroup = await _resolveGroupForAiContext(handle);
                 if (targetGroup != null) {
                   List<MessageModel> msgs = [];
                   if (onlyUnread) {
@@ -3488,10 +3773,17 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                               : isAtCmd
                               ? suggestion.label
                               : suggestion.toString();
+                          GroupModel? groupPick;
+                          if (isGroup) {
+                            groupPick = suggestion;
+                          }
                           final handle = isUser
                               ? _formatHandle(name)
-                              : isGroup
-                              ? _formatGroupHandle(name)
+                              : groupPick != null
+                              ? GroupHandleResolver.composerHandleForGroup(
+                                  groupPick,
+                                  _allGroups,
+                                )
                               : isCreateGroup
                               ? '#${suggestion.token}'
                               : isAtCmd
@@ -3539,6 +3831,16 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                     suggestion.hint,
                                     style: GoogleFonts.inter(
                                       fontSize: 11,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  )
+                                : groupPick != null
+                                ? Text(
+                                    groupPick.groupId.length <= 10
+                                        ? groupPick.groupId
+                                        : '${groupPick.groupId.substring(0, 10)}…',
+                                    style: GoogleFonts.jetBrainsMono(
+                                      fontSize: 10,
                                       color: scheme.onSurfaceVariant,
                                     ),
                                   )
@@ -3635,69 +3937,77 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           },
         ),
 
-        if (_composerTipsLoaded &&
-            PointchatTips.instance.rotatingTips.isNotEmpty &&
-            !_isAiMode &&
-            _replyingToMessage == null &&
-            _forwardingMessage == null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 2, 8, 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Icon(
-                    Icons.tips_and_updates_outlined,
-                    size: 14,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant
-                        .withValues(alpha: 0.55),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    PointchatTips.instance.rotatingTips[_composerTipIndex %
-                        PointchatTips.instance.rotatingTips.length],
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      height: 1.25,
+        ValueListenableBuilder<bool>(
+          valueListenable: ComposerPreferences.tipsHiddenListenable,
+          builder: (context, tipsHidden, _) {
+            if (tipsHidden ||
+                !_composerTipsLoaded ||
+                PointchatTips.instance.rotatingTips.isEmpty ||
+                _isAiMode ||
+                _replyingToMessage != null ||
+                _forwardingMessage != null) {
+              return const SizedBox.shrink();
+            }
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(14, 2, 8, 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      Icons.tips_and_updates_outlined,
+                      size: 14,
                       color: Theme.of(context)
                           .colorScheme
                           .onSurfaceVariant
-                          .withValues(alpha: 0.72),
+                          .withValues(alpha: 0.55),
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                Tooltip(
-                  message: _tipsRotateEnabled
-                      ? 'Pause tip rotation'
-                      : 'Resume tip rotation',
-                  child: InkWell(
-                    onTap: _toggleTipRotation,
-                    borderRadius: BorderRadius.circular(20),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 2, 4, 2),
-                      child: Icon(
-                        _tipsRotateEnabled
-                            ? Icons.pause_circle_outline_rounded
-                            : Icons.play_circle_outline_rounded,
-                        size: 20,
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      PointchatTips.instance.rotatingTips[_composerTipIndex %
+                          PointchatTips.instance.rotatingTips.length],
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        height: 1.25,
                         color: Theme.of(context)
                             .colorScheme
                             .onSurfaceVariant
-                            .withValues(alpha: 0.65),
+                            .withValues(alpha: 0.72),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Tooltip(
+                    message: _tipsRotateEnabled
+                        ? 'Pause tip rotation'
+                        : 'Resume tip rotation',
+                    child: InkWell(
+                      onTap: _toggleTipRotation,
+                      borderRadius: BorderRadius.circular(20),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 2, 4, 2),
+                        child: Icon(
+                          _tipsRotateEnabled
+                              ? Icons.pause_circle_outline_rounded
+                              : Icons.play_circle_outline_rounded,
+                          size: 20,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant
+                              .withValues(alpha: 0.65),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
+                ],
+              ),
+            );
+          },
+        ),
 
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),

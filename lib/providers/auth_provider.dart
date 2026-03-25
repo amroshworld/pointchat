@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:appwrite/appwrite.dart';
@@ -107,52 +106,6 @@ class AuthNotifier extends Notifier<AuthState> {
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
-      return false;
-    }
-  }
-
-  Future<bool> signInWithEmailAndPassword(String email, String password) async {
-    state = state.copyWith(isLoading: true, clearError: true);
-    try {
-      await _authService.signInWithEmailAndPassword(email, password);
-      ref.invalidate(authStateProvider);
-      state = state.copyWith(isLoading: false);
-      return true;
-    } on AppwriteException catch (e) {
-      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
-      return false;
-    } catch (e) {
-      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
-      return false;
-    }
-  }
-
-  Future<bool> registerWithEmailAndPassword(
-    String email,
-    String password,
-    String displayName,
-  ) async {
-    state = state.copyWith(isLoading: true, clearError: true);
-    try {
-      await _authService.registerWithEmailAndPassword(
-        email,
-        password,
-        displayName,
-      );
-      ref.invalidate(authStateProvider);
-      state = state.copyWith(isLoading: false);
-      return true;
-    } on AppwriteException catch (e) {
-      if (kDebugMode) {
-        debugPrint('Registration error: ${e.message} (${e.type})');
-      }
-      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
-      return false;
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Registration error: $e');
-      }
       state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
       return false;
     }

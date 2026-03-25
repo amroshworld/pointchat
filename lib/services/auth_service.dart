@@ -28,65 +28,6 @@ class AuthService {
     }
   }
 
-  // Sign in with Email and Password
-  Future<models.Session> signInWithEmailAndPassword(
-    String email,
-    String password,
-  ) async {
-    try {
-      await _account.deleteSession(sessionId: 'current');
-    } catch (_) {}
-
-    final session = await _account.createEmailPasswordSession(
-      email: email,
-      password: password,
-    );
-
-    final user = await _account.get();
-    await _saveUserToDatabase(user);
-    _cacheCurrentUser(user);
-    await SubscriptionService.instance.logIn(user.$id);
-
-    return session;
-  }
-
-  // Register with Email and Password
-  Future<models.User> registerWithEmailAndPassword(
-    String email,
-    String password,
-    String displayName,
-  ) async {
-    try {
-      await _account.deleteSession(sessionId: 'current');
-    } catch (_) {}
-
-    final user = await _account.create(
-      userId: ID.unique(),
-      email: email,
-      password: password,
-      name: displayName,
-    );
-
-    await _account.createEmailPasswordSession(email: email, password: password);
-
-    // Requires SMTP (or a provider) configured in Appwrite Console → Messaging.
-    try {
-      await _account.createEmailVerification(
-        url: AppwriteConstants.emailVerificationRedirectUrl,
-      );
-    } catch (e) {
-      debugPrint(
-        'Verification email was not sent (check Appwrite SMTP/messaging & authorized redirect URL): $e',
-      );
-    }
-
-    await _saveUserToDatabase(user, isNew: true);
-    _cacheCurrentUser(user);
-    await SubscriptionService.instance.logIn(user.$id);
-
-    return user;
-  }
-
   // Sign in with Google (requires Google OAuth provider in Appwrite console)
   Future<void> signInWithGoogle() async {
     try {
@@ -195,9 +136,7 @@ class AuthService {
 
   // Save user data to Appwrite database
   Future<void> _saveUserToDatabase(
-    models.User user, {
-    bool isNew = false,
-  }) async {
+    models.User user) async {
     final displayName = user.name.isNotEmpty ? user.name : 'User';
 
     try {

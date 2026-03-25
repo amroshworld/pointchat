@@ -1,7 +1,10 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import '../../appwrite_client.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../services/chat_service.dart';
 import '../../services/user_service.dart';
@@ -10,6 +13,7 @@ import '../../models/message_model.dart';
 import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/chat_privacy_preferences.dart';
 
 class ChatListScreen extends StatefulWidget {
   final String currentUserId;
@@ -25,10 +29,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final UserService _userService = UserService();
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final LocalAuthentication _localAuth = LocalAuthentication();
 
   String? _expandedChatId;
   final Set<String> _selectedChatIds = {};
   bool _isSelectionMode = false;
+  Set<String> _lockedChatIds = {};
+
+  Duration get _tileAnimDuration =>
+      ChatPrivacyPreferences.reduceUiMotionListenable.value
+      ? const Duration(milliseconds: 120)
+      : const Duration(milliseconds: 250);
+
+  int get _inlineMessageCap =>
+      ChatPrivacyPreferences.reduceUiMotionListenable.value ? 12 : 25;
 
   // Render.com palette
   Color get _bgColor => Theme.of(context).scaffoldBackgroundColor;
@@ -43,20 +57,135 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Color get _bubbleOther => Theme.of(context).colorScheme.primaryContainer;
 
   @override
+  void initState() {
+    super.initState();
+    _bootstrapPrivacy();
+  }
+
+  Future<void> _bootstrapPrivacy() async {
+    await ChatPrivacyPreferences.syncLockedListenable();
+    await ChatPrivacyPreferences.syncPerformanceListenable();
+    ChatPrivacyPreferences.lockedChatsListenable.addListener(_onLockedChanged);
+    ChatPrivacyPreferences.reduceUiMotionListenable.addListener(
+      _onPerfChanged,
+    );
+    if (mounted) {
+      setState(() {
+        _lockedChatIds = Set<String>.from(
+          ChatPrivacyPreferences.lockedChatsListenable.value,
+        );
+      });
+    }
+  }
+
+  void _onLockedChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _lockedChatIds = Set<String>.from(
+        ChatPrivacyPreferences.lockedChatsListenable.value,
+      );
+    });
+  }
+
+  void _onPerfChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
   void dispose() {
+    ChatPrivacyPreferences.lockedChatsListenable.removeListener(
+      _onLockedChanged,
+    );
+    ChatPrivacyPreferences.reduceUiMotionListenable.removeListener(
+      _onPerfChanged,
+    );
     _messageController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
-  void _toggleExpand(String chatId) {
-    setState(() {
-      if (_expandedChatId == chatId) {
-        _expandedChatId = null;
-      } else {
-        _expandedChatId = chatId;
-        _chatService.markMessagesAsRead(chatId, widget.currentUserId);
+  Future<bool> _verifyPrivacyUnlock() async {
+    try {
+      final supported = await _localAuth.isDeviceSupported();
+      if (supported) {
+        final authed = await _localAuth.authenticate(
+          localizedReason: 'Unlock this chat',
+        );
+        if (authed) {
+          return true;
+        }
       }
+    } catch (_) {}
+
+    final pin = await ChatPrivacyPreferences.getPrivacyPin();
+    if (pin.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Set a backup PIN under Profile → Chats & performance.',
+              style: GoogleFonts.inter(),
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+
+    final entered = await _promptPinDialog();
+    return entered != null && entered == pin;
+  }
+
+  Future<String?> _promptPinDialog() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Enter PIN', style: GoogleFonts.inter()),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          obscureText: true,
+          maxLength: 8,
+          decoration: const InputDecoration(
+            hintText: 'PIN',
+            counterText: '',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Unlock'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<void> _toggleExpand(String chatId) async {
+    if (_expandedChatId == chatId) {
+      setState(() => _expandedChatId = null);
+      return;
+    }
+    if (_lockedChatIds.contains(chatId)) {
+      final ok = await _verifyPrivacyUnlock();
+      if (!ok) {
+        return;
+      }
+    }
+    setState(() {
+      _expandedChatId = chatId;
+      _chatService.markMessagesAsRead(chatId, widget.currentUserId);
     });
   }
 
@@ -64,7 +193,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
     setState(() {
       if (_selectedChatIds.contains(chatId)) {
         _selectedChatIds.remove(chatId);
-        if (_selectedChatIds.isEmpty) _isSelectionMode = false;
+        if (_selectedChatIds.isEmpty) {
+          _isSelectionMode = false;
+        }
       } else {
         _selectedChatIds.add(chatId);
         _isSelectionMode = true;
@@ -79,9 +210,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
     });
   }
 
+  Future<void> _applyLockToSelection(bool lock) async {
+    for (final id in _selectedChatIds) {
+      await ChatPrivacyPreferences.toggleLocked(id, lock);
+    }
+    await ChatPrivacyPreferences.syncLockedListenable();
+    _clearSelection();
+  }
+
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty) {
+      return;
+    }
 
     final senderName = cachedUserName;
     final senderPhoto = cachedUserPhotoUrl;
@@ -112,6 +253,30 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   bool get _hasTarget => _expandedChatId != null || _selectedChatIds.isNotEmpty;
 
+  Future<bool> _confirmDeleteChat(String title) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete chat?', style: GoogleFonts.inter()),
+        content: Text(
+          'Remove conversation with $title? Messages will be deleted.',
+          style: GoogleFonts.inter(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -130,16 +295,30 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
         ),
         actions: [
-          if (_isSelectionMode)
+          if (_isSelectionMode) ...[
+            IconButton(
+              icon: Icon(Icons.lock_outline, color: _textSecondary),
+              tooltip: 'Lock selected',
+              onPressed: _selectedChatIds.isEmpty
+                  ? null
+                  : () => _applyLockToSelection(true),
+            ),
+            IconButton(
+              icon: Icon(Icons.lock_open, color: _textSecondary),
+              tooltip: 'Unlock selected',
+              onPressed: _selectedChatIds.isEmpty
+                  ? null
+                  : () => _applyLockToSelection(false),
+            ),
             IconButton(
               icon: Icon(Icons.close, color: _textSecondary),
               onPressed: _clearSelection,
             ),
+          ],
         ],
       ),
       body: Stack(
         children: [
-          // Conversation list
           StreamBuilder<List<ChatModel>>(
             stream: _chatService.getUserChats(widget.currentUserId),
             builder: (context, snapshot) {
@@ -158,8 +337,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
               );
             },
           ),
-
-          // Floating input
           Positioned(
             left: 16,
             right: 16,
@@ -171,204 +348,259 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  // ── Conversation tile ──────────────────────────────────────────────
   Widget _buildConversationTile(ChatModel chat) {
     final otherUserId = chat.getOtherUserId(widget.currentUserId);
     final isExpanded = _expandedChatId == chat.chatId;
     final isSelected = _selectedChatIds.contains(chat.chatId);
     final unread = chat.unreadCount[widget.currentUserId] ?? 0;
+    final locked = _lockedChatIds.contains(chat.chatId);
+    final blurLocked = locked && !isExpanded;
 
     return StreamBuilder<UserModel?>(
       stream: _userService.getUserStream(otherUserId),
       builder: (context, snap) {
         final user = snap.data;
 
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut,
-          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? AppTheme.purpleGlow
-                : isExpanded
-                ? _expandedColor
-                : _surfaceColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected
-                  ? AppTheme.purple
-                  : isExpanded
-                  ? Theme.of(context).colorScheme.outline
-                  : Theme.of(context).colorScheme.outline,
-              width: isSelected ? 1.5 : 1,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Header row ──
-              InkWell(
-                onTap: () => _toggleExpand(chat.chatId),
-                onLongPress: () => _toggleSelect(chat.chatId),
-                borderRadius: BorderRadius.circular(18),
-                splashColor: Colors.white10,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 14,
-                  ),
-                  child: Row(
-                    children: [
-                      // Selection indicator
-                      if (_isSelectionMode) ...[
-                        GestureDetector(
-                          onTap: () => _toggleSelect(chat.chatId),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: 22,
-                            height: 22,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: isSelected ? _accent : Colors.transparent,
-                              border: Border.all(
-                                color: isSelected ? _accent : _textSecondary,
-                                width: 1.8,
-                              ),
+        final column = Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InkWell(
+              onTap: () => _toggleExpand(chat.chatId),
+              onLongPress: () => _toggleSelect(chat.chatId),
+              borderRadius: BorderRadius.circular(18),
+              splashColor: Colors.white10,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 14,
+                ),
+                child: Row(
+                  children: [
+                    if (_isSelectionMode) ...[
+                      GestureDetector(
+                        onTap: () => _toggleSelect(chat.chatId),
+                        child: AnimatedContainer(
+                          duration: _tileAnimDuration,
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isSelected ? _accent : Colors.transparent,
+                            border: Border.all(
+                              color: isSelected ? _accent : _textSecondary,
+                              width: 1.8,
                             ),
-                            child: isSelected
-                                ? const Icon(
-                                    Icons.check,
-                                    size: 14,
-                                    color: Colors.black,
-                                  )
-                                : null,
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                      ],
-
-                      // Avatar
-                      UserAvatar(
-                        photoUrl: user?.photoUrl,
-                        name: user?.displayName ?? '?',
-                        radius: 24,
-                        isOnline: user?.isOnline ?? false,
-                        showOnlineIndicator: true,
-                      ),
-                      const SizedBox(width: 14),
-
-                      // Name + preview
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    user?.displayName ?? '...',
-                                    style: TextStyle(
-                                      color: _textPrimary,
-                                      fontSize: 15,
-                                      fontWeight: unread > 0
-                                          ? FontWeight.w700
-                                          : FontWeight.w500,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (chat.lastMessageTime != null)
-                                  Text(
-                                    timeago.format(
-                                      chat.lastMessageTime!,
-                                      locale: 'en_short',
-                                    ),
-                                    style: TextStyle(
-                                      color: unread > 0
-                                          ? _textPrimary
-                                          : _textSecondary,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    chat.lastMessage.isEmpty
-                                        ? 'No messages yet'
-                                        : chat.lastMessage,
-                                    style: TextStyle(
-                                      color: unread > 0
-                                          ? _textPrimary.withValues(alpha: 0.8)
-                                          : _textSecondary,
-                                      fontSize: 13,
-                                      fontWeight: unread > 0
-                                          ? FontWeight.w500
-                                          : FontWeight.w400,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (unread > 0) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 7,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.purple,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      unread > 99 ? '99+' : '$unread',
-                                      style: GoogleFonts.inter(
-                                        color: Colors.white,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(width: 4),
-                                Icon(
-                                  isExpanded
-                                      ? Icons.keyboard_arrow_up_rounded
-                                      : Icons.keyboard_arrow_down_rounded,
-                                  color: _textSecondary,
-                                  size: 20,
-                                ),
-                              ],
-                            ),
-                          ],
+                          child: isSelected
+                              ? const Icon(
+                                  Icons.check,
+                                  size: 14,
+                                  color: Colors.black,
+                                )
+                              : null,
                         ),
                       ),
+                      const SizedBox(width: 12),
                     ],
-                  ),
+                    UserAvatar(
+                      photoUrl: user?.photoUrl,
+                      name: user?.displayName ?? '?',
+                      radius: 24,
+                      isOnline: user?.isOnline ?? false,
+                      showOnlineIndicator: true,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  user?.displayName ?? '...',
+                                  style: TextStyle(
+                                    color: _textPrimary,
+                                    fontSize: 15,
+                                    fontWeight: unread > 0
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (locked)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: Icon(
+                                    Icons.lock_outline,
+                                    size: 16,
+                                    color: _textSecondary,
+                                  ),
+                                ),
+                              if (chat.lastMessageTime != null)
+                                Text(
+                                  timeago.format(
+                                    chat.lastMessageTime!,
+                                    locale: 'en_short',
+                                  ),
+                                  style: TextStyle(
+                                    color: unread > 0
+                                        ? _textPrimary
+                                        : _textSecondary,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  chat.lastMessage.isEmpty
+                                      ? 'No messages yet'
+                                      : chat.lastMessage,
+                                  style: TextStyle(
+                                    color: unread > 0
+                                        ? _textPrimary.withValues(alpha: 0.8)
+                                        : _textSecondary,
+                                    fontSize: 13,
+                                    fontWeight: unread > 0
+                                        ? FontWeight.w500
+                                        : FontWeight.w400,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (unread > 0) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.purple,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    unread > 99 ? '99+' : '$unread',
+                                    style: GoogleFonts.inter(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(width: 4),
+                              Icon(
+                                isExpanded
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.keyboard_arrow_down_rounded,
+                                color: _textSecondary,
+                                size: 20,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            ),
+            AnimatedSize(
+              duration: _tileAnimDuration,
+              curve: Curves.easeInOut,
+              child: isExpanded
+                  ? _buildInlineMessages(chat.chatId)
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        );
 
-              // ── Expanded messages ──
-              AnimatedSize(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                child: isExpanded
-                    ? _buildInlineMessages(chat.chatId)
-                    : const SizedBox.shrink(),
+        final body = blurLocked
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                      child: column,
+                    ),
+                    Positioned.fill(
+                      child: ColoredBox(
+                        color: Colors.black.withValues(alpha: 0.22),
+                        child: Center(
+                          child: Icon(
+                            Icons.lock_outline,
+                            color: _textSecondary.withValues(alpha: 0.9),
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : column;
+
+        return Dismissible(
+          key: ValueKey('dm-${chat.chatId}'),
+          direction: DismissDirection.endToStart,
+          confirmDismiss: (_) async {
+            final name = user?.displayName ?? 'this chat';
+            return _confirmDeleteChat(name);
+          },
+          onDismissed: (_) async {
+            final participants = [widget.currentUserId, otherUserId];
+            await _chatService.deleteChat(chat.chatId, participants);
+            if (_expandedChatId == chat.chatId) {
+              setState(() => _expandedChatId = null);
+            }
+            _selectedChatIds.remove(chat.chatId);
+            await ChatPrivacyPreferences.toggleLocked(chat.chatId, false);
+          },
+          background: Container(
+            alignment: Alignment.centerRight,
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.only(right: 20),
+            decoration: BoxDecoration(
+              color: Colors.red.shade800,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.delete_outline, color: Colors.white),
+          ),
+          child: AnimatedContainer(
+            duration: _tileAnimDuration,
+            curve: Curves.easeInOut,
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? AppTheme.purpleGlow
+                  : isExpanded
+                  ? _expandedColor
+                  : _surfaceColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected
+                    ? AppTheme.purple
+                    : Theme.of(context).colorScheme.outline,
+                width: isSelected ? 1.5 : 1,
               ),
-            ],
+            ),
+            child: body,
           ),
         );
       },
     );
   }
 
-  // ── Inline messages inside expanded tile ───────────────────────────
   Widget _buildInlineMessages(String chatId) {
     return StreamBuilder<List<MessageModel>>(
       stream: _chatService.getChatMessages(chatId),
@@ -385,10 +617,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
           );
         }
 
-        final messages = snapshot.data!.take(25).toList().reversed.toList();
+        final messages = snapshot.data!
+            .take(_inlineMessageCap)
+            .toList()
+            .reversed
+            .toList();
 
         return Container(
-          constraints: const BoxConstraints(maxHeight: 320),
+          constraints: BoxConstraints(
+            maxHeight:
+                ChatPrivacyPreferences.reduceUiMotionListenable.value
+                ? 220
+                : 320,
+          ),
           padding: const EdgeInsets.only(left: 14, right: 14, bottom: 10),
           child: ListView.builder(
             padding: EdgeInsets.zero,
@@ -472,7 +713,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  // ── Floating input ─────────────────────────────────────────────────
   Widget _buildFloatingInput() {
     return Row(
       children: [
@@ -511,7 +751,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         GestureDetector(
           onTap: _hasTarget ? _sendMessage : null,
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+            duration: _tileAnimDuration,
             width: 46,
             height: 46,
             decoration: BoxDecoration(
@@ -536,7 +776,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  // ── Empty state ────────────────────────────────────────────────────
   Widget _buildEmptyState() {
     return Center(
       child: Column(

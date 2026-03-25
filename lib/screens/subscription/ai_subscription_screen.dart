@@ -166,6 +166,45 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                     style: GoogleFonts.inter(fontWeight: FontWeight.w600),
                   ),
                 ),
+                if (state.isConfigured && defaultTargetPlatform == TargetPlatform.iOS) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton(
+                    onPressed: state.isBusy
+                        ? null
+                        : () async {
+                            await _subscriptionService
+                                .presentSubscriptionOfferCodeSheet();
+                          },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.onSurface,
+                      side: BorderSide(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                      minimumSize: const Size.fromHeight(52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Text(
+                      'Redeem offer code (App Store)',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+                if (state.isConfigured &&
+                    defaultTargetPlatform == TargetPlatform.android) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Discounts: create promotions in Google Play Console — '
+                    'RevenueCat tracks the subscription after the store applies the price.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
                 if ((state.message ?? '').isNotEmpty) ...[
                   const SizedBox(height: 14),
                   Text(

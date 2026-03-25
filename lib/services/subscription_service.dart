@@ -248,6 +248,24 @@ class SubscriptionService {
     }
   }
 
+  /// iOS: App Store subscription offer codes. Returns false on other platforms (use Play Console promos on Android).
+  Future<bool> presentSubscriptionOfferCodeSheet() async {
+    if (kIsWeb || !_isConfigured) {
+      return false;
+    }
+    if (defaultTargetPlatform != TargetPlatform.iOS) {
+      return false;
+    }
+    try {
+      await Purchases.presentCodeRedemptionSheet();
+      return true;
+    } on PlatformException {
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _handleCustomerInfo(CustomerInfo customerInfo) {
     _applyCustomerInfo(customerInfo, state.value.offering);
   }

@@ -19,7 +19,7 @@ class ChatService {
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.chatsCollection,
       queries: [
-        Query.contains('participants', [currentUserId]),
+        Query.contains('participants', currentUserId),
         Query.limit(500),
       ],
     );
@@ -84,7 +84,7 @@ class ChatService {
           databaseId: AppwriteConstants.databaseId,
           tableId: AppwriteConstants.chatsCollection,
           queries: [
-            Query.contains('participants', [userId]),
+            Query.contains('participants', userId),
             Query.orderDesc('lastMessageTime'),
             Query.limit(100),
           ],

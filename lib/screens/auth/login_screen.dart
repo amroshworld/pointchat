@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
-import '../../utils/password_policy.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -13,74 +12,6 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  bool _isLogin = true;
-  bool _obscurePassword = true;
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _nameController = TextEditingController();
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  void _submit() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
-    final name = _nameController.text.trim();
-
-    if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in all required fields')),
-      );
-      return;
-    }
-    if (!_isLogin && name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a display name')),
-      );
-      return;
-    }
-
-    if (!_isLogin) {
-      final pwdError = PasswordPolicy.validate(password);
-      if (pwdError != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(pwdError)),
-        );
-        return;
-      }
-    }
-
-    final notifier = ref.read(authProvider.notifier);
-    if (_isLogin) {
-      await notifier.signInWithEmailAndPassword(email, password);
-    } else {
-      final ok = await notifier.registerWithEmailAndPassword(
-        email,
-        password,
-        name,
-      );
-      if (!mounted) return;
-      if (ok) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Account created. If verification is enabled in Appwrite, '
-              'check your inbox (and spam) for a confirmation link. '
-              'No email usually means SMTP is not configured in the Appwrite console.',
-              style: GoogleFonts.inter(fontSize: 14),
-            ),
-            duration: const Duration(seconds: 8),
-          ),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
@@ -146,7 +77,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                         // ── Heading ──
                         Text(
-                          _isLogin ? 'Welcome back' : 'Create account',
+                          'Welcome',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
                             color: Theme.of(context).colorScheme.onSurface,
@@ -157,9 +88,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          _isLogin
-                              ? 'Sign in to continue to PointChat'
-                              : 'Start messaging in seconds',
+                          'Sign in to continue to PointChat',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
                             color: Theme.of(
@@ -170,124 +99,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ),
 
                         const SizedBox(height: 48),
-
-                        // ── Form ──
-                        if (!_isLogin) ...[
-                          _label('Display Name'),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _nameController,
-                            style: GoogleFonts.inter(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              fontSize: 15,
-                            ),
-                            decoration: InputDecoration(
-                              hintText: 'Your name',
-                              prefixIcon: const Icon(Icons.person_outline),
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 16,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.zero,
-                                borderSide: BorderSide(
-                                  color: Theme.of(context).colorScheme.outline,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.zero,
-                                borderSide: BorderSide(
-                                  color: Theme.of(context).colorScheme.outline,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
-
-                        _label('Email'),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          style: GoogleFonts.inter(
-                            color: Theme.of(context).colorScheme.onSurface,
-                            fontSize: 15,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: 'you@example.com',
-                            prefixIcon: const Icon(Icons.mail_outline),
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 16,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.zero,
-                              borderSide: BorderSide(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.zero,
-                              borderSide: BorderSide(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        _label('Password'),
-                        if (!_isLogin) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            'At least ${PasswordPolicy.minLength} chars with upper, lower, number & symbol.',
-                            style: GoogleFonts.inter(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _passwordController,
-                          obscureText: _obscurePassword,
-                          style: GoogleFonts.inter(
-                            color: Theme.of(context).colorScheme.onSurface,
-                            fontSize: 15,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: '••••••••',
-                            prefixIcon: const Icon(Icons.lock_outline),
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 16,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.zero,
-                              borderSide: BorderSide(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.zero,
-                              borderSide: BorderSide(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                            ),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                              ),
-                              onPressed: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 40),
 
                         // ── Error ──
                         if (authState.error != null)
@@ -327,125 +138,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                           ),
 
-                        // ── Primary button ──
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: ElevatedButton(
-                            onPressed: authState.isLoading ? null : _submit,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.zero,
-                              ),
-                              disabledBackgroundColor: Colors.black54,
-                            ),
-                            child: authState.isLoading
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2.5,
-                                    ),
-                                  )
-                                : Text(
-                                    _isLogin ? 'Sign in' : 'Create account',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // ── Toggle ──
-                        Center(
-                          child: TextButton(
-                            onPressed: () =>
-                                setState(() => _isLogin = !_isLogin),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12,
-                                horizontal: 16,
-                              ),
-                            ),
-                            child: RichText(
-                              text: TextSpan(
-                                style: GoogleFonts.inter(
-                                  fontSize: 15,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                                children: [
-                                  TextSpan(
-                                    text: _isLogin
-                                        ? "Don't have an account? "
-                                        : "Already have an account? ",
-                                  ),
-                                  TextSpan(
-                                    text: _isLogin ? 'Sign up' : 'Sign in',
-                                    style: TextStyle(
-                                      color:
-                                          Theme.of(context).brightness ==
-                                              Brightness.dark
-                                          ? Theme.of(
-                                              context,
-                                            ).colorScheme.primary
-                                          : Colors.black,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 32),
-
-                        // ── Divider ──
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Container(
-                                height: 1,
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: Text(
-                                'or',
-                                style: GoogleFonts.inter(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.secondary,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: Container(
-                                height: 1,
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 32),
-
                         // ── Google sign-in ──
                         SizedBox(
                           width: double.infinity,
@@ -459,7 +151,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             icon: Container(
                               width: 24,
                               height: 24,
-                              decoration: BoxDecoration(
+                              decoration: const BoxDecoration(
                                 color: Colors.transparent,
                                 borderRadius: BorderRadius.zero,
                               ),
@@ -488,7 +180,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 color: Theme.of(context).colorScheme.outline,
                                 width: 1.5,
                               ),
-                              shape: RoundedRectangleBorder(
+                              shape: const RoundedRectangleBorder(
                                 borderRadius: BorderRadius.zero,
                               ),
                             ),
@@ -505,14 +197,4 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
     );
   }
-
-  Widget _label(String text) => Text(
-    text,
-    style: GoogleFonts.inter(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-      fontSize: 12,
-      fontWeight: FontWeight.w500,
-      letterSpacing: 0.3,
-    ),
-  );
 }

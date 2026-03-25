@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,7 +12,9 @@ import '../../services/subscription_service.dart';
 import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
 import '../../appwrite_client.dart';
+import '../../utils/composer_preferences.dart';
 import '../subscription/ai_subscription_screen.dart';
+import 'chat_privacy_settings_screen.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -22,6 +26,12 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final UserService _userService = UserService();
   bool _isUploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(ComposerPreferences.syncListenableFromPrefs());
+  }
 
   Future<void> _updateProfilePicture(String uid) async {
     try {
@@ -299,6 +309,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.lock_person_outlined,
+                            color: colorScheme.onPrimaryContainer,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text('Chats & performance'),
+                        subtitle: const Text(
+                          'Lock & blur DMs, PIN, lighter animations',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  const ChatPrivacySettingsScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      const Divider(height: 1, indent: 72),
+                      ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
                             color: colorScheme.secondaryContainer,
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -313,6 +352,39 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () {
                           // TODO: Theme selector
+                        },
+                      ),
+                      const Divider(height: 1, indent: 72),
+                      ValueListenableBuilder<bool>(
+                        valueListenable:
+                            ComposerPreferences.tipsHiddenListenable,
+                        builder: (context, tipsHidden, _) {
+                          return ListTile(
+                            leading: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: colorScheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.hide_source_outlined,
+                                color: colorScheme.onPrimaryContainer,
+                                size: 20,
+                              ),
+                            ),
+                            title: const Text('Composer tips'),
+                            subtitle: Text(
+                              tipsHidden
+                                  ? 'Hidden on the chat screen'
+                                  : 'Tips show above the message box (you can pause rotation there)',
+                            ),
+                            trailing: Switch(
+                              value: tipsHidden,
+                              onChanged: (v) =>
+                                  ComposerPreferences.setTipsHidden(v),
+                            ),
+                          );
                         },
                       ),
                       const Divider(height: 1, indent: 72),

@@ -620,7 +620,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             FilledButton(
               onPressed: () async {
                 Navigator.pop(context);
-                await _groupService.deleteGroup(widget.groupId, group.members);
+                await _groupService.deleteGroup(widget.groupId);
                 if (!context.mounted) return;
                 Navigator.pop(context); // Info screen
                 Navigator.pop(context); // Chat screen
