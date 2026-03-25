@@ -99,14 +99,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
             final users = _searchQuery.isEmpty
                 ? allUsers
                 : allUsers
-                      .where(
-                        (u) =>
-                            u.displayName.toLowerCase().contains(
-                              _searchQuery,
-                            ) ||
-                            u.email.toLowerCase().contains(_searchQuery),
-                      )
-                      .toList();
+                    .where(
+                      (u) =>
+                          u.displayName.toLowerCase().contains(
+                                _searchQuery,
+                              ) ||
+                          u.email.toLowerCase().contains(_searchQuery),
+                    )
+                    .toList();
 
             return CustomScrollView(
               slivers: [
@@ -164,7 +164,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
                                         Text(
                                           user.displayName.split(' ').first,
                                           style: GoogleFonts.inter(
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
                                             fontSize: 12,
                                           ),
                                         ),
@@ -250,7 +252,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
                           decoration: BoxDecoration(
                             color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Theme.of(context).colorScheme.outline),
+                            border: Border.all(
+                                color: Theme.of(context).colorScheme.outline),
                           ),
                           child: ListTile(
                             contentPadding: const EdgeInsets.symmetric(
@@ -275,7 +278,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
                             subtitle: Text(
                               user.email,
                               style: GoogleFonts.inter(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                                 fontSize: 12,
                               ),
                             ),

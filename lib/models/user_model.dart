@@ -5,6 +5,7 @@ class UserModel {
   final String photoUrl;
   final String status;
   final DateTime? lastSeen;
+
   /// Raw `isOnline` from the database (authoritative for writes).
   final bool onlineFlag;
   final List<String> chatIds;

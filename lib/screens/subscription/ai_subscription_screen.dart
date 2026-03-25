@@ -105,8 +105,7 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                 const SizedBox(height: 20),
                 if (!state.isConfigured)
                   _MessageCard(
-                    message:
-                        state.message ??
+                    message: state.message ??
                         (kIsWeb
                             ? 'Purchases are available on mobile only.'
                             : 'Subscription is not available right now.'),
@@ -166,7 +165,8 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                     style: GoogleFonts.inter(fontWeight: FontWeight.w600),
                   ),
                 ),
-                if (state.isConfigured && defaultTargetPlatform == TargetPlatform.iOS) ...[
+                if (state.isConfigured &&
+                    defaultTargetPlatform == TargetPlatform.iOS) ...[
                   const SizedBox(height: 10),
                   OutlinedButton(
                     onPressed: state.isBusy

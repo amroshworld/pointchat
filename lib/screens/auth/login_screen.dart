@@ -146,8 +146,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             onPressed: authState.isLoading
                                 ? null
                                 : () => ref
-                                      .read(authProvider.notifier)
-                                      .signInWithGoogle(),
+                                    .read(authProvider.notifier)
+                                    .signInWithGoogle(),
                             icon: Container(
                               width: 24,
                               height: 24,

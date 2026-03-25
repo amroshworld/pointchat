@@ -7,6 +7,7 @@ class GroupModel {
   final String photoUrl;
   final String createdBy;
   final List<String> members;
+
   /// Invited users not yet accepted (same element size as [members] user ids).
   final List<String> pendingMemberIds;
   final List<String> admins;
@@ -16,6 +17,7 @@ class GroupModel {
   final String lastMessageSenderId;
   final String lastMessageSenderName;
   final bool isPublic;
+
   /// Per-member unread counts (JSON string in Appwrite).
   final Map<String, int> unreadCount;
 
@@ -46,7 +48,8 @@ class GroupModel {
   static Map<String, int> _parseUnreadCount(dynamic val) {
     if (val is Map) {
       return Map<String, int>.from(
-        val.map((k, v) => MapEntry(k.toString(), (v is int) ? v : int.tryParse('$v') ?? 0)),
+        val.map((k, v) =>
+            MapEntry(k.toString(), (v is int) ? v : int.tryParse('$v') ?? 0)),
       );
     }
     if (val is String && val.isNotEmpty) {
@@ -55,7 +58,8 @@ class GroupModel {
         if (decoded is Map) {
           return Map<String, int>.from(
             decoded.map(
-              (k, v) => MapEntry(k.toString(), (v is int) ? v : int.tryParse('$v') ?? 0),
+              (k, v) => MapEntry(
+                  k.toString(), (v is int) ? v : int.tryParse('$v') ?? 0),
             ),
           );
         }

@@ -38,8 +38,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Duration get _tileAnimDuration =>
       ChatPrivacyPreferences.reduceUiMotionListenable.value
-      ? const Duration(milliseconds: 120)
-      : const Duration(milliseconds: 250);
+          ? const Duration(milliseconds: 120)
+          : const Duration(milliseconds: 250);
 
   int get _inlineMessageCap =>
       ChatPrivacyPreferences.reduceUiMotionListenable.value ? 12 : 25;
@@ -584,8 +584,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
               color: isSelected
                   ? AppTheme.purpleGlow
                   : isExpanded
-                  ? _expandedColor
-                  : _surfaceColor,
+                      ? _expandedColor
+                      : _surfaceColor,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isSelected
@@ -617,16 +617,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
           );
         }
 
-        final messages = snapshot.data!
-            .take(_inlineMessageCap)
-            .toList()
-            .reversed
-            .toList();
+        final messages =
+            snapshot.data!.take(_inlineMessageCap).toList().reversed.toList();
 
         return Container(
           constraints: BoxConstraints(
-            maxHeight:
-                ChatPrivacyPreferences.reduceUiMotionListenable.value
+            maxHeight: ChatPrivacyPreferences.reduceUiMotionListenable.value
                 ? 220
                 : 320,
           ),
@@ -641,9 +637,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
                 child: Align(
-                  alignment: isMe
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
+                  alignment:
+                      isMe ? Alignment.centerRight : Alignment.centerLeft,
                   child: Container(
                     constraints: BoxConstraints(
                       maxWidth: MediaQuery.of(context).size.width * 0.58,
@@ -734,8 +729,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 hintText: _isSelectionMode
                     ? 'Broadcast to ${_selectedChatIds.length} chats…'
                     : _hasTarget
-                    ? 'Type a message…'
-                    : 'Select a chat first…',
+                        ? 'Type a message…'
+                        : 'Select a chat first…',
                 hintStyle: TextStyle(color: _textSecondary, fontSize: 15),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(

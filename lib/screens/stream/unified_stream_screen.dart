@@ -168,9 +168,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
     // Single-subscription streams cannot be listened to twice (e.g. combineLatest
     // + StreamBuilder + separate .listen). Broadcast allows multiple listeners.
-    _allUsersStream = _userService.getAllUsers(currentUserId).asBroadcastStream();
+    _allUsersStream =
+        _userService.getAllUsers(currentUserId).asBroadcastStream();
     _chatsStream = _chatService.getUserChats(currentUserId).asBroadcastStream();
-    _groupsStream = _groupService.getUserGroups(currentUserId).asBroadcastStream();
+    _groupsStream =
+        _groupService.getUserGroups(currentUserId).asBroadcastStream();
     _pendingInvitesStream = _inviteService
         .getPendingInvitesForUser(currentUserId)
         .asBroadcastStream();
@@ -199,9 +201,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           final otherUser = isAiSelfChat
               ? null
               : users.cast<UserModel?>().firstWhere(
-                  (u) => u?.uid == otherUserId,
-                  orElse: () => null,
-                );
+                    (u) => u?.uid == otherUserId,
+                    orElse: () => null,
+                  );
           final isBotDm = otherUser?.isBot ?? false;
           // Hide empty DMs except AI thread and custom bots (newly created bots
           // have no lastMessage yet and would otherwise never appear).
@@ -226,18 +228,17 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'handle': isAiSelfChat
                 ? '@ai'
                 : (otherUser != null
-                      ? _formatHandle(otherUser.displayName)
-                      : '@unknown'),
+                    ? _formatHandle(otherUser.displayName)
+                    : '@unknown'),
             'isAiSelfChat': isAiSelfChat,
             'isBotDm': isBotDm,
             'sender': chat.lastMessage.isEmpty
                 ? ''
                 : (chat.lastMessageSenderId == currentUserId
-                      ? 'me'
-                      : (isAiSelfChat
-                            ? 'AI'
-                            : (otherUser?.displayName ?? ''))),
-            'content': chat.lastMessage.isEmpty ? emptyDmHint : chat.lastMessage,
+                    ? 'me'
+                    : (isAiSelfChat ? 'AI' : (otherUser?.displayName ?? ''))),
+            'content':
+                chat.lastMessage.isEmpty ? emptyDmHint : chat.lastMessage,
             'time': chat.lastMessageTime != null
                 ? DateFormat('HH:mm').format(chat.lastMessageTime!)
                 : '',
@@ -259,22 +260,21 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               if (_currentUserModel?.isOnline == true) onlineCount++;
             } else {
               final member = users.cast<UserModel?>().firstWhere(
-                (u) => u?.uid == uid,
-                orElse: () => null,
-              );
+                    (u) => u?.uid == uid,
+                    orElse: () => null,
+                  );
               if (member != null && member.isOnline) onlineCount++;
             }
           }
-          final double percentage = group.members.isEmpty
-              ? 0.0
-              : onlineCount / group.members.length;
+          final double percentage =
+              group.members.isEmpty ? 0.0 : onlineCount / group.members.length;
 
           final hasPreview = group.lastMessage.isNotEmpty;
           final preview = hasPreview
               ? _sanitizeGroupPreviewMessage(group.lastMessage)
               : (group.pendingMemberIds.isNotEmpty
-                    ? 'Invite pending · open to view'
-                    : 'New group — open to chat');
+                  ? 'Invite pending · open to view'
+                  : 'New group — open to chat');
 
           merged.add({
             'type': 'group',
@@ -284,8 +284,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             'handle': _formatGroupHandle(group.name),
             'sender': hasPreview
                 ? (group.lastMessageSenderId == currentUserId
-                      ? 'me'
-                      : group.lastMessageSenderName)
+                    ? 'me'
+                    : group.lastMessageSenderName)
                 : '',
             'content': preview,
             'time': group.lastMessageTime != null
@@ -337,10 +337,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       }
     });
 
-    _participantIdsSub = Rx.combineLatest2<
-        List<ChatModel>,
-        List<GroupModel>,
-        Set<String>>(
+    _participantIdsSub =
+        Rx.combineLatest2<List<ChatModel>, List<GroupModel>, Set<String>>(
       _chatsStream,
       _groupsStream,
       (chats, groups) {
@@ -909,9 +907,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   void _insertSlashCommand(String command) {
     final text = _commandController.text;
     final selection = _commandController.selection;
-    final cursor = selection.baseOffset >= 0
-        ? selection.baseOffset
-        : text.length;
+    final cursor =
+        selection.baseOffset >= 0 ? selection.baseOffset : text.length;
     final textBeforeCursor = text.substring(0, cursor);
     final textAfterCursor = text.substring(cursor);
     final lastSlash = textBeforeCursor.lastIndexOf('/');
@@ -919,8 +916,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     final newText = lastSlash >= 0
         ? '${textBeforeCursor.substring(0, lastSlash)}$command $textAfterCursor'
         : '${textBeforeCursor.isNotEmpty ? '$textBeforeCursor ' : ''}$command $textAfterCursor';
-    final newOffset =
-        (lastSlash >= 0
+    final newOffset = (lastSlash >= 0
             ? lastSlash
             : textBeforeCursor.length + (textBeforeCursor.isNotEmpty ? 1 : 0)) +
         command.length +
@@ -945,9 +941,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     if (handle.startsWith('@')) {
       final normalized = _normalizeHandleToken(handle.substring(1));
       final user = _allUsers.cast<UserModel?>().firstWhere(
-        (u) => _normalizeHandleToken(u!.displayName) == normalized,
-        orElse: () => null,
-      );
+            (u) => _normalizeHandleToken(u!.displayName) == normalized,
+            orElse: () => null,
+          );
       if (user != null) {
         return {
           'type': 'dm',
@@ -1096,8 +1092,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           child: isGroup
               ? _buildGroupSettingsContent(item)
               : (isSelf
-                    ? _buildMyProfileContent()
-                    : _buildUserSettingsContent(item)),
+                  ? _buildMyProfileContent()
+                  : _buildUserSettingsContent(item)),
         ),
       ],
     );
@@ -1250,10 +1246,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               const SizedBox(height: 8),
               ...members.map((memberId) {
                 final user = _allUsers.cast<UserModel?>().firstWhere(
-                  (entry) => entry?.uid == memberId,
-                  orElse: () =>
-                      memberId == currentUserId ? _currentUserModel : null,
-                );
+                      (entry) => entry?.uid == memberId,
+                      orElse: () =>
+                          memberId == currentUserId ? _currentUserModel : null,
+                    );
                 final memberName = user?.displayName ?? 'Unknown';
                 final memberHandle = _formatHandle(memberName);
                 final isAdmin = admins.contains(memberId);
@@ -1372,9 +1368,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                 const SizedBox(height: 8),
                 ...group.pendingMemberIds.map((pid) {
                   final user = _allUsers.cast<UserModel?>().firstWhere(
-                    (u) => u?.uid == pid,
-                    orElse: () => null,
-                  );
+                        (u) => u?.uid == pid,
+                        orElse: () => null,
+                      );
                   final label = user != null
                       ? _formatHandle(user.displayName)
                       : 'User ${pid.length > 8 ? pid.substring(0, 8) : pid}…';
@@ -1707,9 +1703,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     required Color accent,
     VoidCallback? onTap,
   }) {
-    final initials = initialsSource.isEmpty
-        ? '?'
-        : initialsSource[0].toUpperCase();
+    final initials =
+        initialsSource.isEmpty ? '?' : initialsSource[0].toUpperCase();
     final avatar = Container(
       width: 72,
       height: 72,
@@ -2667,9 +2662,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     for (final handle in handles.where((h) => h.startsWith('@'))) {
       final tHandle = _normalizeHandleToken(handle.substring(1));
       final targetUser = _allUsers.cast<UserModel?>().firstWhere(
-        (u) => _normalizeHandleToken(u!.displayName) == tHandle,
-        orElse: () => null,
-      );
+            (u) => _normalizeHandleToken(u!.displayName) == tHandle,
+            orElse: () => null,
+          );
       if (targetUser != null) {
         mentionedUsersByHandle[handle] = targetUser;
       }
@@ -2686,8 +2681,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
     if (metadata != null) {
       type = metadata['type'] as MessageType;
-      content =
-          (metadata['url'] as String?) ??
+      content = (metadata['url'] as String?) ??
           'lat:${metadata['latitude']},lng:${metadata['longitude']}';
       fileName = metadata['fileName'] as String?;
       fileSize = metadata['fileSize'] as int?;
@@ -2725,9 +2719,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
 
         final tHandle = _normalizeHandleToken(handle.substring(1));
         final targetUser = _allUsers.cast<UserModel?>().firstWhere(
-          (u) => _normalizeHandleToken(u!.displayName) == tHandle,
-          orElse: () => null,
-        );
+              (u) => _normalizeHandleToken(u!.displayName) == tHandle,
+              orElse: () => null,
+            );
 
         if (targetUser != null) {
           if (!dmTargetsSent.add(targetUser.uid)) {
@@ -2795,14 +2789,14 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               _aiService
                   .generateResponse(botPrompt, systemPrompt: systemPrompt)
                   .then((reply) {
-                    _chatService.sendMessage(
-                      chatId: chatId,
-                      senderId: targetUser.uid,
-                      senderName: targetUser.displayName,
-                      senderPhotoUrl: targetUser.photoUrl,
-                      text: reply,
-                    );
-                  });
+                _chatService.sendMessage(
+                  chatId: chatId,
+                  senderId: targetUser.uid,
+                  senderName: targetUser.displayName,
+                  senderPhotoUrl: targetUser.photoUrl,
+                  text: reply,
+                );
+              });
             }
           }
         }
@@ -2825,7 +2819,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                     'No group matches #${parsed.nameToken}~${parsed.idSuffix}',
                     style: GoogleFonts.jetBrainsMono(),
                   ),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+                  shape:
+                      RoundedRectangleBorder(borderRadius: BorderRadius.zero),
                 ),
               );
             }
@@ -3120,8 +3115,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
         try {
           String finalPrompt = aiPrompt;
           final aiPromptLower = aiPrompt.toLowerCase();
-          final isSummaryRequest =
-              aiPromptLower.contains('summarize') ||
+          final isSummaryRequest = aiPromptLower.contains('summarize') ||
               aiPromptLower.contains('summary');
 
           if (isSummaryRequest) {
@@ -3137,9 +3131,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               if (handle.startsWith('@')) {
                 final tNorm = _normalizeHandleToken(handle.substring(1));
                 final targetUser = _allUsers.cast<UserModel?>().firstWhere(
-                  (u) => _normalizeHandleToken(u!.displayName) == tNorm,
-                  orElse: () => null,
-                );
+                      (u) => _normalizeHandleToken(u!.displayName) == tNorm,
+                      orElse: () => null,
+                    );
                 if (targetUser != null) {
                   final chatId = await _chatService.getOrCreateChat(
                     currentUserId,
@@ -3559,7 +3553,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               ],
             ),
           ),
-
         if (_forwardingMessage != null)
           Container(
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
@@ -3622,7 +3615,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               ],
             ),
           ),
-
         Builder(
           builder: (context) {
             final sel = _commandController.selection;
@@ -3767,12 +3759,12 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                           final name = isUser
                               ? suggestion.displayName
                               : isGroup
-                              ? suggestion.name
-                              : isCreateGroup
-                              ? suggestion.token
-                              : isAtCmd
-                              ? suggestion.label
-                              : suggestion.toString();
+                                  ? suggestion.name
+                                  : isCreateGroup
+                                      ? suggestion.token
+                                      : isAtCmd
+                                          ? suggestion.label
+                                          : suggestion.toString();
                           GroupModel? groupPick;
                           if (isGroup) {
                             groupPick = suggestion;
@@ -3780,15 +3772,15 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                           final handle = isUser
                               ? _formatHandle(name)
                               : groupPick != null
-                              ? GroupHandleResolver.composerHandleForGroup(
-                                  groupPick,
-                                  _allGroups,
-                                )
-                              : isCreateGroup
-                              ? '#${suggestion.token}'
-                              : isAtCmd
-                              ? suggestion.label
-                              : name;
+                                  ? GroupHandleResolver.composerHandleForGroup(
+                                      groupPick,
+                                      _allGroups,
+                                    )
+                                  : isCreateGroup
+                                      ? '#${suggestion.token}'
+                                      : isAtCmd
+                                          ? suggestion.label
+                                          : name;
 
                           return ListTile(
                             dense: true,
@@ -3796,25 +3788,25 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                               isUser
                                   ? Icons.person_outline_rounded
                                   : isGroup
-                                  ? Icons.groups_2_outlined
-                                  : isCreateGroup
-                                  ? Icons.group_add_outlined
-                                  : isAtCmd
-                                  ? Icons.smart_toy_outlined
-                                  : isSlashCommand
-                                  ? Icons.bolt_rounded
-                                  : Icons.location_on_outlined,
+                                      ? Icons.groups_2_outlined
+                                      : isCreateGroup
+                                          ? Icons.group_add_outlined
+                                          : isAtCmd
+                                              ? Icons.smart_toy_outlined
+                                              : isSlashCommand
+                                                  ? Icons.bolt_rounded
+                                                  : Icons.location_on_outlined,
                               color: isUser
                                   ? AppTheme.focusBlue
                                   : isGroup
-                                  ? AppTheme.green
-                                  : isCreateGroup
-                                  ? AppTheme.focusBlue
-                                  : isAtCmd
-                                  ? AppTheme.focusBlue
-                                  : isSlashCommand
-                                  ? AppTheme.focusBlue
-                                  : scheme.primary,
+                                      ? AppTheme.green
+                                      : isCreateGroup
+                                          ? AppTheme.focusBlue
+                                          : isAtCmd
+                                              ? AppTheme.focusBlue
+                                              : isSlashCommand
+                                                  ? AppTheme.focusBlue
+                                                  : scheme.primary,
                               size: 20,
                             ),
                             title: Text(
@@ -3835,21 +3827,20 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                     ),
                                   )
                                 : groupPick != null
-                                ? Text(
-                                    groupPick.groupId.length <= 10
-                                        ? groupPick.groupId
-                                        : '${groupPick.groupId.substring(0, 10)}…',
-                                    style: GoogleFonts.jetBrainsMono(
-                                      fontSize: 10,
-                                      color: scheme.onSurfaceVariant,
-                                    ),
-                                  )
-                                : null,
+                                    ? Text(
+                                        groupPick.groupId.length <= 10
+                                            ? groupPick.groupId
+                                            : '${groupPick.groupId.substring(0, 10)}…',
+                                        style: GoogleFonts.jetBrainsMono(
+                                          fontSize: 10,
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                      )
+                                    : null,
                             onTap: () {
                               if (isAtCmd) {
                                 final text = _commandController.text;
-                                final selection =
-                                    _commandController.selection;
+                                final selection = _commandController.selection;
                                 final textBeforeCursor = text.substring(
                                   0,
                                   selection.baseOffset,
@@ -3893,8 +3884,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                               }
 
                               final text = _commandController.text;
-                              final selection =
-                                  _commandController.selection;
+                              final selection = _commandController.selection;
                               final textBeforeCursor = text.substring(
                                 0,
                                 selection.baseOffset,
@@ -3903,8 +3893,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                 selection.baseOffset,
                               );
 
-                              final lastAt =
-                                  textBeforeCursor.lastIndexOf('@');
+                              final lastAt = textBeforeCursor.lastIndexOf('@');
                               final lastHash =
                                   textBeforeCursor.lastIndexOf('#');
                               final lastPrefixIndex =
@@ -3916,8 +3905,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                               _commandController.selection =
                                   TextSelection.fromPosition(
                                 TextPosition(
-                                  offset:
-                                      lastPrefixIndex + handle.length + 1,
+                                  offset: lastPrefixIndex + handle.length + 1,
                                 ),
                               );
 
@@ -3936,7 +3924,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             );
           },
         ),
-
         ValueListenableBuilder<bool>(
           valueListenable: ComposerPreferences.tipsHiddenListenable,
           builder: (context, tipsHidden, _) {
@@ -4008,7 +3995,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             );
           },
         ),
-
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
           child: Row(
@@ -4079,21 +4065,21 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                   hintText: _isAiMode
                                       ? 'Ask the AI…'
                                       : (isFocusModeActive
-                                            ? 'Message $_focusedHandle…'
-                                            : 'Message · @ name  # group'),
+                                          ? 'Message $_focusedHandle…'
+                                          : 'Message · @ name  # group'),
                                   hintStyle: GoogleFonts.inter(
                                     color: _isAiMode
                                         ? AppTheme.focusBlue.withValues(
                                             alpha: 0.85,
                                           )
                                         : (isFocusModeActive
-                                              ? AppTheme.focusBlue.withValues(
-                                                  alpha: 0.85,
-                                                )
-                                              : Theme.of(context)
-                                                    .colorScheme
-                                                    .onSurfaceVariant
-                                                    .withValues(alpha: 0.65)),
+                                            ? AppTheme.focusBlue.withValues(
+                                                alpha: 0.85,
+                                              )
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant
+                                                .withValues(alpha: 0.65)),
                                     fontSize: 15,
                                   ),
                                   border: InputBorder.none,
@@ -4170,9 +4156,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                                               _isAiMode
                                                   ? Icons.auto_awesome_rounded
                                                   : (_forwardingMessage != null
-                                                        ? Icons.forward_rounded
-                                                        : Icons
-                                                              .arrow_forward_rounded),
+                                                      ? Icons.forward_rounded
+                                                      : Icons
+                                                          .arrow_forward_rounded),
                                               color: isFocusModeActive
                                                   ? AppTheme.focusBlue
                                                   : AppTheme.focusBlue,
@@ -4376,7 +4362,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             const SizedBox(height: 10),
             Text(
               '@$botName',
-              style: GoogleFonts.outfit(color: AppTheme.focusBlue, fontSize: 16),
+              style:
+                  GoogleFonts.outfit(color: AppTheme.focusBlue, fontSize: 16),
             ),
             const SizedBox(height: 20),
             TextField(
@@ -4676,17 +4663,15 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         color: widget.isFocusLocked
             ? AppTheme.focusBlue.withValues(alpha: 0.18)
             : (isGroup
-                  ? (isLight
-                        ? AppTheme.green.withValues(alpha: 0.12)
-                        : const Color(0xFF1A2A1A))
-                  : dmFill),
+                ? (isLight
+                    ? AppTheme.green.withValues(alpha: 0.12)
+                    : const Color(0xFF1A2A1A))
+                : dmFill),
         shape: BoxShape.circle,
         border: Border.all(
           color: widget.isFocusLocked
               ? AppTheme.focusBlue.withValues(alpha: 0.8)
-              : (isGroup
-                    ? AppTheme.green.withValues(alpha: 0.35)
-                    : dmBorder),
+              : (isGroup ? AppTheme.green.withValues(alpha: 0.35) : dmBorder),
           width: 1.5,
         ),
       ),
@@ -4713,8 +4698,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     final String conversationTitle =
         (widget.item['conversationTitle'] as String?)?.trim() ?? '';
     final isGroup = handleText.startsWith('#');
-    final pendingRowIds =
-        (widget.item['pendingInviteIds'] as List?)
+    final pendingRowIds = (widget.item['pendingInviteIds'] as List?)
             ?.map((e) => e.toString())
             .toList() ??
         const <String>[];
@@ -4725,13 +4709,13 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     final tileBorderColor = widget.isFocusLocked
         ? AppTheme.focusBlue.withValues(alpha: 0.8)
         : (isUnread
-              ? AppTheme.focusBlue.withValues(alpha: 0.45)
-              : Theme.of(context).colorScheme.outline);
+            ? AppTheme.focusBlue.withValues(alpha: 0.45)
+            : Theme.of(context).colorScheme.outline);
     final tileBackgroundColor = widget.isFocusLocked
         ? AppTheme.focusBlueGlow
         : (isUnread
-              ? AppTheme.focusBlue.withValues(alpha: 0.07)
-              : Theme.of(context).colorScheme.surface);
+            ? AppTheme.focusBlue.withValues(alpha: 0.07)
+            : Theme.of(context).colorScheme.surface);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
@@ -4799,8 +4783,8 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                       isGroup
                                           ? Icons.groups_2_outlined
                                           : (widget.item['isAiSelfChat'] == true
-                                                ? Icons.smart_toy_outlined
-                                                : Icons.person_outline_rounded),
+                                              ? Icons.smart_toy_outlined
+                                              : Icons.person_outline_rounded),
                                       size: 14,
                                       color: handlePrefixColor,
                                     ),
@@ -4809,9 +4793,10 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                       conversationTitle.isNotEmpty
                                           ? conversationTitle
                                           : (handleText.length > 1
-                                                ? handleText.substring(1)
-                                                : handleText),
-                                      style: AppTheme.chatConversationTitleStyle(
+                                              ? handleText.substring(1)
+                                              : handleText),
+                                      style:
+                                          AppTheme.chatConversationTitleStyle(
                                         context,
                                       ),
                                     ),
@@ -4991,8 +4976,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
     if (isGroup) {
       final members = widget.item['groupMembers'] as List<dynamic>? ?? [];
       final admins = widget.item['groupAdmins'] as List<dynamic>? ?? [];
-      final pendingInviteIds =
-          (widget.item['pendingInviteIds'] as List?)
+      final pendingInviteIds = (widget.item['pendingInviteIds'] as List?)
               ?.map((entry) => entry.toString())
               .toList() ??
           const <String>[];
@@ -5074,7 +5058,8 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                           Expanded(
                             child: GestureDetector(
                               onTap: () async {
-                                await widget.groupService.approvePendingMembership(
+                                await widget.groupService
+                                    .approvePendingMembership(
                                   groupId,
                                   widget.currentUserId,
                                 );
@@ -5120,7 +5105,8 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                   groupId: groupId,
                                   userId: widget.currentUserId,
                                 );
-                                await widget.groupService.declinePendingMembership(
+                                await widget.groupService
+                                    .declinePendingMembership(
                                   groupId,
                                   widget.currentUserId,
                                 );
@@ -5170,9 +5156,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
               const SizedBox(height: 8),
               ...members.map((mId) {
                 final u = allUsers.cast<UserModel?>().firstWhere(
-                  (u) => u?.uid == mId,
-                  orElse: () => null,
-                );
+                      (u) => u?.uid == mId,
+                      orElse: () => null,
+                    );
                 final isMemberAdmin = admins.contains(mId);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -5231,8 +5217,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                               groupId,
                               mId as String,
                               removedByName: 'Admin',
-                              skipUnreadIncrementForActor:
-                                  widget.currentUserId,
+                              skipUnreadIncrementForActor: widget.currentUserId,
                             );
                           },
                           child: Padding(
@@ -5272,15 +5257,13 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   chat?.notifyOnSeen[widget.currentUserId] ?? false;
 
               // Check for pending seen requests
-              final hasPendingRequestFromMe =
-                  chat?.seenRequests.any(
+              final hasPendingRequestFromMe = chat?.seenRequests.any(
                     (r) =>
                         r['from'] == widget.currentUserId &&
                         r['to'] == otherUserId,
                   ) ??
                   false;
-              final hasPendingRequestToMe =
-                  chat?.seenRequests.any(
+              final hasPendingRequestToMe = chat?.seenRequests.any(
                     (r) =>
                         r['from'] == otherUserId &&
                         r['to'] == widget.currentUserId,
@@ -5650,9 +5633,8 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                       )
                     : Container(),
                 child: Row(
-                  mainAxisAlignment: isMe
-                      ? MainAxisAlignment.end
-                      : MainAxisAlignment.start,
+                  mainAxisAlignment:
+                      isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
                   children: [
                     Flexible(
                       child: GestureDetector(
@@ -5727,17 +5709,16 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                         if (isGroup) {
                                           await widget.groupService
                                               .deleteMessage(
-                                                msg.messageId,
-                                                groupId:
-                                                    widget.item['id'] as String,
-                                              );
+                                            msg.messageId,
+                                            groupId:
+                                                widget.item['id'] as String,
+                                          );
                                         } else {
                                           await widget.chatService
                                               .deleteMessage(
-                                                msg.messageId,
-                                                chatId:
-                                                    widget.item['id'] as String,
-                                              );
+                                            msg.messageId,
+                                            chatId: widget.item['id'] as String,
+                                          );
                                         }
                                       },
                                     ),
@@ -5771,8 +5752,10 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                   ? Theme.of(
                                       context,
                                     ).colorScheme.primary.withValues(alpha: 0.2)
-                                  : Theme.of(context).colorScheme.outline
-                                        .withValues(alpha: 0.3),
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .outline
+                                      .withValues(alpha: 0.3),
                               width: 1,
                             ),
                           ),
@@ -5855,10 +5838,10 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                   width: 200,
                   height: 150,
                   fit: BoxFit.cover,
-                  memCacheWidth: (200 * MediaQuery.devicePixelRatioOf(context))
-                      .toInt(),
-                  memCacheHeight: (150 * MediaQuery.devicePixelRatioOf(context))
-                      .toInt(),
+                  memCacheWidth:
+                      (200 * MediaQuery.devicePixelRatioOf(context)).toInt(),
+                  memCacheHeight:
+                      (150 * MediaQuery.devicePixelRatioOf(context)).toInt(),
                   cacheManager: MediaCacheManager.instance,
                   placeholder: (context, url) => Container(
                     width: 200,
@@ -6541,12 +6524,10 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
     }).toList();
 
     final favorites = widget.currentUserModel?.favorites ?? [];
-    final favoriteUsers = filteredUsers
-        .where((u) => favorites.contains(u.uid))
-        .toList();
-    final otherUsers = filteredUsers
-        .where((u) => !favorites.contains(u.uid))
-        .toList();
+    final favoriteUsers =
+        filteredUsers.where((u) => favorites.contains(u.uid)).toList();
+    final otherUsers =
+        filteredUsers.where((u) => !favorites.contains(u.uid)).toList();
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
@@ -6656,14 +6637,14 @@ class _NetworkBottomSheetState extends State<NetworkBottomSheet> {
   }
 
   Widget _sectionLabel(String label) => Text(
-    label,
-    style: GoogleFonts.inter(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-      fontSize: 11,
-      fontWeight: FontWeight.w600,
-      letterSpacing: 0.8,
-    ),
-  );
+        label,
+        style: GoogleFonts.inter(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.8,
+        ),
+      );
 
   Widget _buildUserItem(UserModel user, bool isFavorite) {
     final handle = '@${user.displayName.replaceAll(' ', '').toLowerCase()}';

@@ -47,12 +47,12 @@ class SubscriptionState {
   });
 
   const SubscriptionState.initial()
-    : isReady = false,
-      isConfigured = false,
-      isBusy = false,
-      hasAiAccess = false,
-      message = null,
-      offering = null;
+      : isReady = false,
+        isConfigured = false,
+        isBusy = false,
+        hasAiAccess = false,
+        message = null,
+        offering = null;
 
   SubscriptionState copyWith({
     bool? isReady,

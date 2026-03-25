@@ -110,8 +110,10 @@ class GroupService {
 
         final merged = byId.values.toList()
           ..sort((a, b) {
-            final ta = a.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final tb = b.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final ta =
+                a.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final tb =
+                b.lastMessageTime ?? DateTime.fromMillisecondsSinceEpoch(0);
             return tb.compareTo(ta);
           });
 
@@ -761,13 +763,13 @@ class GroupService {
         Query.limit(500),
       ],
     );
-    for (final row in invites.rows) {
-      await _databases.deleteRow(
-        databaseId: AppwriteConstants.databaseId,
-        tableId: AppwriteConstants.groupInvitesCollection,
-        rowId: row.$id,
-      );
-    }
+    await Future.wait(
+      invites.rows.map((row) => _databases.deleteRow(
+            databaseId: AppwriteConstants.databaseId,
+            tableId: AppwriteConstants.groupInvitesCollection,
+            rowId: row.$id,
+          )),
+    );
 
     while (true) {
       final batch = await _databases.listRows(
@@ -779,13 +781,13 @@ class GroupService {
         ],
       );
       if (batch.rows.isEmpty) break;
-      for (final m in batch.rows) {
-        await _databases.deleteRow(
-          databaseId: AppwriteConstants.databaseId,
-          tableId: AppwriteConstants.messagesCollection,
-          rowId: m.$id,
-        );
-      }
+      await Future.wait(
+        batch.rows.map((m) => _databases.deleteRow(
+              databaseId: AppwriteConstants.databaseId,
+              tableId: AppwriteConstants.messagesCollection,
+              rowId: m.$id,
+            )),
+      );
     }
 
     await _databases.deleteRow(
@@ -794,14 +796,14 @@ class GroupService {
       rowId: groupId,
     );
 
-    for (final uid in affected) {
-      await _removeFromArray(
-        AppwriteConstants.usersCollection,
-        uid,
-        'groupIds',
-        groupId,
-      );
-    }
+    await Future.wait(
+      affected.map((uid) => _removeFromArray(
+            AppwriteConstants.usersCollection,
+            uid,
+            'groupIds',
+            groupId,
+          )),
+    );
   }
 
   // ── Helpers ──

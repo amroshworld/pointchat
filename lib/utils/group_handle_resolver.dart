@@ -34,9 +34,8 @@ class GroupHandleResolver {
     Iterable<GroupModel> groups,
     String nameToken,
   ) {
-    final list = groups
-        .where((g) => normalizeNameToken(g.name) == nameToken)
-        .toList();
+    final list =
+        groups.where((g) => normalizeNameToken(g.name) == nameToken).toList();
     list.sort((a, b) {
       final ta = a.lastMessageTime;
       final tb = b.lastMessageTime;
@@ -70,15 +69,13 @@ class GroupHandleResolver {
       }
       return null;
     }
-    final byPrefix = matches
-        .where((g) => g.groupId.toLowerCase().startsWith(s))
-        .toList();
+    final byPrefix =
+        matches.where((g) => g.groupId.toLowerCase().startsWith(s)).toList();
     if (byPrefix.length == 1) {
       return byPrefix.first;
     }
-    final byContains = matches
-        .where((g) => g.groupId.toLowerCase().contains(s))
-        .toList();
+    final byContains =
+        matches.where((g) => g.groupId.toLowerCase().contains(s)).toList();
     if (byContains.length == 1) {
       return byContains.first;
     }

@@ -152,13 +152,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   itemBuilder: (context, index) {
                     final message = messages[index];
                     final isMe = message.senderId == widget.currentUserId;
-                    final showSenderName =
-                        !isMe &&
+                    final showSenderName = !isMe &&
                         message.type != MessageType.system &&
                         (index == messages.length - 1 ||
                             messages[index + 1].senderId != message.senderId);
-                    final showDate =
-                        index == messages.length - 1 ||
+                    final showDate = index == messages.length - 1 ||
                         !_isSameDay(
                           message.timestamp,
                           messages[index + 1].timestamp,
@@ -285,9 +283,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
           Text(
             'Start the conversation!',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w600,
-            ),
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
           ),
           const SizedBox(height: 8),
           Text(

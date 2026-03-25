@@ -201,11 +201,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       const SizedBox(height: 16),
                       Text(
                         userData?.displayName ?? cachedUserName,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: colorScheme.onSurface,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: colorScheme.onSurface,
+                                ),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -326,8 +326,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  const ChatPrivacySettingsScreen(),
+                              builder: (_) => const ChatPrivacySettingsScreen(),
                             ),
                           );
                         },

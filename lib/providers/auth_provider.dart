@@ -10,14 +10,11 @@ final authStateProvider = StreamProvider<models.User?>((ref) {
   final controller = StreamController<models.User?>();
 
   void checkAuth() {
-    appwriteAccount
-        .get()
-        .then((user) {
-          if (!controller.isClosed) controller.add(user);
-        })
-        .catchError((_) {
-          if (!controller.isClosed) controller.add(null);
-        });
+    appwriteAccount.get().then((user) {
+      if (!controller.isClosed) controller.add(user);
+    }).catchError((_) {
+      if (!controller.isClosed) controller.add(null);
+    });
   }
 
   // Check initial auth state

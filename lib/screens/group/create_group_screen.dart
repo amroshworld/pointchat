@@ -62,7 +62,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not set group photo. Try again.')),
+          const SnackBar(
+              content: Text('Could not set group photo. Try again.')),
         );
       }
     } finally {
@@ -334,9 +335,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           );
         }
 
-        final users = snapshot.data!
-            .where((u) => !u.isExcludedFromGroups)
-            .toList();
+        final users =
+            snapshot.data!.where((u) => !u.isExcludedFromGroups).toList();
 
         return ListView.builder(
           itemCount: users.length,
@@ -390,23 +390,25 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       width: 96,
                       height: 96,
                       color: colorScheme.tertiaryContainer,
-                      child: _groupPhotoUrl != null && _groupPhotoUrl!.isNotEmpty
-                          ? Image.network(
-                              _groupPhotoUrl!,
-                              width: 96,
-                              height: 96,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => Icon(
-                                Icons.group,
-                                size: 48,
-                                color: colorScheme.onTertiaryContainer,
-                              ),
-                            )
-                          : Icon(
-                              Icons.group,
-                              size: 48,
-                              color: colorScheme.onTertiaryContainer,
-                            ),
+                      child:
+                          _groupPhotoUrl != null && _groupPhotoUrl!.isNotEmpty
+                              ? Image.network(
+                                  _groupPhotoUrl!,
+                                  width: 96,
+                                  height: 96,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      Icon(
+                                    Icons.group,
+                                    size: 48,
+                                    color: colorScheme.onTertiaryContainer,
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.group,
+                                  size: 48,
+                                  color: colorScheme.onTertiaryContainer,
+                                ),
                     ),
                   ),
                   Positioned(
@@ -418,7 +420,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       decoration: BoxDecoration(
                         color: colorScheme.primary,
                         shape: BoxShape.circle,
-                        border: Border.all(color: colorScheme.surface, width: 2),
+                        border:
+                            Border.all(color: colorScheme.surface, width: 2),
                       ),
                       child: _isPickingPhoto
                           ? Padding(

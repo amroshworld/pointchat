@@ -77,8 +77,7 @@ class ChatModel {
     return {
       'participants': participants,
       'lastMessage': lastMessage,
-      'lastMessageTime':
-          lastMessageTime?.toUtc().toIso8601String() ??
+      'lastMessageTime': lastMessageTime?.toUtc().toIso8601String() ??
           DateTime.now().toUtc().toIso8601String(),
       'lastMessageSenderId': lastMessageSenderId,
       'unreadCount': jsonEncode(unreadCount),
