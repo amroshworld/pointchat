@@ -46,6 +46,7 @@ import '../../utils/pointchat_tips.dart';
 import '../../utils/composer_preferences.dart';
 import '../../utils/chat_image_upload.dart';
 import '../../utils/group_handle_resolver.dart';
+import '../../utils/chat_privacy_preferences.dart';
 
 /// Shown when typing `@` so features like `@ai` are discoverable.
 class _AtCommandSuggestion {
@@ -67,15 +68,34 @@ const _kAtCommandHints = <_AtCommandSuggestion>[
   ),
 ];
 
-class UnifiedStreamScreen extends StatefulWidget {
+class UnifiedStreamScreen extends ConsumerStatefulWidget {
   final String currentUserId;
   const UnifiedStreamScreen({super.key, required this.currentUserId});
 
   @override
-  State<UnifiedStreamScreen> createState() => _UnifiedStreamScreenState();
+  ConsumerState<UnifiedStreamScreen> createState() => _UnifiedStreamScreenState();
 }
 
-class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
+// Settings data holder for /setting overlay
+class _MySettingsState {
+  bool seenEnabled;
+  bool notifyOnSeen;
+  String privacyPin;
+  bool reduceMotion;
+  bool tipsHidden;
+  ThemeMode themeMode;
+
+  _MySettingsState({
+    this.seenEnabled = true,
+    this.notifyOnSeen = false,
+    this.privacyPin = '',
+    this.reduceMotion = false,
+    this.tipsHidden = false,
+    this.themeMode = ThemeMode.system,
+  });
+}
+
+class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     with WidgetsBindingObserver {
   final TextEditingController _commandController = TextEditingController();
   final FocusNode _commandFocusNode = FocusNode();
@@ -887,11 +907,91 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     return '${_focusedHandle!} $trimmed';
   }
 
-  void _handleItemTap(String handle) {
-    setState(() {
-      _focusedHandle = _focusedHandle == handle ? null : handle;
-    });
-    _commandFocusNode.requestFocus();
+  Future<void> _lockChat(Map<String, dynamic> item) async {
+    final itemType = item['type'] as String?;
+    final itemId = item['id'] as String?;
+
+    if (itemType == 'dm' && itemId != null) {
+      // Toggle lock status for DMs
+      final currentLocked = (await ChatPrivacyPreferences.getLockedChatIds()).contains(itemId);
+      await ChatPrivacyPreferences.toggleLocked(itemId, !currentLocked);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              !currentLocked ? 'Chat locked and hidden' : 'Chat unlocked',
+              style: GoogleFonts.inter(),
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } else if (itemType == 'group') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Swipe left on a DM to lock it',
+            style: GoogleFonts.inter(),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteChat(Map<String, dynamic> item) async {
+    final itemType = item['type'] as String?;
+    final itemId = item['id'] as String?;
+    final title = item['conversationTitle'] as String? ?? 'this chat';
+
+    if (itemId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete chat?'),
+        content: Text('Are you sure you want to delete "$title"? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      if (itemType == 'dm') {
+        // Get the other user from the DM
+        final otherUserId = item['otherUserId'] as String?;
+        await _chatService.deleteChat(itemId, [currentUserId, otherUserId ?? '']);
+      } else if (itemType == 'group') {
+        await _groupService.deleteGroup(itemId);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Deleted "$title"', style: GoogleFonts.inter()),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not delete: $e', style: GoogleFonts.inter()),
+          ),
+        );
+      }
+    }
   }
 
   void _insertHandleIntoComposer(String handle) {
@@ -1618,26 +1718,28 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
   }
 
   Widget _buildMyProfileContent() {
+    // Load settings data once
+    if (_mySettingsData == null) {
+      _loadMySettings();
+    }
+
     return StreamBuilder<UserModel?>(
       stream: _userService.getUserStream(currentUserId),
       builder: (context, snapshot) {
         final user = snapshot.data ?? _currentUserModel;
         if (user == null) {
-          return Center(
-            child: Text(
-              'Profile unavailable.',
-              style: GoogleFonts.inter(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 13,
-              ),
-            ),
+          return const Center(
+            child: CircularProgressIndicator(color: AppTheme.purple, strokeWidth: 2),
           );
         }
 
+        final settings = _mySettingsData ?? _MySettingsState();
+        
         return SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Profile Header
               Row(
                 children: [
                   _editableAvatar(
@@ -1654,7 +1756,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                         Text(
                           user.displayName,
                           style: GoogleFonts.inter(
-                            color: Theme.of(context).colorScheme.onSurface,
+                            color: Colors.white,
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1663,9 +1765,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                         Text(
                           user.status,
                           style: GoogleFonts.inter(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
+                            color: Colors.white54,
                             fontSize: 13,
                           ),
                         ),
@@ -1674,32 +1774,373 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              // Quick Actions
               Wrap(
-                spacing: 10,
-                runSpacing: 10,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   _overlayActionButton(
                     icon: Icons.photo_camera_back_outlined,
-                    label: 'Change Picture',
+                    label: 'Photo',
                     onTap: _updateMyProfilePhoto,
                   ),
                   _overlayActionButton(
                     icon: Icons.edit_note_rounded,
-                    label: 'Edit Status',
+                    label: 'Status',
                     onTap: () => _editMyStatus(user.status),
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              _settingsField('Email', user.email),
-              _settingsField('Presence', user.isOnline ? 'Online' : 'Offline'),
-              _settingsField('Chats', '${user.chatIds.length} active chats'),
-              _settingsField('Groups', '${user.groupIds.length} joined groups'),
+
+              const SizedBox(height: 20),
+
+              // =============== PRIVACY ===============
+              _settingsSectionTitle('PRIVACY'),
+              _settingsToggle(
+                icon: Icons.done_all_outlined,
+                title: 'Show read receipts',
+                subtitle: 'Others see when you read',
+                value: settings.seenEnabled,
+                onChanged: (v) async {
+                  _mySettingsData?.seenEnabled = v;
+                  await _chatService.setDefaultSeenEnabledForMe(v);
+                  await _chatService.applySeenEnabledToAllChats(currentUserId, v);
+                  if (mounted) setState(() {});
+                },
+              ),
+              _settingsToggle(
+                icon: Icons.notifications_active_outlined,
+                title: 'Notify when seen',
+                subtitle: 'Get alerts when read',
+                value: settings.notifyOnSeen,
+                onChanged: (v) async {
+                  _mySettingsData?.notifyOnSeen = v;
+                  await _chatService.setDefaultNotifyOnSeenForMe(v);
+                  await _chatService.applyNotifyOnSeenToAllChats(currentUserId, v);
+                  if (mounted) setState(() {});
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              // =============== CHATS & LOCK ===============
+              _settingsSectionTitle('CHATS & LOCK'),
+              _settingsToggle(
+                icon: Icons.lock_outline,
+                title: 'Reduce motion',
+                subtitle: 'Shorter animations',
+                value: settings.reduceMotion,
+                onChanged: (v) async {
+                  _mySettingsData?.reduceMotion = v;
+                  await ChatPrivacyPreferences.setReduceUiMotion(v);
+                  if (mounted) setState(() {});
+                },
+              ),
+              // Hint text for swipe gestures
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  'Hint: Swipe a chat left to hide and lock, or right to delete.',
+                  style: GoogleFonts.inter(fontSize: 11, color: Colors.white30),
+                ),
+              ),
+              _settingsPinInput(
+                initialValue: settings.privacyPin,
+                onSave: (pin) async {
+                  _mySettingsData?.privacyPin = pin;
+                  await ChatPrivacyPreferences.setPrivacyPin(pin);
+                  if (mounted) setState(() {});
+                },
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 44, bottom: 8),
+                child: Text(
+                  'Swipe a chat left to blur and lock.',
+                  style: GoogleFonts.inter(fontSize: 11, color: Colors.white30),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // =============== APPEARANCE ===============
+              _settingsSectionTitle('APPEARANCE'),
+              _settingsThemeRow(
+                currentMode: settings.themeMode,
+                onChanged: (mode) {
+                  _mySettingsData?.themeMode = mode;
+                  ref.read(themeModeProvider.notifier).setMode(mode);
+                  if (mounted) setState(() {});
+                },
+              ),
+              _settingsToggle(
+                icon: Icons.hide_source_outlined,
+                title: 'Hide composer tips',
+                subtitle: 'Tips above message box',
+                value: settings.tipsHidden,
+                onChanged: (v) async {
+                  _mySettingsData?.tipsHidden = v;
+                  await ComposerPreferences.setTipsHidden(v);
+                  if (mounted) setState(() {});
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              // =============== AI ===============
+              _settingsSectionTitle('AI'),
+              _settingsInfoRow(
+                icon: Icons.auto_awesome,
+                title: 'AI subscription',
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: SubscriptionService.instance.state.value.hasAiAccess
+                        ? AppTheme.green.withValues(alpha: 0.2)
+                        : Colors.white10,
+                  ),
+                  child: Text(
+                    SubscriptionService.instance.state.value.hasAiAccess ? 'Active' : 'Inactive',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: SubscriptionService.instance.state.value.hasAiAccess ? AppTheme.green : Colors.white54,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // =============== INFO ===============
+              _settingsSectionTitle('INFO'),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 4),
+                child: Text('Email: ${user.email}', style: GoogleFonts.inter(color: Colors.white30, fontSize: 11)),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 4),
+                child: Text('Chats: ${user.chatIds.length}', style: GoogleFonts.inter(color: Colors.white30, fontSize: 11)),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Text('Groups: ${user.groupIds.length}', style: GoogleFonts.inter(color: Colors.white30, fontSize: 11)),
+              ),
+
+              const SizedBox(height: 20),
             ],
           ),
         );
       },
+    );
+  }
+
+  _MySettingsState? _mySettingsData;
+
+  Future<void> _loadMySettings() async {
+    final seen = await _chatService.getDefaultSeenEnabledForMe();
+    final notify = await _chatService.getDefaultNotifyOnSeenForMe();
+    final pin = await ChatPrivacyPreferences.getPrivacyPin();
+    final motion = await ChatPrivacyPreferences.getReduceUiMotion();
+    final tips = await ComposerPreferences.getTipsHidden();
+    final theme = ref.read(themeModeProvider);
+
+    _mySettingsData = _MySettingsState(
+      seenEnabled: seen,
+      notifyOnSeen: notify,
+      privacyPin: pin,
+      reduceMotion: motion,
+      tipsHidden: tips,
+      themeMode: theme,
+    );
+    if (mounted) setState(() {});
+  }
+
+  Widget _settingsSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        title,
+        style: GoogleFonts.inter(
+          color: Colors.white38,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsToggle({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white54, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(subtitle, style: GoogleFonts.inter(color: Colors.white38, fontSize: 11)),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeTrackColor: AppTheme.green,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _settingsPinInput({required String initialValue, required Function(String) onSave}) {
+    final controller = TextEditingController(text: initialValue);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.pin_outlined, color: Colors.white54, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Chat Security PIN (4-8 digits)', style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                SizedBox(
+                  height: 28,
+                  child: TextField(
+                    controller: controller,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    style: GoogleFonts.jetBrainsMono(fontSize: 14, color: Colors.white70),
+                    decoration: InputDecoration(
+                      hintText: 'For unlocking locked chats',
+                      hintStyle: GoogleFonts.jetBrainsMono(fontSize: 11, color: Colors.white24),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                      border: InputBorder.none,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              final pin = controller.text.trim();
+              if (pin.isNotEmpty && (pin.length < 4 || pin.length > 8)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('PIN must be 4–8 digits or empty')),
+                );
+                return;
+              }
+              if (pin.isNotEmpty && int.tryParse(pin) == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('PIN must be numeric')),
+                );
+                return;
+              }
+              onSave(pin);
+            },
+            child: Text('Save', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.focusBlue)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _settingsThemeRow({required ThemeMode currentMode, required Function(ThemeMode) onChanged}) {
+    String label;
+    switch (currentMode) {
+      case ThemeMode.light: label = 'Light'; break;
+      case ThemeMode.dark: label = 'Dark'; break;
+      case ThemeMode.system: label = 'System'; break;
+    }
+
+    return InkWell(
+      onTap: () {
+        showModalBottomSheet(
+          context: context,
+          builder: (ctx) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('Theme', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 16)),
+                ),
+                for (final mode in ThemeMode.values)
+                  ListTile(
+                    title: Text(mode == ThemeMode.system ? 'System default' : mode.name[0].toUpperCase() + mode.name.substring(1)),
+                    trailing: currentMode == mode ? const Icon(Icons.check, color: AppTheme.green) : null,
+                    onTap: () {
+                      onChanged(mode);
+                      Navigator.pop(ctx);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        margin: const EdgeInsets.only(bottom: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.dark_mode_outlined, color: Colors.white54, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('Theme', style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
+            Text(label, style: GoogleFonts.inter(color: Colors.white54, fontSize: 12)),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right, color: Colors.white30, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsInfoRow({required IconData icon, required String title, required Widget trailing}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white54, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(title, style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+          ),
+          trailing,
+        ],
+      ),
     );
   }
 
@@ -3482,7 +3923,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                 });
                 _commandFocusNode.requestFocus();
               },
-              onLongPress: () => _handleItemTap(item['handle'] ?? ''),
+              onSwipeLeft: () => _lockChat(item),
+              onSwipeRight: () => _deleteChat(item),
               onHandleTap: (handle) {
                 _insertHandleIntoComposer(handle);
               },
@@ -3502,8 +3944,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       children: [
         if (_replyingToMessage != null)
           Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 2),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primaryContainer,
               borderRadius: BorderRadius.zero,
@@ -3564,8 +4006,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           ),
         if (_forwardingMessage != null)
           Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 2),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primaryContainer,
               borderRadius: BorderRadius.zero,
@@ -3650,8 +4092,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
             final scheme = Theme.of(context).colorScheme;
 
             return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              constraints: const BoxConstraints(maxHeight: 240),
+              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+              constraints: const BoxConstraints(maxHeight: 180),
               decoration: BoxDecoration(
                 color: scheme.surface,
                 borderRadius: BorderRadius.zero,
@@ -3663,7 +4105,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                 children: [
                   if (showAtExtras)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
                       child: Row(
                         children: [
                           FilterChip(
@@ -3754,6 +4196,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                     Expanded(
                       child: ListView.builder(
                         shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(vertical: 2),
                         itemCount: _mentionSuggestions.length,
                         itemBuilder: (context, index) {
                           final suggestion = _mentionSuggestions[index];
@@ -3945,7 +4388,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
               return const SizedBox.shrink();
             }
             return Padding(
-              padding: const EdgeInsets.fromLTRB(14, 2, 8, 0),
+              padding: const EdgeInsets.fromLTRB(14, 1, 8, 0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -4005,7 +4448,7 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
           },
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -4522,7 +4965,8 @@ class StreamItemWidget extends StatefulWidget {
   final ValueChanged<String> onHandleTap;
   final void Function(Map<String, dynamic>) onReply;
   final void Function(MessageModel) onForward;
-  final VoidCallback onLongPress;
+  final VoidCallback onSwipeLeft; // Lock/hide chat
+  final VoidCallback onSwipeRight; // Delete chat
 
   const StreamItemWidget({
     super.key,
@@ -4538,7 +4982,8 @@ class StreamItemWidget extends StatefulWidget {
     required this.onHandleTap,
     required this.onReply,
     required this.onForward,
-    required this.onLongPress,
+    required this.onSwipeLeft,
+    required this.onSwipeRight,
   });
 
   @override
@@ -4759,19 +5204,48 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: GestureDetector(
-        onHorizontalDragUpdate: (details) {
-          if (widget.isExpanded) {
-            if (details.primaryDelta! > 5) {
-              setState(() => _showInfo = true);
-            } else if (details.primaryDelta! < -5) {
-              setState(() => _showInfo = false);
-            }
+      child: Dismissible(
+        key: ValueKey(widget.item['id'] ?? widget.item['handle']),
+        direction: widget.isExpanded 
+            ? DismissDirection.none  // No swipe when expanded
+            : DismissDirection.horizontal,
+        confirmDismiss: (direction) async {
+          if (direction == DismissDirection.startToEnd) {
+            // Swipe RIGHT = delete
+            widget.onSwipeRight();
+          } else if (direction == DismissDirection.endToStart) {
+            // Swipe LEFT = lock/hide
+            widget.onSwipeLeft();
           }
+          return false; // Don't actually dismiss
         },
+        background: Container(
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.only(left: 20),
+          color: AppTheme.red,
+          child: Row(
+            children: [
+              const Icon(Icons.delete_outline, color: Colors.white),
+              const SizedBox(width: 8),
+              Text('Delete', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+        secondaryBackground: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          color: AppTheme.focusBlue,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Text('Lock', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              const Icon(Icons.lock_outline, color: Colors.white),
+            ],
+          ),
+        ),
         child: InkWell(
           onTap: widget.onTap,
-          onLongPress: widget.onLongPress,
           borderRadius: BorderRadius.zero,
           splashColor: AppTheme.purpleGlow,
           highlightColor: AppTheme.purpleGlow,

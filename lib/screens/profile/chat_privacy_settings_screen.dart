@@ -90,6 +90,15 @@ class _ChatPrivacySettingsScreenState extends State<ChatPrivacySettingsScreen> {
               padding: const EdgeInsets.all(20),
               children: [
                 Text(
+                  'Hint: Swipe a chat left to hide and lock, or right to delete.',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: scheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
                   'Locked chats',
                   style: GoogleFonts.inter(
                     fontSize: 13,
@@ -99,7 +108,7 @@ class _ChatPrivacySettingsScreenState extends State<ChatPrivacySettingsScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'On the Messages tab, select one or more chats (long-press), then tap the lock icon in the app bar. Locked threads stay blurred until you unlock with biometric or PIN.',
+                  'On the Messages tab, swipe a chat left to lock it. Locked threads stay blurred until you unlock with biometric or PIN.',
                   style: GoogleFonts.inter(
                     fontSize: 14,
                     height: 1.45,
@@ -113,8 +122,8 @@ class _ChatPrivacySettingsScreenState extends State<ChatPrivacySettingsScreen> {
                   obscureText: true,
                   maxLength: 8,
                   decoration: InputDecoration(
-                    labelText: 'Backup PIN (optional)',
-                    hintText: '4–8 digits, or leave empty',
+                    labelText: 'Chat Security PIN (4-8 digits)',
+                    hintText: 'For unlocking locked chats.',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -125,6 +134,14 @@ class _ChatPrivacySettingsScreenState extends State<ChatPrivacySettingsScreen> {
                 FilledButton(
                   onPressed: _savePin,
                   child: const Text('Save PIN'),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Swipe a chat left to blur and lock.',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 28),
                 Text(
