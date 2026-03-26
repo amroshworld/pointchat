@@ -52,6 +52,7 @@ class _DefaultTips {
   List<String> get tips => const [
         'Message someone with @name or a group with #name',
         '@ai — PointChat AI · /newbot Name — custom bot',
+        '/setting — open settings for seen receipts and notify-on-seen',
         'Location: use the pin button next to the composer',
         'Long-press the mic area to record a voice note',
       ];

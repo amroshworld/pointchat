@@ -20,17 +20,21 @@ class GroupService {
     String photoUrl = '',
     bool isPublic = false,
   }) async {
+    final normalizedName = name.trim();
+    if (normalizedName.isEmpty) {
+      throw ArgumentError('Group name cannot be empty.');
+    }
+
     final groupId = ID.unique();
 
-    final invitees = members
-        .where((id) => id != createdBy)
-        .toList(growable: false);
+    final invitees =
+        members.where((id) => id != createdBy).toList(growable: false);
     final memberList = [createdBy];
     final unreadInit = {createdBy: 0};
 
     final group = GroupModel(
       groupId: groupId,
-      name: name,
+      name: normalizedName,
       description: description,
       photoUrl: photoUrl,
       createdBy: createdBy,

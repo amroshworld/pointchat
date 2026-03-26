@@ -16,6 +16,7 @@ import '../../utils/composer_preferences.dart';
 import '../../providers/theme_provider.dart';
 import '../subscription/ai_subscription_screen.dart';
 import 'chat_privacy_settings_screen.dart';
+import 'seen_message_settings_screen.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -280,6 +281,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(
+                            Icons.done_all_outlined,
+                            color: colorScheme.onPrimaryContainer,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text('Seen & read receipts'),
+                        subtitle: const Text(
+                          'Control seen status + notify me when seen',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => SeenMessageSettingsScreen(
+                                  userId: cachedUserId),
+                            ),
+                          );
+                        },
+                      ),
+                      const Divider(height: 1, indent: 72),
+                      ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
                             Icons.auto_awesome,
                             color: colorScheme.onPrimaryContainer,
                             size: 20,
@@ -362,7 +392,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             context: context,
                             builder: (context) => _ThemeSelectorSheet(
                               currentMode: currentThemeMode,
-                              onModeSelected: (mode) => ref.read(themeModeProvider.notifier).setMode(mode),
+                              onModeSelected: (mode) => ref
+                                  .read(themeModeProvider.notifier)
+                                  .setMode(mode),
                             ),
                           );
                         },
@@ -416,10 +448,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                         ),
                         title: const Text('Notifications'),
-                        subtitle: const Text('Enabled'),
+                        subtitle:
+                            const Text('Seen alerts and chat notifications'),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () {
-                          // TODO: Notification settings
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => SeenMessageSettingsScreen(
+                                  userId: cachedUserId),
+                            ),
+                          );
                         },
                       ),
                     ],
@@ -606,7 +644,8 @@ class _ThemeSelectorSheet extends StatelessWidget {
           for (final mode in ThemeMode.values)
             RadioListTile<ThemeMode>(
               title: Text(
-                mode.name[0].toUpperCase() + mode.name.substring(1).toLowerCase() +
+                mode.name[0].toUpperCase() +
+                    mode.name.substring(1).toLowerCase() +
                     (mode == ThemeMode.system ? ' default' : ''),
               ),
               value: mode,

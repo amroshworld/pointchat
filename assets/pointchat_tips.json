@@ -4,9 +4,10 @@
     "@ai your question — PointChat AI (only your private AI thread)",
     "/newbot AssistantName — create a custom bot",
     "Use the location button in the composer to share GPS",
-    "/setting @user or #group — conversation settings",
+    "/setting — open your settings (seen receipts, notify when seen)",
     "Voice notes: ±1s buttons and waveform tap to seek",
+    "Profile > Seen & read receipts controls read status for all chats",
     "Type @ to see people; type / for slash commands"
   ],
-  "ai_knowledge": "PointChat supports DMs (@username), groups (#groupname), voice messages, photos/files, and location sharing via the location button in the composer. /newbot Name opens creating a custom bot. @ai talks to PointChat AI in the user's private self-chat thread. Custom bots reply when messaged. Slash commands: /myprofile, /setting, /newbot. AI responses do not use web search or Google grounding (text-only model)."
+  "ai_knowledge": "PointChat supports DMs (@username), groups (#groupname), voice messages, photos/files, and location sharing via the location button in the composer. /newbot Name opens creating a custom bot. @ai talks to PointChat AI in the user's private self-chat thread. Custom bots reply when messaged. Slash commands: /setting, /newbot. Seen/read controls live in Profile > Seen & read receipts, including notify when someone sees your message. AI responses do not use web search or Google grounding (text-only model)."
 }

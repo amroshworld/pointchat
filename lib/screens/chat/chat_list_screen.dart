@@ -36,6 +36,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
   bool _isSelectionMode = false;
   Set<String> _lockedChatIds = {};
 
+  late Stream<List<ChatModel>> _chatsStream;
+
   Duration get _tileAnimDuration =>
       ChatPrivacyPreferences.reduceUiMotionListenable.value
           ? const Duration(milliseconds: 120)
@@ -59,6 +61,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   void initState() {
     super.initState();
+    _chatsStream = _chatService.getUserChats(widget.currentUserId);
     _bootstrapPrivacy();
   }
 
@@ -322,7 +325,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       body: Stack(
         children: [
           StreamBuilder<List<ChatModel>>(
-            stream: _chatService.getUserChats(widget.currentUserId),
+            stream: _chatsStream,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return Center(child: CircularProgressIndicator(color: _accent));
@@ -554,29 +557,74 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
         return Dismissible(
           key: ValueKey('dm-${chat.chatId}'),
-          direction: DismissDirection.endToStart,
-          confirmDismiss: (_) async {
-            final name = user?.displayName ?? 'this chat';
-            return _confirmDeleteChat(name);
-          },
-          onDismissed: (_) async {
-            final participants = [widget.currentUserId, otherUserId];
-            await _chatService.deleteChat(chat.chatId, participants);
-            if (_expandedChatId == chat.chatId) {
-              setState(() => _expandedChatId = null);
+          direction: DismissDirection.horizontal,
+          confirmDismiss: (direction) async {
+            if (direction == DismissDirection.startToEnd) {
+              // Swipe right: Delete
+              final name = user?.displayName ?? 'this chat';
+              return _confirmDeleteChat(name);
+            } else if (direction == DismissDirection.endToStart) {
+              // Swipe left: Toggle lock/privacy
+              final isCurrentlyLocked = _lockedChatIds.contains(chat.chatId);
+
+              if (isCurrentlyLocked) {
+                // If it's already locked, we might want to ask pin to unlock
+                final ok = await _verifyPrivacyUnlock();
+                if (ok) {
+                  await ChatPrivacyPreferences.toggleLocked(chat.chatId, false);
+                  await ChatPrivacyPreferences.syncLockedListenable();
+                  if (mounted) setState(() {});
+                }
+              } else {
+                // Lock it
+                await ChatPrivacyPreferences.toggleLocked(chat.chatId, true);
+                await ChatPrivacyPreferences.syncLockedListenable();
+                if (mounted) {
+                  setState(() {
+                    if (_expandedChatId == chat.chatId) _expandedChatId = null;
+                  });
+                }
+              }
+              return false; // Don't actually dismiss the tile
             }
-            _selectedChatIds.remove(chat.chatId);
-            await ChatPrivacyPreferences.toggleLocked(chat.chatId, false);
+            return false;
+          },
+          onDismissed: (direction) async {
+            if (direction == DismissDirection.startToEnd) {
+              final participants = [widget.currentUserId, otherUserId];
+              await _chatService.deleteChat(chat.chatId, participants);
+              if (_expandedChatId == chat.chatId) {
+                setState(() => _expandedChatId = null);
+              }
+              _selectedChatIds.remove(chat.chatId);
+              await ChatPrivacyPreferences.toggleLocked(chat.chatId, false);
+            }
           },
           background: Container(
-            alignment: Alignment.centerRight,
+            alignment: Alignment.centerLeft,
             margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            padding: const EdgeInsets.only(right: 20),
+            padding: const EdgeInsets.only(left: 20),
             decoration: BoxDecoration(
               color: Colors.red.shade800,
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.delete_outline, color: Colors.white),
+          ),
+          secondaryBackground: Container(
+            alignment: Alignment.centerRight,
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.only(right: 20),
+            decoration: BoxDecoration(
+              color: _lockedChatIds.contains(chat.chatId)
+                  ? Colors.green.shade700
+                  : Colors.indigo.shade700,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+                _lockedChatIds.contains(chat.chatId)
+                    ? Icons.lock_open
+                    : Icons.lock_outline,
+                color: Colors.white),
           ),
           child: AnimatedContainer(
             duration: _tileAnimDuration,

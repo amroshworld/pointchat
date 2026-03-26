@@ -413,55 +413,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   title: const Text('Wallpaper'),
                   onTap: () => Navigator.pop(context),
                 ),
-                ListTile(
-                  leading: Icon(Icons.delete_outline, color: colorScheme.error),
-                  title: Text(
-                    'Delete chat',
-                    style: TextStyle(color: colorScheme.error),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _confirmDeleteChat();
-                  },
-                ),
               ],
             ),
           ),
-        );
-      },
-    );
-  }
-
-  void _confirmDeleteChat() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete chat?'),
-          content: const Text(
-            'This will permanently delete all messages in this conversation.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await _chatService.deleteChat(widget.chatId, [
-                  widget.currentUserId,
-                  widget.otherUserId,
-                ]);
-                if (!context.mounted) return;
-                Navigator.pop(context);
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
-              ),
-              child: const Text('Delete'),
-            ),
-          ],
         );
       },
     );

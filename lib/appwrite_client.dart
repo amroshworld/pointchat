@@ -30,10 +30,10 @@ class AppwriteRealtimeChannels {
   AppwriteRealtimeChannels._();
 
   static String tableRows(String tableId) =>
-      'databases.${AppwriteConstants.databaseId}.tables.$tableId.rows';
+      'databases.${AppwriteConstants.databaseId}.collections.$tableId.documents';
 
   static String tableRow(String tableId, String rowId) =>
-      '${tableRows(tableId)}.$rowId';
+      'databases.${AppwriteConstants.databaseId}.collections.$tableId.documents.$rowId';
 }
 
 final Client appwriteClient = Client()

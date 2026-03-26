@@ -249,6 +249,10 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
         }
 
         for (var group in groups) {
+          if (_normalizeHandleToken(group.name).isEmpty) {
+            // Skip malformed rows (e.g. accidental empty-name groups) in stream UI.
+            continue;
+          }
           final pendingInviteIds =
               pendingByGroup[group.groupId] ?? const <String>[];
 
@@ -331,7 +335,9 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
     _groupsStream.listen((groups) {
       if (mounted) {
         setState(() {
-          _allGroups = groups;
+          _allGroups = groups
+              .where((g) => _normalizeHandleToken(g.name).isNotEmpty)
+              .toList();
         });
       }
     });
@@ -524,6 +530,11 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                 '/newbot Name',
                 'Create a custom bot (type after the command)',
               ),
+              _helpRow(
+                ctx,
+                '/setting',
+                'Open your settings (seen status, notify on seen, profile)',
+              ),
             ],
           ),
         ),
@@ -684,7 +695,6 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       final query = textBeforeCursor.substring(lastSlash + 1).toLowerCase();
       final slashOptions = <String>[
         '/setting',
-        '/myprofile',
         '/newbot',
         // AI commands hidden for now
         // '/summarize',
@@ -2792,6 +2802,20 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
         }
       } else if (handle.startsWith('#')) {
         final parsed = GroupHandleResolver.parseAfterHash(handle.substring(1));
+        if (parsed.nameToken.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Group name is missing. Use #groupname before your message.',
+                  style: GoogleFonts.jetBrainsMono(),
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+              ),
+            );
+          }
+          continue;
+        }
         final matches = GroupHandleResolver.matchingByName(
           _allGroups,
           parsed.nameToken,
@@ -3042,21 +3066,17 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
       final beforeSlash = normalizedInput.substring(0, slashIndex).trim();
       final aiPrompt = normalizedInput.substring(slashIndex + 1).trim();
 
-      if (aiPrompt.toLowerCase() == 'myprofile' && beforeSlash.isEmpty) {
-        _commandController.clear();
-        await _showMyProfileOverlay();
-        return;
-      }
-
       if (aiPrompt.toLowerCase().startsWith('setting')) {
         final targetHandle = beforeSlash
             .split(' ')
             .where((word) => word.startsWith('@') || word.startsWith('#'))
             .cast<String?>()
             .firstWhere((word) => word != null, orElse: () => _focusedHandle);
+        _commandController.clear();
         if (targetHandle != null && targetHandle.isNotEmpty) {
-          _commandController.clear();
           await _showSettingsOverlayForHandle(targetHandle);
+        } else {
+          await _showMyProfileOverlay();
         }
         return;
       }
@@ -3440,6 +3460,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                 });
                 if (!isExpanded && item['type'] == 'dm') {
                   _chatService.markMessagesAsRead(item['id'], currentUserId);
+                } else if (!isExpanded && item['type'] == 'group') {
+                  _groupService.markGroupAsRead(item['id'], currentUserId);
                 }
               },
               onReply: (replyData) {
@@ -4021,21 +4043,28 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                         // The normal text input field (always in tree to maintain keyboard focus)
                         Row(
                           children: [
-                            IconButton(
-                              tooltip: 'Commands & tips',
-                              icon: Icon(
-                                Icons.tips_and_updates_outlined,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                                size: 22,
-                              ),
-                              onPressed: _showCommandHelpSheet,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 40,
-                                minHeight: 40,
-                              ),
+                            ValueListenableBuilder<bool>(
+                              valueListenable:
+                                  ComposerPreferences.tipsHiddenListenable,
+                              builder: (context, tipsHidden, _) {
+                                if (tipsHidden) return const SizedBox.shrink();
+                                return IconButton(
+                                  tooltip: 'Commands & tips',
+                                  icon: Icon(
+                                    Icons.tips_and_updates_outlined,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                    size: 22,
+                                  ),
+                                  onPressed: _showCommandHelpSheet,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 40,
+                                    minHeight: 40,
+                                  ),
+                                );
+                              },
                             ),
                             const SizedBox(width: 4),
                             Expanded(
@@ -4409,7 +4438,8 @@ class _UnifiedStreamScreenState extends State<UnifiedStreamScreen>
                           ];
                           _normalizedUsersMap.clear();
                           for (final u in _allUsers) {
-                            _normalizedUsersMap[_normalizeHandleToken(u.displayName)] = u;
+                            _normalizedUsersMap[
+                                _normalizeHandleToken(u.displayName)] = u;
                           }
                         }
                         _focusedHandle = _formatHandle(botName);
@@ -4518,6 +4548,22 @@ class StreamItemWidget extends StatefulWidget {
 class _StreamItemWidgetState extends State<StreamItemWidget> {
   bool _showInfo = false;
 
+  double _presencePct(dynamic raw) {
+    if (raw is num) {
+      return raw.toDouble().clamp(0.0, 1.0);
+    }
+    final parsed = double.tryParse(raw?.toString() ?? '');
+    return (parsed ?? 0.0).clamp(0.0, 1.0);
+  }
+
+  String _safePhotoUrl(dynamic raw) {
+    final s = (raw?.toString() ?? '').trim();
+    if (s.isEmpty || s.toLowerCase() == 'null') {
+      return '';
+    }
+    return s;
+  }
+
   @override
   void didUpdateWidget(StreamItemWidget oldWidget) {
     if (!widget.isExpanded && oldWidget.isExpanded) {
@@ -4529,8 +4575,8 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
   Widget _buildAvatar(Map<String, dynamic> item, ColorScheme colorScheme) {
     final String handleText = item['handle'] ?? '?';
     final isGroup = item['type'] == 'group' || handleText.startsWith('#');
-    final double percentage = item['onlinePercentage'] ?? 0.0;
-    final String photoUrl = item['photoUrl'] ?? '';
+    final double percentage = _presencePct(item['onlinePercentage']);
+    final String photoUrl = _safePhotoUrl(item['photoUrl']);
     final bool isAiSelfChat = item['isAiSelfChat'] == true;
     final bool isBotDm = item['isBotDm'] == true;
     final titleForInitial =
@@ -4568,12 +4614,13 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
       );
     } else if (photoUrl.isNotEmpty) {
       innerAvatar = ClipOval(
-        child: Image.network(
-          photoUrl,
+        child: CachedNetworkImage(
+          imageUrl: photoUrl,
           width: 32,
           height: 32,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) =>
+          placeholder: (context, _) => _buildInitials(initials, colorScheme),
+          errorWidget: (context, _, __) =>
               _buildInitials(initials, colorScheme),
         ),
       );

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:appwrite/appwrite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../appwrite_client.dart';
 import '../models/chat_model.dart';
 import '../models/message_model.dart';
@@ -8,6 +9,29 @@ import '../models/message_model.dart';
 class ChatService {
   final TablesDB _databases = appwriteTablesDB;
   final Realtime _realtime = appwriteRealtime;
+  static const String _prefSeenEnabledDefault = 'chat.defaultSeenEnabledForMe';
+  static const String _prefNotifyOnSeenDefault =
+      'chat.defaultNotifyOnSeenForMe';
+
+  Future<bool> getDefaultSeenEnabledForMe() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_prefSeenEnabledDefault) ?? true;
+  }
+
+  Future<bool> getDefaultNotifyOnSeenForMe() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_prefNotifyOnSeenDefault) ?? false;
+  }
+
+  Future<void> setDefaultSeenEnabledForMe(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefSeenEnabledDefault, enabled);
+  }
+
+  Future<void> setDefaultNotifyOnSeenForMe(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefNotifyOnSeenDefault, enabled);
+  }
 
   // Get or create a chat between two users
   Future<String> getOrCreateChat(
@@ -44,11 +68,13 @@ class ChatService {
 
     // Create new chat with default seen settings
     final chatId = ID.unique();
+    final mySeenDefault = await getDefaultSeenEnabledForMe();
+    final myNotifyDefault = await getDefaultNotifyOnSeenForMe();
     final chat = ChatModel(
       chatId: chatId,
       participants: [currentUserId, otherUserId],
-      seenEnabled: {currentUserId: true, otherUserId: true},
-      notifyOnSeen: {currentUserId: false, otherUserId: false},
+      seenEnabled: {currentUserId: mySeenDefault, otherUserId: true},
+      notifyOnSeen: {currentUserId: myNotifyDefault, otherUserId: false},
     );
     await _databases.createRow(
       databaseId: AppwriteConstants.databaseId,
@@ -451,6 +477,54 @@ class ChatService {
       rowId: chatId,
       data: {'notifyOnSeen': jsonEncode(notifyOnSeen)},
     );
+  }
+
+  Future<void> applySeenEnabledToAllChats(
+    String userId,
+    bool enabled,
+  ) async {
+    final result = await _databases.listRows(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      queries: [Query.contains('participants', userId), Query.limit(500)],
+    );
+
+    for (final row in result.rows) {
+      final seenEnabled = _decodeJsonMap(row.data['seenEnabled']);
+      if (seenEnabled[userId] == enabled) continue;
+      seenEnabled[userId] = enabled;
+
+      await _databases.updateRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.chatsCollection,
+        rowId: row.$id,
+        data: {'seenEnabled': jsonEncode(seenEnabled)},
+      );
+    }
+  }
+
+  Future<void> applyNotifyOnSeenToAllChats(
+    String userId,
+    bool enabled,
+  ) async {
+    final result = await _databases.listRows(
+      databaseId: AppwriteConstants.databaseId,
+      tableId: AppwriteConstants.chatsCollection,
+      queries: [Query.contains('participants', userId), Query.limit(500)],
+    );
+
+    for (final row in result.rows) {
+      final notifyOnSeen = _decodeJsonMap(row.data['notifyOnSeen']);
+      if (notifyOnSeen[userId] == enabled) continue;
+      notifyOnSeen[userId] = enabled;
+
+      await _databases.updateRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.chatsCollection,
+        rowId: row.$id,
+        data: {'notifyOnSeen': jsonEncode(notifyOnSeen)},
+      );
+    }
   }
 
   Future<void> deleteMessage(String messageId, {String? chatId}) async {
