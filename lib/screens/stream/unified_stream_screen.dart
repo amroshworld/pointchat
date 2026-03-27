@@ -73,7 +73,8 @@ class UnifiedStreamScreen extends ConsumerStatefulWidget {
   const UnifiedStreamScreen({super.key, required this.currentUserId});
 
   @override
-  ConsumerState<UnifiedStreamScreen> createState() => _UnifiedStreamScreenState();
+  ConsumerState<UnifiedStreamScreen> createState() =>
+      _UnifiedStreamScreenState();
 }
 
 // Settings data holder for /setting overlay
@@ -699,9 +700,12 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       final groupMatches = _allGroups
           .where((g) => _normalizeHandleToken(g.name).contains(query))
           .toList();
-      final hasExactMatch = groupMatches.any(
-        (g) => _normalizeHandleToken(g.name) == query,
-      );
+
+      // O(1) performance optimization via Set lookup instead of O(N) .any() mapping iteration
+      final groupNamesNorm = Set<String>.from(
+          groupMatches.map((g) => _normalizeHandleToken(g.name)));
+      final hasExactMatch = groupNamesNorm.contains(query);
+
       setState(() {
         _isMentioning = true;
         _activeMentionKind = '#';
@@ -913,9 +917,10 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
     if (itemType == 'dm' && itemId != null) {
       // Toggle lock status for DMs
-      final currentLocked = (await ChatPrivacyPreferences.getLockedChatIds()).contains(itemId);
+      final currentLocked =
+          (await ChatPrivacyPreferences.getLockedChatIds()).contains(itemId);
       await ChatPrivacyPreferences.toggleLocked(itemId, !currentLocked);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -951,7 +956,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete chat?'),
-        content: Text('Are you sure you want to delete "$title"? This cannot be undone.'),
+        content: Text(
+            'Are you sure you want to delete "$title"? This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -972,7 +978,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       if (itemType == 'dm') {
         // Get the other user from the DM
         final otherUserId = item['otherUserId'] as String?;
-        await _chatService.deleteChat(itemId, [currentUserId, otherUserId ?? '']);
+        await _chatService
+            .deleteChat(itemId, [currentUserId, otherUserId ?? '']);
       } else if (itemType == 'group') {
         await _groupService.deleteGroup(itemId);
       }
@@ -1729,12 +1736,13 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         final user = snapshot.data ?? _currentUserModel;
         if (user == null) {
           return const Center(
-            child: CircularProgressIndicator(color: AppTheme.purple, strokeWidth: 2),
+            child: CircularProgressIndicator(
+                color: AppTheme.purple, strokeWidth: 2),
           );
         }
 
         final settings = _mySettingsData ?? _MySettingsState();
-        
+
         return SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1805,7 +1813,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                 onChanged: (v) async {
                   _mySettingsData?.seenEnabled = v;
                   await _chatService.setDefaultSeenEnabledForMe(v);
-                  await _chatService.applySeenEnabledToAllChats(currentUserId, v);
+                  await _chatService.applySeenEnabledToAllChats(
+                      currentUserId, v);
                   if (mounted) setState(() {});
                 },
               ),
@@ -1817,7 +1826,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                 onChanged: (v) async {
                   _mySettingsData?.notifyOnSeen = v;
                   await _chatService.setDefaultNotifyOnSeenForMe(v);
-                  await _chatService.applyNotifyOnSeenToAllChats(currentUserId, v);
+                  await _chatService.applyNotifyOnSeenToAllChats(
+                      currentUserId, v);
                   if (mounted) setState(() {});
                 },
               ),
@@ -1893,18 +1903,24 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                 icon: Icons.auto_awesome,
                 title: 'AI subscription',
                 trailing: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: SubscriptionService.instance.state.value.hasAiAccess
                         ? AppTheme.green.withValues(alpha: 0.2)
                         : Colors.white10,
                   ),
                   child: Text(
-                    SubscriptionService.instance.state.value.hasAiAccess ? 'Active' : 'Inactive',
+                    SubscriptionService.instance.state.value.hasAiAccess
+                        ? 'Active'
+                        : 'Inactive',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: SubscriptionService.instance.state.value.hasAiAccess ? AppTheme.green : Colors.white54,
+                      color:
+                          SubscriptionService.instance.state.value.hasAiAccess
+                              ? AppTheme.green
+                              : Colors.white54,
                     ),
                   ),
                 ),
@@ -1916,15 +1932,21 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               _settingsSectionTitle('INFO'),
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 4),
-                child: Text('Email: ${user.email}', style: GoogleFonts.inter(color: Colors.white30, fontSize: 11)),
+                child: Text('Email: ${user.email}',
+                    style:
+                        GoogleFonts.inter(color: Colors.white30, fontSize: 11)),
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 4),
-                child: Text('Chats: ${user.chatIds.length}', style: GoogleFonts.inter(color: Colors.white30, fontSize: 11)),
+                child: Text('Chats: ${user.chatIds.length}',
+                    style:
+                        GoogleFonts.inter(color: Colors.white30, fontSize: 11)),
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 4),
-                child: Text('Groups: ${user.groupIds.length}', style: GoogleFonts.inter(color: Colors.white30, fontSize: 11)),
+                child: Text('Groups: ${user.groupIds.length}',
+                    style:
+                        GoogleFonts.inter(color: Colors.white30, fontSize: 11)),
               ),
 
               const SizedBox(height: 20),
@@ -1992,8 +2014,14 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-                Text(subtitle, style: GoogleFonts.inter(color: Colors.white38, fontSize: 11)),
+                Text(title,
+                    style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+                Text(subtitle,
+                    style:
+                        GoogleFonts.inter(color: Colors.white38, fontSize: 11)),
               ],
             ),
           ),
@@ -2008,7 +2036,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     );
   }
 
-  Widget _settingsPinInput({required String initialValue, required Function(String) onSave}) {
+  Widget _settingsPinInput(
+      {required String initialValue, required Function(String) onSave}) {
     final controller = TextEditingController(text: initialValue);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -2024,17 +2053,23 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Chat Security PIN (4-8 digits)', style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                Text('Chat Security PIN (4-8 digits)',
+                    style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
                 SizedBox(
                   height: 28,
                   child: TextField(
                     controller: controller,
                     obscureText: true,
                     keyboardType: TextInputType.number,
-                    style: GoogleFonts.jetBrainsMono(fontSize: 14, color: Colors.white70),
+                    style: GoogleFonts.jetBrainsMono(
+                        fontSize: 14, color: Colors.white70),
                     decoration: InputDecoration(
                       hintText: 'For unlocking locked chats',
-                      hintStyle: GoogleFonts.jetBrainsMono(fontSize: 11, color: Colors.white24),
+                      hintStyle: GoogleFonts.jetBrainsMono(
+                          fontSize: 11, color: Colors.white24),
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(vertical: 4),
                       border: InputBorder.none,
@@ -2049,7 +2084,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               final pin = controller.text.trim();
               if (pin.isNotEmpty && (pin.length < 4 || pin.length > 8)) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('PIN must be 4–8 digits or empty')),
+                  const SnackBar(
+                      content: Text('PIN must be 4–8 digits or empty')),
                 );
                 return;
               }
@@ -2061,19 +2097,31 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               }
               onSave(pin);
             },
-            child: Text('Save', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.focusBlue)),
+            child: Text('Save',
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.focusBlue)),
           ),
         ],
       ),
     );
   }
 
-  Widget _settingsThemeRow({required ThemeMode currentMode, required Function(ThemeMode) onChanged}) {
+  Widget _settingsThemeRow(
+      {required ThemeMode currentMode,
+      required Function(ThemeMode) onChanged}) {
     String label;
     switch (currentMode) {
-      case ThemeMode.light: label = 'Light'; break;
-      case ThemeMode.dark: label = 'Dark'; break;
-      case ThemeMode.system: label = 'System'; break;
+      case ThemeMode.light:
+        label = 'Light';
+        break;
+      case ThemeMode.dark:
+        label = 'Dark';
+        break;
+      case ThemeMode.system:
+        label = 'System';
+        break;
     }
 
     return InkWell(
@@ -2086,12 +2134,18 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               children: [
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text('Theme', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 16)),
+                  child: Text('Theme',
+                      style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700, fontSize: 16)),
                 ),
                 for (final mode in ThemeMode.values)
                   ListTile(
-                    title: Text(mode == ThemeMode.system ? 'System default' : mode.name[0].toUpperCase() + mode.name.substring(1)),
-                    trailing: currentMode == mode ? const Icon(Icons.check, color: AppTheme.green) : null,
+                    title: Text(mode == ThemeMode.system
+                        ? 'System default'
+                        : mode.name[0].toUpperCase() + mode.name.substring(1)),
+                    trailing: currentMode == mode
+                        ? const Icon(Icons.check, color: AppTheme.green)
+                        : null,
                     onTap: () {
                       onChanged(mode);
                       Navigator.pop(ctx);
@@ -2110,12 +2164,18 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         ),
         child: Row(
           children: [
-            const Icon(Icons.dark_mode_outlined, color: Colors.white54, size: 20),
+            const Icon(Icons.dark_mode_outlined,
+                color: Colors.white54, size: 20),
             const SizedBox(width: 12),
             Expanded(
-              child: Text('Theme', style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+              child: Text('Theme',
+                  style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
             ),
-            Text(label, style: GoogleFonts.inter(color: Colors.white54, fontSize: 12)),
+            Text(label,
+                style: GoogleFonts.inter(color: Colors.white54, fontSize: 12)),
             const SizedBox(width: 4),
             const Icon(Icons.chevron_right, color: Colors.white30, size: 18),
           ],
@@ -2124,7 +2184,10 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     );
   }
 
-  Widget _settingsInfoRow({required IconData icon, required String title, required Widget trailing}) {
+  Widget _settingsInfoRow(
+      {required IconData icon,
+      required String title,
+      required Widget trailing}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       margin: const EdgeInsets.only(bottom: 4),
@@ -2136,7 +2199,11 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           Icon(icon, color: Colors.white54, size: 20),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(title, style: GoogleFonts.inter(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+            child: Text(title,
+                style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
           ),
           trailing,
         ],
@@ -4193,7 +4260,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                       ),
                     ),
                   if (_mentionSuggestions.isNotEmpty)
-                    Expanded(
+                    Flexible(
                       child: ListView.builder(
                         shrinkWrap: true,
                         padding: const EdgeInsets.symmetric(vertical: 2),
@@ -5206,8 +5273,8 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Dismissible(
         key: ValueKey(widget.item['id'] ?? widget.item['handle']),
-        direction: widget.isExpanded 
-            ? DismissDirection.none  // No swipe when expanded
+        direction: widget.isExpanded
+            ? DismissDirection.none // No swipe when expanded
             : DismissDirection.horizontal,
         confirmDismiss: (direction) async {
           if (direction == DismissDirection.startToEnd) {
@@ -5227,7 +5294,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
             children: [
               const Icon(Icons.delete_outline, color: Colors.white),
               const SizedBox(width: 8),
-              Text('Delete', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+              Text('Delete',
+                  style: GoogleFonts.inter(
+                      color: Colors.white, fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -5238,7 +5307,9 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Text('Lock', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+              Text('Lock',
+                  style: GoogleFonts.inter(
+                      color: Colors.white, fontWeight: FontWeight.w600)),
               const SizedBox(width: 8),
               const Icon(Icons.lock_outline, color: Colors.white),
             ],

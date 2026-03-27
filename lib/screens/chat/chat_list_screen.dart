@@ -35,16 +35,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final Set<String> _selectedChatIds = {};
   bool _isSelectionMode = false;
   Set<String> _lockedChatIds = {};
+  String? _unlockingChatId;
+  String? _unlockingAction;
 
   late Stream<List<ChatModel>> _chatsStream;
 
-  Duration get _tileAnimDuration =>
-      ChatPrivacyPreferences.reduceUiMotionListenable.value
-          ? const Duration(milliseconds: 120)
-          : const Duration(milliseconds: 250);
-
-  int get _inlineMessageCap =>
-      ChatPrivacyPreferences.reduceUiMotionListenable.value ? 12 : 25;
+  Duration get _tileAnimDuration => const Duration(milliseconds: 250);
+  int get _inlineMessageCap => 25;
 
   // Render.com palette
   Color get _bgColor => Theme.of(context).scaffoldBackgroundColor;
@@ -67,11 +64,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _bootstrapPrivacy() async {
     await ChatPrivacyPreferences.syncLockedListenable();
-    await ChatPrivacyPreferences.syncPerformanceListenable();
     ChatPrivacyPreferences.lockedChatsListenable.addListener(_onLockedChanged);
-    ChatPrivacyPreferences.reduceUiMotionListenable.addListener(
-      _onPerfChanged,
-    );
     if (mounted) {
       setState(() {
         _lockedChatIds = Set<String>.from(
@@ -92,26 +85,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
     });
   }
 
-  void _onPerfChanged() {
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
   @override
   void dispose() {
     ChatPrivacyPreferences.lockedChatsListenable.removeListener(
       _onLockedChanged,
-    );
-    ChatPrivacyPreferences.reduceUiMotionListenable.removeListener(
-      _onPerfChanged,
     );
     _messageController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
-  Future<bool> _verifyPrivacyUnlock() async {
+  void _requestUnlockForAction(String chatId, String action) async {
     try {
       final supported = await _localAuth.isDeviceSupported();
       if (supported) {
@@ -119,7 +103,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
           localizedReason: 'Unlock this chat',
         );
         if (authed) {
-          return true;
+          _executeUnlockAction(chatId, action);
+          return;
         }
       }
     } catch (_) {}
@@ -136,43 +121,105 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ),
         );
       }
-      return false;
+      return;
     }
 
-    final entered = await _promptPinDialog();
-    return entered != null && entered == pin;
+    setState(() {
+      _unlockingChatId = chatId;
+      _unlockingAction = action;
+    });
   }
 
-  Future<String?> _promptPinDialog() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Enter PIN', style: GoogleFonts.inter()),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          obscureText: true,
-          maxLength: 8,
-          decoration: const InputDecoration(
-            hintText: 'PIN',
-            counterText: '',
+  void _executeUnlockAction(String chatId, String action) async {
+    if (action == 'expand') {
+      setState(() {
+        _expandedChatId = chatId;
+        _chatService.markMessagesAsRead(chatId, widget.currentUserId);
+      });
+    } else if (action == 'unlock') {
+      await ChatPrivacyPreferences.toggleLocked(chatId, false);
+      await ChatPrivacyPreferences.syncLockedListenable();
+      if (mounted) setState(() {});
+    }
+  }
+
+  Widget _buildInlinePinInput(String chatId, String action) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Enter PIN to unlock',
+            style: TextStyle(
+              color: _textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Unlock'),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  maxLength: 8,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'PIN',
+                    counterText: '',
+                    filled: true,
+                    fillColor: _inputBgColor,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                  ),
+                  onSubmitted: (val) async {
+                    final pin = await ChatPrivacyPreferences.getPrivacyPin();
+                    if (val == pin) {
+                      setState(() {
+                        _unlockingChatId = null;
+                        _unlockingAction = null;
+                      });
+                      _executeUnlockAction(chatId, action);
+                    } else {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Incorrect PIN.',
+                              style: GoogleFonts.inter(),
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: Icon(Icons.close, color: _textSecondary),
+                onPressed: () {
+                  setState(() {
+                    _unlockingChatId = null;
+                    _unlockingAction = null;
+                  });
+                },
+              )
+            ],
           ),
         ],
       ),
     );
-    controller.dispose();
-    return result;
   }
 
   Future<void> _toggleExpand(String chatId) async {
@@ -181,10 +228,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
       return;
     }
     if (_lockedChatIds.contains(chatId)) {
-      final ok = await _verifyPrivacyUnlock();
-      if (!ok) {
-        return;
-      }
+      _requestUnlockForAction(chatId, 'expand');
+      return;
     }
     setState(() {
       _expandedChatId = chatId;
@@ -359,7 +404,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final isSelected = _selectedChatIds.contains(chat.chatId);
     final unread = chat.unreadCount[widget.currentUserId] ?? 0;
     final locked = _lockedChatIds.contains(chat.chatId);
-    final blurLocked = locked && !isExpanded;
+    final blurLocked = locked && !isExpanded && _unlockingChatId != chat.chatId;
 
     return StreamBuilder<UserModel?>(
       stream: _userService.getUserStream(otherUserId),
@@ -521,9 +566,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
             AnimatedSize(
               duration: _tileAnimDuration,
               curve: Curves.easeInOut,
-              child: isExpanded
-                  ? _buildInlineMessages(chat.chatId)
-                  : const SizedBox.shrink(),
+              child: _unlockingChatId == chat.chatId
+                  ? _buildInlinePinInput(chat.chatId, _unlockingAction ?? '')
+                  : isExpanded
+                      ? _buildInlineMessages(chat.chatId)
+                      : const SizedBox.shrink(),
             ),
           ],
         );
@@ -568,13 +615,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
               final isCurrentlyLocked = _lockedChatIds.contains(chat.chatId);
 
               if (isCurrentlyLocked) {
-                // If it's already locked, we might want to ask pin to unlock
-                final ok = await _verifyPrivacyUnlock();
-                if (ok) {
-                  await ChatPrivacyPreferences.toggleLocked(chat.chatId, false);
-                  await ChatPrivacyPreferences.syncLockedListenable();
-                  if (mounted) setState(() {});
-                }
+                _requestUnlockForAction(chat.chatId, 'unlock');
               } else {
                 // Lock it
                 await ChatPrivacyPreferences.toggleLocked(chat.chatId, true);
@@ -671,11 +712,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             snapshot.data!.take(_inlineMessageCap).toList().reversed.toList();
 
         return Container(
-          constraints: BoxConstraints(
-            maxHeight: ChatPrivacyPreferences.reduceUiMotionListenable.value
-                ? 220
-                : 320,
-          ),
+          constraints: const BoxConstraints(maxHeight: 320),
           padding: const EdgeInsets.only(left: 14, right: 14, bottom: 10),
           child: ListView.builder(
             padding: EdgeInsets.zero,
