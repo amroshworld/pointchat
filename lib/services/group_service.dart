@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:appwrite/appwrite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../appwrite_client.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
@@ -83,6 +84,19 @@ class GroupService {
   // Get user's groups stream
   Stream<List<GroupModel>> getUserGroups(String userId) {
     final controller = StreamController<List<GroupModel>>.broadcast();
+    final cacheKey = 'cache_groups_$userId';
+
+    Future<void> loadCache() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedStr = prefs.getString(cacheKey);
+        if (cachedStr != null && !controller.isClosed) {
+          final List decoded = jsonDecode(cachedStr);
+          controller.add(
+              decoded.map((d) => GroupModel.fromMap(d, d['\$id'] ?? '')).toList());
+        }
+      } catch (_) {}
+    }
 
     Future<void> fetch() async {
       try {
@@ -124,13 +138,24 @@ class GroupService {
 
         if (!controller.isClosed) {
           controller.add(merged);
+
+          // Update cache
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final cacheList = merged.map((g) {
+              final m = g.toMap();
+              m['\$id'] = g.groupId;
+              return m;
+            }).toList();
+            await prefs.setString(cacheKey, jsonEncode(cacheList));
+          } catch (_) {}
         }
       } catch (e) {
         if (!controller.isClosed) controller.addError(e);
       }
     }
 
-    fetch();
+    loadCache().then((_) => fetch());
 
     final sub = _realtime.subscribe([
       AppwriteRealtimeChannels.tableRows(AppwriteConstants.groupsCollection),
@@ -281,6 +306,20 @@ class GroupService {
   // Get messages stream for a group
   Stream<List<MessageModel>> getGroupMessages(String groupId) {
     final controller = StreamController<List<MessageModel>>.broadcast();
+    final cacheKey = 'cache_group_messages_$groupId';
+
+    Future<void> loadCache() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedStr = prefs.getString(cacheKey);
+        if (cachedStr != null && !controller.isClosed) {
+          final List decoded = jsonDecode(cachedStr);
+          controller.add(decoded
+              .map((d) => MessageModel.fromMap(d, d['\$id'] ?? ''))
+              .toList());
+        }
+      } catch (_) {}
+    }
 
     Future<void> fetch() async {
       try {
@@ -294,18 +333,29 @@ class GroupService {
           ],
         );
         if (!controller.isClosed) {
-          controller.add(
-            result.rows
-                .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
-                .toList(),
-          );
+          final mapped = result.rows
+              .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
+              .toList();
+          controller.add(mapped);
+
+          // Update cache
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final cacheList = mapped.map((m) {
+              final map = m.toMap();
+              map['\$id'] = m.messageId;
+              map['\$createdAt'] = m.timestamp?.toIso8601String();
+              return map;
+            }).toList();
+            await prefs.setString(cacheKey, jsonEncode(cacheList));
+          } catch (_) {}
         }
       } catch (e) {
         if (!controller.isClosed) controller.addError(e);
       }
     }
 
-    fetch();
+    loadCache().then((_) => fetch());
 
     final sub = _realtime.subscribe([
       AppwriteRealtimeChannels.tableRows(AppwriteConstants.messagesCollection),

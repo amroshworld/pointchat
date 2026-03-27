@@ -82,7 +82,6 @@ class _MySettingsState {
   bool seenEnabled;
   bool notifyOnSeen;
   String privacyPin;
-  bool reduceMotion;
   bool tipsHidden;
   ThemeMode themeMode;
 
@@ -90,7 +89,6 @@ class _MySettingsState {
     this.seenEnabled = true,
     this.notifyOnSeen = false,
     this.privacyPin = '',
-    this.reduceMotion = false,
     this.tipsHidden = false,
     this.themeMode = ThemeMode.system,
   });
@@ -1836,17 +1834,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
               // =============== CHATS & LOCK ===============
               _settingsSectionTitle('CHATS & LOCK'),
-              _settingsToggle(
-                icon: Icons.lock_outline,
-                title: 'Reduce motion',
-                subtitle: 'Shorter animations',
-                value: settings.reduceMotion,
-                onChanged: (v) async {
-                  _mySettingsData?.reduceMotion = v;
-                  await ChatPrivacyPreferences.setReduceUiMotion(v);
-                  if (mounted) setState(() {});
-                },
-              ),
               // Hint text for swipe gestures
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
@@ -1963,7 +1950,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     final seen = await _chatService.getDefaultSeenEnabledForMe();
     final notify = await _chatService.getDefaultNotifyOnSeenForMe();
     final pin = await ChatPrivacyPreferences.getPrivacyPin();
-    final motion = await ChatPrivacyPreferences.getReduceUiMotion();
     final tips = await ComposerPreferences.getTipsHidden();
     final theme = ref.read(themeModeProvider);
 
@@ -1971,7 +1957,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       seenEnabled: seen,
       notifyOnSeen: notify,
       privacyPin: pin,
-      reduceMotion: motion,
       tipsHidden: tips,
       themeMode: theme,
     );
@@ -3170,9 +3155,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       }
     }
 
-    final hasGroupTarget = handles.any((h) => h.startsWith('#'));
+    // All mentioned users (for adding to group)
     final mentionedUsersByHandle = <String, UserModel>{};
-
     for (final handle in handles.where((h) => h.startsWith('@'))) {
       final tHandle = _normalizeHandleToken(handle.substring(1));
       final targetUser = _normalizedUsersMap[tHandle];
@@ -3213,18 +3197,23 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       content = '> Reply: ${_replyPreview(_replyingToMessage!)}\n$content';
     }
 
-    if (content.isEmpty && type == MessageType.text && !hasGroupTarget) {
+    if (content.isEmpty && type == MessageType.text && !handles.any((h) => h.startsWith('#'))) {
       return;
     }
+
+    final groupHandles = handles.where((h) => h.startsWith('#')).toList();
 
     final currentUserName = cachedUserName;
     final currentUserPhoto = cachedUserPhotoUrl;
     bool sentAtLeastOne = false;
     final dmTargetsSent = <String>{};
 
+    // Group handles for determining multi-target messaging
     for (var handle in handles) {
       if (handle.startsWith('@')) {
-        if (hasGroupTarget) {
+        // Only process @ mentions as DMs here if there's NO group target
+        // If there's a group, mentioned users will be added to the group instead.
+        if (groupHandles.isNotEmpty) {
           continue;
         }
 
@@ -3278,11 +3267,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               String botPrompt = content;
               String systemPrompt = botConfig.instructions;
 
-              // Check if owner wants a summary
               if (currentUserId == botConfig.ownerId &&
                   content.toLowerCase().contains('summarize')) {
-                // Fetch interactions with this bot from all users?
-                // For now, let's just fetch recent messages in this specific chat.
                 final history = await _chatService.getUnreadMessages(
                   chatId,
                   currentUserId,
@@ -3293,7 +3279,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                 }
               }
 
-              // Run AI in background
               _aiService
                   .generateResponse(botPrompt, systemPrompt: systemPrompt)
                   .then((reply) {
@@ -3964,12 +3949,39 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               userService: _userService,
               onTap: () {
                 setState(() {
-                  _expandedItemId = isExpanded ? null : item['id'];
+                  if (isExpanded) {
+                    _expandedItemId = null;
+                    if (_focusedHandle == item['handle']) {
+                      _focusedHandle = null;
+                    }
+                  } else {
+                    _expandedItemId = item['id'] as String?;
+                    _focusedHandle = item['handle'] as String?;
+                  }
                 });
-                if (!isExpanded && item['type'] == 'dm') {
-                  _chatService.markMessagesAsRead(item['id'], currentUserId);
-                } else if (!isExpanded && item['type'] == 'group') {
-                  _groupService.markGroupAsRead(item['id'], currentUserId);
+                if (!isExpanded) {
+                  if (item['type'] == 'dm') {
+                    _chatService.markMessagesAsRead(item['id'], currentUserId);
+                  } else if (item['type'] == 'group') {
+                    _groupService.markGroupAsRead(item['id'], currentUserId);
+                  }
+                }
+              },
+              onLongPress: () {
+                setState(() {
+                  if (_focusedHandle == item['handle']) {
+                    _focusedHandle = null; // Toggle off if already focused
+                  } else {
+                    _focusedHandle = item['handle'] as String?;
+                    _expandedItemId = item['id'] as String?; // Auto-expand
+                  }
+                });
+                if (_focusedHandle == item['handle']) {
+                  if (item['type'] == 'dm') {
+                    _chatService.markMessagesAsRead(item['id'], currentUserId);
+                  } else if (item['type'] == 'group') {
+                    _groupService.markGroupAsRead(item['id'], currentUserId);
+                  }
                 }
               },
               onReply: (replyData) {
@@ -5029,6 +5041,7 @@ class StreamItemWidget extends StatefulWidget {
   final InviteService inviteService;
   final UserService userService;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
   final ValueChanged<String> onHandleTap;
   final void Function(Map<String, dynamic>) onReply;
   final void Function(MessageModel) onForward;
@@ -5046,6 +5059,7 @@ class StreamItemWidget extends StatefulWidget {
     required this.inviteService,
     required this.userService,
     required this.onTap,
+    required this.onLongPress,
     required this.onHandleTap,
     required this.onReply,
     required this.onForward,
@@ -5057,8 +5071,9 @@ class StreamItemWidget extends StatefulWidget {
   State<StreamItemWidget> createState() => _StreamItemWidgetState();
 }
 
-class _StreamItemWidgetState extends State<StreamItemWidget> {
+class _StreamItemWidgetState extends State<StreamItemWidget> with SingleTickerProviderStateMixin {
   bool _showInfo = false;
+  late AnimationController _swipeController;
 
   double _presencePct(dynamic raw) {
     if (raw is num) {
@@ -5074,6 +5089,24 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
       return '';
     }
     return s;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _swipeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _swipeController.addListener(() {
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _swipeController.dispose();
+    super.dispose();
   }
 
   @override
@@ -5274,17 +5307,17 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
       child: Dismissible(
         key: ValueKey(widget.item['id'] ?? widget.item['handle']),
         direction: widget.isExpanded
-            ? DismissDirection.none // No swipe when expanded
+            ? DismissDirection.none
             : DismissDirection.horizontal,
+        dismissThresholds: const {DismissDirection.horizontal: 0.3},
+        movementDuration: const Duration(milliseconds: 200),
         confirmDismiss: (direction) async {
           if (direction == DismissDirection.startToEnd) {
-            // Swipe RIGHT = delete
             widget.onSwipeRight();
           } else if (direction == DismissDirection.endToStart) {
-            // Swipe LEFT = lock/hide
             widget.onSwipeLeft();
           }
-          return false; // Don't actually dismiss
+          return false;
         },
         background: Container(
           alignment: Alignment.centerLeft,
@@ -5317,6 +5350,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
         ),
         child: InkWell(
           onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
           borderRadius: BorderRadius.zero,
           splashColor: AppTheme.purpleGlow,
           highlightColor: AppTheme.purpleGlow,
@@ -5356,7 +5390,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              // Handle: coloured prefix symbol + name
                               GestureDetector(
                                 onTap: () => widget.onHandleTap(handleText),
                                 child: Row(
@@ -5399,7 +5432,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                             ],
                           ),
                           const SizedBox(height: 5),
-                          // Sender + content — show sender only in groups
                           RichText(
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -5412,7 +5444,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                                 height: 1.4,
                               ),
                               children: [
-                                // Only show sender name for group conversations
                                 if (isGroup)
                                   TextSpan(
                                     text: '${widget.item['sender']}  ',
@@ -5440,7 +5471,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                         ],
                       ),
                     ),
-                    // Unread dot
                     if (isUnread)
                       Container(
                         width: 8,
@@ -6135,7 +6165,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                 confirmDismiss: (direction) async {
                   if (direction == DismissDirection.endToStart && isMe) {
                     // Swipe left to delete
-                    return await showDialog<bool>(
+                    final bool? conf = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
                         backgroundColor: Theme.of(context).colorScheme.surface,
@@ -6168,6 +6198,21 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                         ],
                       ),
                     );
+
+                    if (conf == true) {
+                      if (isGroup) {
+                        widget.groupService.deleteMessage(
+                          msg.messageId,
+                          groupId: widget.item['id'] as String,
+                        );
+                      } else {
+                        widget.chatService.deleteMessage(
+                          msg.messageId,
+                          chatId: widget.item['id'] as String,
+                        );
+                      }
+                    }
+                    return false; // Always bounce back
                   } else if (direction == DismissDirection.endToStart) {
                     return false; // Cannot delete when not sent by me
                   } else if (direction == DismissDirection.startToEnd) {
@@ -6179,21 +6224,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget> {
                     return false;
                   }
                   return false;
-                },
-                onDismissed: (direction) {
-                  if (direction == DismissDirection.endToStart) {
-                    if (isGroup) {
-                      widget.groupService.deleteMessage(
-                        msg.messageId,
-                        groupId: widget.item['id'] as String,
-                      );
-                    } else {
-                      widget.chatService.deleteMessage(
-                        msg.messageId,
-                        chatId: widget.item['id'] as String,
-                      );
-                    }
-                  }
                 },
                 background: Container(
                   alignment: Alignment.centerLeft,

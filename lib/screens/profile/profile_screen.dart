@@ -352,7 +352,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                         title: const Text('Chats & performance'),
                         subtitle: const Text(
-                          'Lock & blur DMs, PIN, lighter animations',
+                          'Lock & blur DMs, private PIN',
                         ),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () {

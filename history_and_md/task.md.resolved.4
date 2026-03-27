@@ -1,0 +1,23 @@
+# PointChat Features & Fixes
+
+## 1. Message Routing & Group Management
+- [x] Fix message routing so `@user #group message` arrives to all recipients
+- [x] Implement group member lazy addition: `#group @user` adds missing user to existing group
+- [x] Implement atomic group send: `#group @user "message"` sends to all
+
+## 2. Focus Mode & Chat Expansion
+- [x] Fix focus mode dropping on long press
+- [x] Implement auto-focus/expand for chat
+- [x] Mark messages as read automatically when chat is expanded
+
+## 3. Settings & UI Modifications
+- [x] Remove "Reduce Motion" setting and associated logic
+- [x] Enhance Chat Security PIN setup UI to look more professional
+- [x] Add visual indicator showing if PIN is already set
+
+## 4. Navigation & Animations
+- [/] Modify swipe interactions across the app to bounce back instead of swiping fully to end
+
+## 5. Online Status Indicators
+- [ ] Fix online ring for individual users
+- [ ] Implement partial completion ring for groups (completion % = online members / total members)

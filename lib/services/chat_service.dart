@@ -103,6 +103,19 @@ class ChatService {
   // Get user's chats stream
   Stream<List<ChatModel>> getUserChats(String userId) {
     final controller = StreamController<List<ChatModel>>.broadcast();
+    final cacheKey = 'cache_chats_$userId';
+
+    Future<void> loadCache() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedStr = prefs.getString(cacheKey);
+        if (cachedStr != null && !controller.isClosed) {
+          final List decoded = jsonDecode(cachedStr);
+          controller.add(
+              decoded.map((d) => ChatModel.fromMap(d, d['\$id'] ?? '')).toList());
+        }
+      } catch (_) {}
+    }
 
     Future<void> fetch() async {
       try {
@@ -116,18 +129,28 @@ class ChatService {
           ],
         );
         if (!controller.isClosed) {
-          controller.add(
-            result.rows
-                .map((doc) => ChatModel.fromMap(doc.data, doc.$id))
-                .toList(),
-          );
+          final mapped = result.rows
+              .map((doc) => ChatModel.fromMap(doc.data, doc.$id))
+              .toList();
+          controller.add(mapped);
+
+          // Update cache
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final cacheList = mapped.map((c) {
+              final m = c.toMap();
+              m['\$id'] = c.chatId;
+              return m;
+            }).toList();
+            await prefs.setString(cacheKey, jsonEncode(cacheList));
+          } catch (_) {}
         }
       } catch (e) {
         if (!controller.isClosed) controller.addError(e);
       }
     }
 
-    fetch();
+    loadCache().then((_) => fetch());
 
     final sub = _realtime.subscribe([
       AppwriteRealtimeChannels.tableRows(AppwriteConstants.chatsCollection),
@@ -180,6 +203,20 @@ class ChatService {
   // Get messages stream for a chat
   Stream<List<MessageModel>> getChatMessages(String chatId) {
     final controller = StreamController<List<MessageModel>>.broadcast();
+    final cacheKey = 'cache_messages_$chatId';
+
+    Future<void> loadCache() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedStr = prefs.getString(cacheKey);
+        if (cachedStr != null && !controller.isClosed) {
+          final List decoded = jsonDecode(cachedStr);
+          controller.add(decoded
+              .map((d) => MessageModel.fromMap(d, d['\$id'] ?? ''))
+              .toList());
+        }
+      } catch (_) {}
+    }
 
     Future<void> fetch() async {
       try {
@@ -193,18 +230,29 @@ class ChatService {
           ],
         );
         if (!controller.isClosed) {
-          controller.add(
-            result.rows
-                .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
-                .toList(),
-          );
+          final mapped = result.rows
+              .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
+              .toList();
+          controller.add(mapped);
+
+          // Update cache
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final cacheList = mapped.map((m) {
+              final map = m.toMap();
+              map['\$id'] = m.messageId;
+              map['\$createdAt'] = m.timestamp?.toIso8601String();
+              return map;
+            }).toList();
+            await prefs.setString(cacheKey, jsonEncode(cacheList));
+          } catch (_) {}
         }
       } catch (e) {
         if (!controller.isClosed) controller.addError(e);
       }
     }
 
-    fetch();
+    loadCache().then((_) => fetch());
 
     final sub = _realtime.subscribe([
       AppwriteRealtimeChannels.tableRows(AppwriteConstants.messagesCollection),

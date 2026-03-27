@@ -9,7 +9,6 @@ class ChatPrivacyPreferences {
 
   static const _kLockedChatIds = 'chat_locked_ids_json';
   static const _kChatPin = 'chat_privacy_pin';
-  static const _kReduceUiMotion = 'perf_reduce_ui_motion';
 
   static Future<Set<String>> getLockedChatIds() async {
     final p = await SharedPreferences.getInstance();
@@ -63,25 +62,5 @@ class ChatPrivacyPreferences {
     } else {
       await p.setString(_kChatPin, pin);
     }
-  }
-
-  /// Shorter animations / lighter inline message cap in chat list.
-  static Future<bool> getReduceUiMotion() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_kReduceUiMotion) ?? false;
-  }
-
-  static Future<void> setReduceUiMotion(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kReduceUiMotion, value);
-    reduceUiMotionListenable.value = value;
-  }
-
-  static final ValueNotifier<bool> reduceUiMotionListenable = ValueNotifier(
-    false,
-  );
-
-  static Future<void> syncPerformanceListenable() async {
-    reduceUiMotionListenable.value = await getReduceUiMotion();
   }
 }

@@ -14,7 +14,7 @@ class ChatPrivacySettingsScreen extends StatefulWidget {
 class _ChatPrivacySettingsScreenState extends State<ChatPrivacySettingsScreen> {
   final _pinController = TextEditingController();
   bool _loading = true;
-  bool _reduceMotion = false;
+  bool _hasPin = false;
 
   @override
   void initState() {
@@ -24,13 +24,12 @@ class _ChatPrivacySettingsScreenState extends State<ChatPrivacySettingsScreen> {
 
   Future<void> _load() async {
     final pin = await ChatPrivacyPreferences.getPrivacyPin();
-    final motion = await ChatPrivacyPreferences.getReduceUiMotion();
     if (!mounted) {
       return;
     }
     setState(() {
       _pinController.text = pin;
-      _reduceMotion = motion;
+      _hasPin = pin.isNotEmpty;
       _loading = false;
     });
   }
@@ -61,11 +60,12 @@ class _ChatPrivacySettingsScreenState extends State<ChatPrivacySettingsScreen> {
     }
     await ChatPrivacyPreferences.setPrivacyPin(raw);
     if (mounted) {
+      setState(() => _hasPin = raw.isNotEmpty);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             raw.isEmpty
-                ? 'PIN cleared. Use biometric only when opening locked chats.'
+                ? 'PIN cleared. Locked chats now use biometric only.'
                 : 'PIN saved.',
           ),
         ),
@@ -80,7 +80,7 @@ class _ChatPrivacySettingsScreenState extends State<ChatPrivacySettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Chats & performance',
+          'Chat Security',
           style: GoogleFonts.inter(fontWeight: FontWeight.w700),
         ),
       ),
@@ -97,9 +97,9 @@ class _ChatPrivacySettingsScreenState extends State<ChatPrivacySettingsScreen> {
                     color: scheme.primary,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
                 Text(
-                  'Locked chats',
+                  'Chat Security PIN',
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -108,77 +108,113 @@ class _ChatPrivacySettingsScreenState extends State<ChatPrivacySettingsScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'On the Messages tab, swipe a chat left to lock it. Locked threads stay blurred until you unlock with biometric or PIN.',
+                  'Set a PIN to unlock locked chats when biometric authentication is unavailable.',
                   style: GoogleFonts.inter(
                     fontSize: 14,
                     height: 1.45,
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _hasPin
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _hasPin
+                          ? Colors.green.withValues(alpha: 0.3)
+                          : scheme.outline.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _hasPin
+                              ? Colors.green.withValues(alpha: 0.2)
+                              : scheme.surface,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _hasPin ? Icons.shield_rounded : Icons.shield_outlined,
+                          color: _hasPin ? Colors.green : scheme.onSurfaceVariant,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _hasPin ? 'PIN Protection Active' : 'PIN Not Configured',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: _hasPin ? Colors.green.shade600 : scheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _hasPin
+                                  ? 'Your locked chats are secured.'
+                                  : 'Set up a PIN to secure your locked chats.',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
                 TextField(
                   controller: _pinController,
                   keyboardType: TextInputType.number,
                   obscureText: true,
                   maxLength: 8,
                   decoration: InputDecoration(
-                    labelText: 'Chat Security PIN (4-8 digits)',
-                    hintText: 'For unlocking locked chats.',
+                    labelText: 'PIN (4-8 digits)',
+                    hintText: _hasPin ? '••••' : 'Enter a new PIN',
+                    prefixIcon: const Icon(Icons.password_rounded),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     counterText: '',
+                    suffixIcon: _hasPin
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _pinController.clear();
+                              setState(() => _hasPin = false);
+                            },
+                          )
+                        : null,
                   ),
-                ),
-                const SizedBox(height: 8),
-                FilledButton(
-                  onPressed: _savePin,
-                  child: const Text('Save PIN'),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Swipe a chat left to blur and lock.',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 28),
-                Text(
-                  'Performance',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: scheme.primary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    'Reduce motion in Messages',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    'Shorter animations and a smaller inline preview for smoother lists.',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  value: _reduceMotion,
-                  onChanged: (v) async {
-                    setState(() => _reduceMotion = v);
-                    await ChatPrivacyPreferences.setReduceUiMotion(v);
+                  onChanged: (value) {
+                    setState(() => _hasPin = value.isNotEmpty);
                   },
                 ),
                 const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _savePin,
+                    child: Text(_hasPin ? 'Update PIN' : 'Set PIN'),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Text(
-                  'Release builds are much faster than debug. Test latency with '
-                  '`flutter run --release` before judging server vs UI.',
+                  'Swipe a chat left to blur and lock. Use biometrics or PIN to unlock.',
                   style: GoogleFonts.inter(
                     fontSize: 12,
-                    height: 1.4,
                     color: scheme.onSurfaceVariant,
                   ),
                 ),

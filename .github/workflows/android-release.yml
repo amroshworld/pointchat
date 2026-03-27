@@ -1,14 +1,22 @@
 name: Android Release Build
 
 on:
-  push:
-    branches:
-      - "**"
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Android versionCode (build number) passed to flutter build apk --build-number"
+        required: false
+        default: "2"
+        type: string
 
 jobs:
   build-android-release:
     name: Build Android Release APK
     runs-on: ubuntu-latest
+    env:
+      # Matches the SDK path Gradle uses on GitHub-hosted Ubuntu runners
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout repository
@@ -20,6 +28,28 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Accept Android SDK licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if [ -z "${ANDROID_SDK_ROOT:-}" ]; then
+            echo "ANDROID_HOME / ANDROID_SDK_ROOT is not set"
+            exit 1
+          fi
+          SDKMANAGER=""
+          if [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          else
+            SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1 || true)
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager not found under $ANDROID_SDK_ROOT/cmdline-tools"
+            ls -la "$ANDROID_SDK_ROOT/cmdline-tools" 2>/dev/null || true
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -30,34 +60,32 @@ jobs:
         run: flutter pub get
 
       - name: Build Android APK (Release)
-        run: flutter build apk --release --build-number=${{ github.run_number }}
+        run: flutter build apk --release --build-number=${{ inputs.build_number }}
 
       - name: Rename APK with version info
         run: |
           mkdir -p artifacts
           APK_FILE=$(find build/app/outputs/flutter-apk -name "*.apk" | head -1)
-          cp "$APK_FILE" artifacts/pointchat-release-${{ github.run_number }}.apk
+          cp "$APK_FILE" artifacts/pointchat-release-${{ inputs.build_number }}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pointchat-android-release-${{ github.run_number }}
-          path: artifacts/pointchat-release-${{ github.run_number }}.apk
+          name: pointchat-android-release-${{ inputs.build_number }}
+          path: artifacts/pointchat-release-${{ inputs.build_number }}.apk
           if-no-files-found: error
 
       - name: Generate build summary
         run: |
-          echo "### 🚀 Android Release Build Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "### Android Release Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Build Number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Build number:** ${{ inputs.build_number }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📱 Download the APK from the **Artifacts** section above to install on your Android device." >> $GITHUB_STEP_SUMMARY
+          echo "Download the APK from the **Artifacts** section of this workflow run." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Installation Instructions:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download the APK artifact from this workflow run" >> $GITHUB_STEP_SUMMARY
-          echo "2. Extract the ZIP file to get the APK" >> $GITHUB_STEP_SUMMARY
-          echo "3. Transfer the APK to your Android device" >> $GITHUB_STEP_SUMMARY
-          echo "4. Enable 'Install from Unknown Sources' in your device settings" >> $GITHUB_STEP_SUMMARY
-          echo "5. Open the APK file on your device to install" >> $GITHUB_STEP_SUMMARY
+          echo "**Install on device:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the artifact ZIP from this run" >> $GITHUB_STEP_SUMMARY
+          echo "2. Extract to get the APK" >> $GITHUB_STEP_SUMMARY
+          echo "3. Transfer to the device and open the file to install (allow unknown sources if prompted)" >> $GITHUB_STEP_SUMMARY
