@@ -28,6 +28,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  bool _isSending = false;
+
   @override
   void initState() {
     super.initState();
@@ -45,20 +47,31 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   }
 
   void _sendMessage() async {
+    if (_isSending) return;
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
-    _messageController.clear();
+    setState(() {
+      _isSending = true;
+    });
 
-    await _groupService.sendGroupMessage(
-      groupId: widget.groupId,
-      senderId: widget.currentUserId,
-      senderName: cachedUserName,
-      senderPhotoUrl: cachedUserPhotoUrl,
-      text: text,
-    );
+    try {
+      await _groupService.sendGroupMessage(
+        groupId: widget.groupId,
+        senderId: widget.currentUserId,
+        senderName: cachedUserName,
+        senderPhotoUrl: cachedUserPhotoUrl,
+        text: text,
+      );
+      _messageController.clear();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
+      }
+    }
   }
-
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -250,8 +263,17 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              icon: Icon(Icons.send_rounded, color: colorScheme.onPrimary),
-              onPressed: _sendMessage,
+              icon: _isSending
+                  ? SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: colorScheme.onPrimary,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : Icon(Icons.send_rounded, color: colorScheme.onPrimary),
+              onPressed: _isSending ? null : _sendMessage,
             ),
           ),
         ],

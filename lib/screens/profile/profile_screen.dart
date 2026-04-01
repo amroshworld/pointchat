@@ -15,7 +15,7 @@ import '../../appwrite_client.dart';
 import '../../utils/composer_preferences.dart';
 import '../../providers/theme_provider.dart';
 import '../subscription/ai_subscription_screen.dart';
-import 'chat_privacy_settings_screen.dart';
+import 'chat_security_panel.dart';
 import 'seen_message_settings_screen.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -336,32 +336,36 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         },
                       ),
                       const Divider(height: 1, indent: 72),
-                      ListTile(
-                        leading: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            Icons.lock_person_outlined,
-                            color: colorScheme.onPrimaryContainer,
-                            size: 20,
-                          ),
+                      Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
                         ),
-                        title: const Text('Chats & performance'),
-                        subtitle: const Text(
-                          'Lock & blur DMs, private PIN',
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const ChatPrivacySettingsScreen(),
+                        child: ExpansionTile(
+                          maintainState: true,
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                          );
-                        },
+                            child: Icon(
+                              Icons.lock_person_outlined,
+                              color: colorScheme.onPrimaryContainer,
+                              size: 20,
+                            ),
+                          ),
+                          title: const Text('Chats & performance'),
+                          subtitle: const Text(
+                            'Lock & blur DMs, private PIN',
+                          ),
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                              child: ChatSecuritySettingsPanel(),
+                            ),
+                          ],
+                        ),
                       ),
                       const Divider(height: 1, indent: 72),
                       ListTile(

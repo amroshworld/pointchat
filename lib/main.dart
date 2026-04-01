@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services/auth_service.dart';
+import 'utils/chat_privacy_preferences.dart';
 import 'services/notification_service.dart';
 import 'services/subscription_service.dart';
 import 'appwrite_client.dart';
@@ -29,6 +30,7 @@ void main() async {
   // Load cached user info if session exists
   await AuthService().loadCurrentUser();
   await NotificationService.instance.initialize();
+  await ChatPrivacyPreferences.syncAppLockListenable();
 
   runApp(const ProviderScope(child: FocusChatApp()));
 }

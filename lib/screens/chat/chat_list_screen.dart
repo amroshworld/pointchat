@@ -55,6 +55,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
       Theme.of(context).colorScheme.primary.withValues(alpha: 0.2);
   Color get _bubbleOther => Theme.of(context).colorScheme.primaryContainer;
 
+  bool _isSending = false;
+
   @override
   void initState() {
     super.initState();
@@ -101,6 +103,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
       if (supported) {
         final authed = await _localAuth.authenticate(
           localizedReason: 'Unlock this chat',
+          options: const AuthenticationOptions(
+            stickyAuth: true,
+            biometricOnly: false,
+          ),
         );
         if (authed) {
           _executeUnlockAction(chatId, action);
@@ -267,37 +273,49 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Future<void> _sendMessage() async {
+    if (_isSending) return;
     final text = _messageController.text.trim();
     if (text.isEmpty) {
       return;
     }
 
+    setState(() {
+      _isSending = true;
+    });
+
     final senderName = cachedUserName;
     final senderPhoto = cachedUserPhotoUrl;
 
-    _messageController.clear();
-
-    if (_isSelectionMode && _selectedChatIds.isNotEmpty) {
-      await Future.wait(
-        _selectedChatIds.map(
-          (chatId) => _chatService.sendMessage(
-            chatId: chatId,
-            senderId: widget.currentUserId,
-            senderName: senderName,
-            senderPhotoUrl: senderPhoto,
-            text: text,
+    try {
+      if (_isSelectionMode && _selectedChatIds.isNotEmpty) {
+        await Future.wait(
+          _selectedChatIds.map(
+            (chatId) => _chatService.sendMessage(
+              chatId: chatId,
+              senderId: widget.currentUserId,
+              senderName: senderName,
+              senderPhotoUrl: senderPhoto,
+              text: text,
+            ),
           ),
-        ),
-      );
-      _clearSelection();
-    } else if (_expandedChatId != null) {
-      await _chatService.sendMessage(
-        chatId: _expandedChatId!,
-        senderId: widget.currentUserId,
-        senderName: senderName,
-        senderPhotoUrl: senderPhoto,
-        text: text,
-      );
+        );
+        _clearSelection();
+      } else if (_expandedChatId != null) {
+        await _chatService.sendMessage(
+          chatId: _expandedChatId!,
+          senderId: widget.currentUserId,
+          senderName: senderName,
+          senderPhotoUrl: senderPhoto,
+          text: text,
+        );
+      }
+      _messageController.clear();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
+      }
     }
   }
 
@@ -831,7 +849,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
         const SizedBox(width: 10),
         GestureDetector(
-          onTap: _hasTarget ? _sendMessage : null,
+          onTap: _hasTarget && !_isSending ? _sendMessage : null,
           child: AnimatedContainer(
             duration: _tileAnimDuration,
             width: 46,
@@ -847,11 +865,22 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     : Theme.of(context).colorScheme.outline,
               ),
             ),
-            child: Icon(
-              Icons.send_rounded,
-              color: _hasTarget ? Colors.white : _textSecondary,
-              size: 18,
-            ),
+            child: _isSending
+                ? Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    ),
+                  )
+                : Icon(
+                    Icons.send_rounded,
+                    color: _hasTarget ? Colors.white : _textSecondary,
+                    size: 18,
+                  ),
           ),
         ),
       ],

@@ -39,12 +39,12 @@ Future<void> main() async {
   final stopwatchPar = Stopwatch()..start();
   await Future.wait(
     chatIds.map((chatId) => service.sendMessage(
-      chatId: chatId,
-      senderId: 'me',
-      senderName: 'Test',
-      senderPhotoUrl: '',
-      text: 'Hello',
-    )),
+          chatId: chatId,
+          senderId: 'me',
+          senderName: 'Test',
+          senderPhotoUrl: '',
+          text: 'Hello',
+        )),
   );
   stopwatchPar.stop();
   final parTime = stopwatchPar.elapsedMilliseconds;

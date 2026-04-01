@@ -36,6 +36,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isComposing = false;
   bool _isRecording = false;
+  bool _isSending = false;
 
   @override
   void initState() {
@@ -57,6 +58,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _sendMessage() async {
+    if (_isSending) return;
     final text = _messageController.text.trim();
     if (text.isEmpty && !_isRecording) return;
 
@@ -68,20 +70,30 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    _messageController.clear();
+    setState(() {
+      _isSending = true;
+    });
 
     final userName = cachedUserName;
     final userPhoto = cachedUserPhotoUrl;
 
-    await _chatService.sendMessage(
-      chatId: widget.chatId,
-      senderId: widget.currentUserId,
-      senderName: userName,
-      senderPhotoUrl: userPhoto,
-      text: text,
-    );
+    try {
+      await _chatService.sendMessage(
+        chatId: widget.chatId,
+        senderId: widget.currentUserId,
+        senderName: userName,
+        senderPhotoUrl: userPhoto,
+        text: text,
+      );
+      _messageController.clear();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
+      }
+    }
   }
-
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -311,14 +323,23 @@ class _ChatScreenState extends State<ChatScreen> {
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              icon: Icon(
-                _isRecording
-                    ? Icons.stop
-                    : (_isComposing ? Icons.send_rounded : Icons.mic),
-                color:
-                    _isRecording ? colorScheme.onError : colorScheme.onPrimary,
-              ),
-              onPressed: () {
+              icon: _isSending
+                  ? SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: colorScheme.onPrimary,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : Icon(
+                      _isRecording
+                          ? Icons.stop
+                          : (_isComposing ? Icons.send_rounded : Icons.mic),
+                      color:
+                          _isRecording ? colorScheme.onError : colorScheme.onPrimary,
+                    ),
+              onPressed: _isSending ? null : () {
                 if (_isRecording) {
                   setState(() {
                     _isRecording = false;

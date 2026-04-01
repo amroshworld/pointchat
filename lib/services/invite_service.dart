@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appwrite/appwrite.dart';
+import 'package:flutter/foundation.dart';
 
 import '../appwrite_client.dart';
 
@@ -60,9 +61,10 @@ class InviteService {
                 .toList(growable: false),
           );
         }
-      } catch (e) {
+      } catch (e, st) {
+        debugPrint('getPendingInvitesForUser fetch failed: $e\n$st');
         if (!controller.isClosed) {
-          controller.addError(e);
+          controller.add(<Map<String, dynamic>>[]);
         }
       }
     }

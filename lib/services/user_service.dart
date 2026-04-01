@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:appwrite/appwrite.dart';
+import 'package:flutter/foundation.dart';
 import '../appwrite_client.dart';
 import '../models/user_model.dart';
 
@@ -137,8 +138,9 @@ class UserService {
                 .toList(),
           );
         }
-      } catch (e) {
-        if (!controller.isClosed) controller.addError(e);
+      } catch (e, st) {
+        debugPrint('getAllUsers fetch failed: $e\n$st');
+        if (!controller.isClosed) controller.add(<UserModel>[]);
       }
     }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:appwrite/appwrite.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../appwrite_client.dart';
 import '../models/chat_model.dart';
@@ -111,8 +112,9 @@ class ChatService {
         final cachedStr = prefs.getString(cacheKey);
         if (cachedStr != null && !controller.isClosed) {
           final List decoded = jsonDecode(cachedStr);
-          controller.add(
-              decoded.map((d) => ChatModel.fromMap(d, d['\$id'] ?? '')).toList());
+          controller.add(decoded
+              .map((d) => ChatModel.fromMap(d, d['\$id'] ?? ''))
+              .toList());
         }
       } catch (_) {}
     }
@@ -145,8 +147,26 @@ class ChatService {
             await prefs.setString(cacheKey, jsonEncode(cacheList));
           } catch (_) {}
         }
-      } catch (e) {
-        if (!controller.isClosed) controller.addError(e);
+      } catch (e, st) {
+        debugPrint('getUserChats fetch failed: $e\n$st');
+        if (!controller.isClosed) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final cachedStr = prefs.getString(cacheKey);
+            if (cachedStr != null) {
+              final List decoded = jsonDecode(cachedStr);
+              controller.add(
+                decoded
+                    .map((d) => ChatModel.fromMap(d, d['\$id'] ?? ''))
+                    .toList(),
+              );
+            } else {
+              controller.add(<ChatModel>[]);
+            }
+          } catch (_) {
+            controller.add(<ChatModel>[]);
+          }
+        }
       }
     }
 

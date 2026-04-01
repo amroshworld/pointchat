@@ -9,6 +9,31 @@ class ChatPrivacyPreferences {
 
   static const _kLockedChatIds = 'chat_locked_ids_json';
   static const _kChatPin = 'chat_privacy_pin';
+  static const _kAppLockEnabled = 'app_lock_enabled';
+
+  /// When true, [AppLockGate] requires biometric or PIN to use the app after open/resume.
+  static Future<bool> isAppLockEnabled() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getBool(_kAppLockEnabled) ?? false;
+  }
+
+  static Future<void> setAppLockEnabled(bool value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_kAppLockEnabled, value);
+    appLockEnabledListenable.value = value;
+  }
+
+  static final ValueNotifier<bool> appLockEnabledListenable =
+      ValueNotifier<bool>(false);
+
+  /// Cached PIN for synchronous UI (e.g. app lock overlay on resume).
+  static final ValueNotifier<String> privacyPinListenable = ValueNotifier('');
+
+  static Future<void> syncAppLockListenable() async {
+    appLockEnabledListenable.value = await isAppLockEnabled();
+    privacyPinListenable.value = await getPrivacyPin();
+    lockedChatsListenable.value = await getLockedChatIds();
+  }
 
   static Future<Set<String>> getLockedChatIds() async {
     final p = await SharedPreferences.getInstance();
@@ -59,8 +84,10 @@ class ChatPrivacyPreferences {
     final p = await SharedPreferences.getInstance();
     if (pin.isEmpty) {
       await p.remove(_kChatPin);
+      privacyPinListenable.value = '';
     } else {
       await p.setString(_kChatPin, pin);
+      privacyPinListenable.value = pin;
     }
   }
 }

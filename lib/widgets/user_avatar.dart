@@ -160,7 +160,8 @@ class GroupAvatar extends StatelessWidget {
             painter: _AvatarPresenceRingPainter(
               percentage: normalizedPercentage,
               color: AppTheme.green,
-              trackColor: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+              trackColor:
+                  Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
             ),
           ),
           innerAvatar,

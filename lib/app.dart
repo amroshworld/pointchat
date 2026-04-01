@@ -6,6 +6,7 @@ import 'providers/auth_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/stream/unified_stream_screen.dart';
 import 'providers/theme_provider.dart';
+import 'widgets/app_lock_gate.dart';
 
 class FocusChatApp extends ConsumerWidget {
   const FocusChatApp({super.key});
@@ -34,7 +35,9 @@ class AuthGate extends ConsumerWidget {
     return authState.when(
       data: (user) {
         if (user != null) {
-          return UnifiedStreamScreen(currentUserId: user.$id);
+          return AppLockGate(
+            child: UnifiedStreamScreen(currentUserId: user.$id),
+          );
         }
         return const LoginScreen();
       },
