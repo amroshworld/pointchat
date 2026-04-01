@@ -224,6 +224,7 @@ class ChatService {
   Stream<List<MessageModel>> getChatMessages(String chatId) {
     final controller = StreamController<List<MessageModel>>.broadcast();
     final cacheKey = 'cache_messages_$chatId';
+    bool cacheSent = false;
 
     Future<void> loadCache() async {
       try {
@@ -231,9 +232,11 @@ class ChatService {
         final cachedStr = prefs.getString(cacheKey);
         if (cachedStr != null && !controller.isClosed) {
           final List decoded = jsonDecode(cachedStr);
-          controller.add(decoded
+          final cached = decoded
               .map((d) => MessageModel.fromMap(d, d['\$id'] ?? ''))
-              .toList());
+              .toList();
+          controller.add(cached);
+          cacheSent = true;
         }
       } catch (_) {}
     }
@@ -255,24 +258,22 @@ class ChatService {
               .toList();
           controller.add(mapped);
 
-          // Update cache
-          try {
-            final prefs = await SharedPreferences.getInstance();
-            final cacheList = mapped.map((m) {
-              final map = m.toMap();
-              map['\$id'] = m.messageId;
-              map['\$createdAt'] = m.timestamp?.toIso8601String();
-              return map;
-            }).toList();
-            await prefs.setString(cacheKey, jsonEncode(cacheList));
-          } catch (_) {}
+          final prefs = await SharedPreferences.getInstance();
+          final cacheList = mapped.map((m) {
+            final map = m.toMap();
+            map['\$id'] = m.messageId;
+            map['\$createdAt'] = m.timestamp?.toIso8601String();
+            return map;
+          }).toList();
+          await prefs.setString(cacheKey, jsonEncode(cacheList));
         }
       } catch (e) {
-        if (!controller.isClosed) controller.addError(e);
+        if (!cacheSent && !controller.isClosed) controller.addError(e);
       }
     }
 
-    loadCache().then((_) => fetch());
+    loadCache();
+    fetch();
 
     final sub = _realtime.subscribe([
       AppwriteRealtimeChannels.tableRows(AppwriteConstants.messagesCollection),
@@ -334,22 +335,7 @@ class ChatService {
     double? longitude,
   }) async {
     final messageId = ID.unique();
-    final chatDoc = await _databases.getRow(
-      databaseId: AppwriteConstants.databaseId,
-      tableId: AppwriteConstants.chatsCollection,
-      rowId: chatId,
-    );
-    final unreadCount = _decodeJsonMap(chatDoc.data['unreadCount']);
-    final participants = List<String>.from(chatDoc.data['participants'] ?? []);
-
-    for (final participantId in participants) {
-      if (participantId == senderId) {
-        unreadCount[participantId] = 0;
-        continue;
-      }
-
-      unreadCount[participantId] = (unreadCount[participantId] ?? 0) + 1;
-    }
+    final now = DateTime.now().toUtc().toIso8601String();
 
     final message = MessageModel(
       messageId: messageId,
@@ -367,24 +353,48 @@ class ChatService {
       longitude: longitude,
     );
 
-    await _databases.createRow(
-      databaseId: AppwriteConstants.databaseId,
-      tableId: AppwriteConstants.messagesCollection,
-      rowId: messageId,
-      data: message.toMap(),
-    );
+    await Future.wait([
+      _databases.createRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.messagesCollection,
+        rowId: messageId,
+        data: message.toMap(),
+      ),
+      _updateChatMetadata(chatId, message.preview, now, senderId),
+    ]);
+  }
 
-    await _databases.updateRow(
-      databaseId: AppwriteConstants.databaseId,
-      tableId: AppwriteConstants.chatsCollection,
-      rowId: chatId,
-      data: {
-        'lastMessage': message.preview,
-        'lastMessageTime': DateTime.now().toUtc().toIso8601String(),
-        'lastMessageSenderId': senderId,
-        'unreadCount': jsonEncode(unreadCount),
-      },
-    );
+  Future<void> _updateChatMetadata(
+    String chatId,
+    String lastMessage,
+    String lastMessageTime,
+    String lastMessageSenderId,
+  ) async {
+    try {
+      final chatDoc = await _databases.getRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.chatsCollection,
+        rowId: chatId,
+      );
+      final unreadCount = _decodeJsonMap(chatDoc.data['unreadCount']);
+      final participants = List<String>.from(chatDoc.data['participants'] ?? []);
+
+      for (final participantId in participants) {
+        unreadCount[participantId] = 0;
+      }
+
+      await _databases.updateRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.chatsCollection,
+        rowId: chatId,
+        data: {
+          'lastMessage': lastMessage,
+          'lastMessageTime': lastMessageTime,
+          'lastMessageSenderId': lastMessageSenderId,
+          'unreadCount': jsonEncode(unreadCount),
+        },
+      );
+    } catch (_) {}
   }
 
   // Mark messages as read

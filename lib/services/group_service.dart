@@ -327,6 +327,7 @@ class GroupService {
   Stream<List<MessageModel>> getGroupMessages(String groupId) {
     final controller = StreamController<List<MessageModel>>.broadcast();
     final cacheKey = 'cache_group_messages_$groupId';
+    bool cacheSent = false;
 
     Future<void> loadCache() async {
       try {
@@ -334,9 +335,11 @@ class GroupService {
         final cachedStr = prefs.getString(cacheKey);
         if (cachedStr != null && !controller.isClosed) {
           final List decoded = jsonDecode(cachedStr);
-          controller.add(decoded
+          final cached = decoded
               .map((d) => MessageModel.fromMap(d, d['\$id'] ?? ''))
-              .toList());
+              .toList();
+          controller.add(cached);
+          cacheSent = true;
         }
       } catch (_) {}
     }
@@ -358,24 +361,22 @@ class GroupService {
               .toList();
           controller.add(mapped);
 
-          // Update cache
-          try {
-            final prefs = await SharedPreferences.getInstance();
-            final cacheList = mapped.map((m) {
-              final map = m.toMap();
-              map['\$id'] = m.messageId;
-              map['\$createdAt'] = m.timestamp?.toIso8601String();
-              return map;
-            }).toList();
-            await prefs.setString(cacheKey, jsonEncode(cacheList));
-          } catch (_) {}
+          final prefs = await SharedPreferences.getInstance();
+          final cacheList = mapped.map((m) {
+            final map = m.toMap();
+            map['\$id'] = m.messageId;
+            map['\$createdAt'] = m.timestamp?.toIso8601String();
+            return map;
+          }).toList();
+          await prefs.setString(cacheKey, jsonEncode(cacheList));
         }
       } catch (e) {
-        if (!controller.isClosed) controller.addError(e);
+        if (!cacheSent && !controller.isClosed) controller.addError(e);
       }
     }
 
-    loadCache().then((_) => fetch());
+    loadCache();
+    fetch();
 
     final sub = _realtime.subscribe([
       AppwriteRealtimeChannels.tableRows(AppwriteConstants.messagesCollection),

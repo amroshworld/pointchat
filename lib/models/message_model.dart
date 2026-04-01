@@ -2,6 +2,8 @@ import 'dart:convert';
 
 enum MessageType { text, image, file, audio, location, system }
 
+enum MessageStatus { sending, sent, delivered, read }
+
 class MessageModel {
   final String messageId;
   final String senderId;
@@ -14,6 +16,7 @@ class MessageModel {
   final Map<String, bool> readBy;
   final String? chatId;
   final String? groupId;
+  final MessageStatus status;
 
   final String? fileName;
   final int? fileSize;
@@ -33,6 +36,7 @@ class MessageModel {
     this.readBy = const {},
     this.chatId,
     this.groupId,
+    this.status = MessageStatus.sent,
     this.fileName,
     this.fileSize,
     this.audioDuration,
@@ -49,6 +53,16 @@ class MessageModel {
         } catch (_) {}
       }
       return {};
+    }
+
+    MessageStatus parseStatus(dynamic val) {
+      if (val is String) {
+        return MessageStatus.values.firstWhere(
+          (e) => e.name == val,
+          orElse: () => MessageStatus.sent,
+        );
+      }
+      return MessageStatus.sent;
     }
 
     return MessageModel(
@@ -68,6 +82,7 @@ class MessageModel {
       readBy: parseReadBy(map['readBy']),
       chatId: map['chatId'],
       groupId: map['groupId'],
+      status: parseStatus(map['status']),
       fileName: map['fileName'],
       fileSize: map['fileSize'],
       audioDuration: map['audioDuration'],
@@ -93,6 +108,46 @@ class MessageModel {
       if (latitude != null) 'latitude': latitude,
       if (longitude != null) 'longitude': longitude,
     };
+  }
+
+  MessageModel copyWith({
+    String? messageId,
+    String? senderId,
+    String? senderName,
+    String? senderPhotoUrl,
+    String? text,
+    MessageType? type,
+    DateTime? timestamp,
+    bool? isRead,
+    Map<String, bool>? readBy,
+    String? chatId,
+    String? groupId,
+    MessageStatus? status,
+    String? fileName,
+    int? fileSize,
+    int? audioDuration,
+    double? latitude,
+    double? longitude,
+  }) {
+    return MessageModel(
+      messageId: messageId ?? this.messageId,
+      senderId: senderId ?? this.senderId,
+      senderName: senderName ?? this.senderName,
+      senderPhotoUrl: senderPhotoUrl ?? this.senderPhotoUrl,
+      text: text ?? this.text,
+      type: type ?? this.type,
+      timestamp: timestamp ?? this.timestamp,
+      isRead: isRead ?? this.isRead,
+      readBy: readBy ?? this.readBy,
+      chatId: chatId ?? this.chatId,
+      groupId: groupId ?? this.groupId,
+      status: status ?? this.status,
+      fileName: fileName ?? this.fileName,
+      fileSize: fileSize ?? this.fileSize,
+      audioDuration: audioDuration ?? this.audioDuration,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+    );
   }
 
   String get preview {

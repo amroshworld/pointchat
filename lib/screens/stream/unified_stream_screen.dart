@@ -119,6 +119,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
   String? _expandedItemId;
   String? _focusedHandle;
+  final Map<Key, GlobalKey<_StreamItemWidgetState>> _streamItemKeys = {};
 
   bool _isMentioning = false;
   List<dynamic> _mentionSuggestions = [];
@@ -332,7 +333,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     bool isExpanded,
   ) async {
     final id = item['id'] as String?;
-    final type = item['type'] as String?;
     if (!isExpanded && id != null && _lockedChatIds.contains(id)) {
       final ok = await _unlockLockedChatIfNeeded(id);
       if (!ok || !mounted) return;
@@ -360,7 +360,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
   Future<void> _onStreamItemLongPress(Map<String, dynamic> item) async {
     final id = item['id'] as String?;
-    final type = item['type'] as String?;
     final willFocus = _focusedHandle != item['handle'];
     if (willFocus && id != null && _lockedChatIds.contains(id)) {
       final ok = await _unlockLockedChatIfNeeded(id);
@@ -1141,6 +1140,15 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     }
 
     return '${_focusedHandle!} $trimmed';
+  }
+
+  void _addOptimisticMessageToExpanded(MessageModel msg) {
+    if (_expandedItemId == null) return;
+    final itemKey = ValueKey(_expandedItemId);
+    final state = _streamItemKeys[itemKey]?.currentState;
+    if (state != null) {
+      state.addOptimisticMessage(msg);
+    }
   }
 
   Future<void> _lockChat(Map<String, dynamic> item) async {
@@ -3294,6 +3302,27 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       currentUserId,
       targetUser.uid,
     );
+
+    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final optimisticMsg = MessageModel(
+      messageId: tempId,
+      chatId: chatId,
+      senderId: currentUserId,
+      senderName: currentUserName,
+      senderPhotoUrl: currentUserPhoto,
+      text: content,
+      type: type,
+      timestamp: DateTime.now(),
+      status: MessageStatus.sending,
+      fileName: fileName,
+      fileSize: fileSize,
+      audioDuration: audioDuration,
+      latitude: latitude,
+      longitude: longitude,
+    );
+
+    _addOptimisticMessageToExpanded(optimisticMsg);
+
     await _chatService.sendMessage(
       chatId: chatId,
       senderId: currentUserId,
@@ -3570,6 +3599,25 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
         if (targetGroupId.isNotEmpty &&
             (content.isNotEmpty || type != MessageType.text)) {
+          final tempId = 'temp_g_${DateTime.now().millisecondsSinceEpoch}';
+          final optimisticMsg = MessageModel(
+            messageId: tempId,
+            groupId: targetGroupId,
+            senderId: currentUserId,
+            senderName: currentUserName,
+            senderPhotoUrl: currentUserPhoto,
+            text: content,
+            type: type,
+            timestamp: DateTime.now(),
+            status: MessageStatus.sending,
+            fileName: fileName,
+            fileSize: fileSize,
+            audioDuration: audioDuration,
+            latitude: latitude,
+            longitude: longitude,
+          );
+          _addOptimisticMessageToExpanded(optimisticMsg);
+
           await _groupService.sendGroupMessage(
             groupId: targetGroupId,
             senderId: currentUserId,
@@ -4148,8 +4196,10 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             final lockedPreview =
                 chatId != null && _lockedChatIds.contains(chatId);
 
+            final itemKey = ValueKey(item['id']);
+            final stateKey = _streamItemKeys[itemKey] ??= GlobalKey<_StreamItemWidgetState>();
             return StreamItemWidget(
-              key: ValueKey(item['id']),
+              key: stateKey,
               item: item,
               isExpanded: isExpanded,
               lockedPreview: lockedPreview,
@@ -5338,6 +5388,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     with SingleTickerProviderStateMixin {
   bool _showInfo = false;
   late AnimationController _swipeController;
+  final List<MessageModel> _optimisticMessages = [];
 
   double _presencePct(dynamic raw) {
     if (raw is num) {
@@ -5379,6 +5430,25 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
       _showInfo = false;
     }
     super.didUpdateWidget(oldWidget);
+  }
+
+  void addOptimisticMessage(MessageModel msg) {
+    setState(() {
+      _optimisticMessages.add(msg);
+    });
+  }
+
+  void updateMessageStatus(String tempId, MessageStatus status) {
+    setState(() {
+      final index = _optimisticMessages.indexWhere((m) => m.messageId == tempId);
+      if (index != -1) {
+        if (status == MessageStatus.sent) {
+          _optimisticMessages.removeAt(index);
+        } else {
+          _optimisticMessages[index] = _optimisticMessages[index].copyWith(status: status);
+        }
+      }
+    });
   }
 
   Widget _buildAvatar(Map<String, dynamic> item, ColorScheme colorScheme) {
@@ -5502,7 +5572,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     final dmFill = isLight
         ? AppTheme.focusBlue.withValues(alpha: 0.12)
         : AppTheme.focusBlue.withValues(alpha: 0.22);
-    final dmBorder = AppTheme.focusBlue.withValues(alpha: isLight ? 0.35 : 0.5);
     return Container(
       width: 34,
       height: 34,
@@ -5515,12 +5584,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
                     : const Color(0xFF1A2A1A))
                 : dmFill),
         shape: BoxShape.circle,
-        border: Border.all(
-          color: widget.isFocusLocked
-              ? AppTheme.focusBlue.withValues(alpha: 0.8)
-              : (isGroup ? AppTheme.green.withValues(alpha: 0.35) : dmBorder),
-          width: 1.5,
-        ),
       ),
       child: Center(
         child: Text(
@@ -5584,11 +5647,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
         isGroup && pendingRowIds.contains(widget.currentUserId);
     // Blue for DM (@), green for group (#); online rings stay green.
     final handlePrefixColor = isGroup ? AppTheme.green : AppTheme.focusBlue;
-    final tileBorderColor = widget.isFocusLocked
-        ? AppTheme.focusBlue.withValues(alpha: 0.8)
-        : (isUnread
-            ? AppTheme.focusBlue.withValues(alpha: 0.45)
-            : Theme.of(context).colorScheme.outline);
     final tileBackgroundColor = widget.isFocusLocked
         ? AppTheme.focusBlueGlow
         : (isUnread
@@ -5600,7 +5658,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 1),
       child: _wrapStreamTileDismissible(
         key: ValueKey(widget.item['id'] ?? widget.item['handle']),
         isExpanded: widget.isExpanded,
@@ -5620,20 +5678,13 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
                 decoration: BoxDecoration(
                   color: tileBackgroundColor,
                   borderRadius: BorderRadius.zero,
-                  border: Border.all(
-                    color: tileBorderColor,
-                    width: widget.isFocusLocked || isUnread ? 1.6 : 1,
-                  ),
-                  boxShadow: (widget.isFocusLocked || isUnread)
-                      ? [
-                          BoxShadow(
-                            color: widget.isFocusLocked
-                                ? AppTheme.focusBlue.withValues(alpha: 0.12)
-                                : AppTheme.purple.withValues(alpha: 0.08),
-                            blurRadius: 10,
-                            spreadRadius: 0,
+                  border: widget.isFocusLocked
+                      ? const Border(
+                          left: BorderSide(
+                            color: AppTheme.focusBlue,
+                            width: 3,
                           ),
-                        ]
+                        )
                       : null,
                 ),
                 padding:
@@ -6427,23 +6478,18 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     return StreamBuilder<List<MessageModel>>(
       stream: stream,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Center(
-            child: CircularProgressIndicator(
-              color: AppTheme.purple,
-              strokeWidth: 2,
-            ),
-          );
-        }
-        final messages = snapshot.data!;
-        if (messages.isEmpty) return Container();
+        final allMessages = <MessageModel>[
+          ...snapshot.data ?? [],
+          ..._optimisticMessages,
+        ];
+        if (allMessages.isEmpty) return Container();
 
         return ListView.builder(
           reverse: true,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          itemCount: messages.length,
+          itemCount: allMessages.length,
           itemBuilder: (context, index) {
-            final msg = messages[index];
+            final msg = allMessages[index];
             final isMe = msg.senderId == widget.currentUserId;
 
             return Padding(
@@ -6700,6 +6746,27 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
                                 ),
                               // ── Message content based on type ──
                               _buildMessageContent(msg, isMe),
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (msg.timestamp != null)
+                                    Text(
+                                      _formatTime(msg.timestamp!),
+                                      style: GoogleFonts.inter(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant
+                                            .withValues(alpha: 0.7),
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  if (isMe) ...[
+                                    const SizedBox(width: 4),
+                                    _buildMessageStatus(msg.status),
+                                  ],
+                                ],
+                              ),
                             ],
                           ),
                         ),
@@ -6713,6 +6780,53 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
         );
       },
     );
+  }
+
+  Widget _buildMessageStatus(MessageStatus status) {
+    const double size = 14;
+    const Color sentColor = Color(0xFF8E8E93);
+    const Color deliveredColor = Color(0xFF8E8E93);
+    const Color readColor = Color(0xFF34C759);
+    const Color sendingColor = Color(0xFF8E8E93);
+
+    switch (status) {
+      case MessageStatus.sending:
+        return const SizedBox(
+          width: size,
+          height: size,
+          child: CircularProgressIndicator(
+            strokeWidth: 1.5,
+            color: sendingColor,
+          ),
+        );
+
+      case MessageStatus.sent:
+        return const Icon(
+          Icons.check,
+          size: size,
+          color: sentColor,
+        );
+
+      case MessageStatus.delivered:
+        return const Icon(
+          Icons.done_all,
+          size: size,
+          color: deliveredColor,
+        );
+
+      case MessageStatus.read:
+        return const Icon(
+          Icons.done_all,
+          size: size,
+          color: readColor,
+        );
+    }
+  }
+
+  String _formatTime(DateTime time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   // ── Message content renderer ──
