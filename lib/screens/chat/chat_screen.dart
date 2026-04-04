@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:appwrite/appwrite.dart';
 import '../../appwrite_client.dart';
 import '../../services/chat_service.dart';
 import '../../services/user_service.dart';
@@ -36,7 +37,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isComposing = false;
   bool _isRecording = false;
-  bool _isSending = false;
+  final List<MessageModel> _optimisticMessages = [];
 
   @override
   void initState() {
@@ -57,8 +58,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  void _sendMessage() async {
-    if (_isSending) return;
+  void _sendMessage() {
     final text = _messageController.text.trim();
     if (text.isEmpty && !_isRecording) return;
 
@@ -70,29 +70,52 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    setState(() {
-      _isSending = true;
-    });
-
     final userName = cachedUserName;
     final userPhoto = cachedUserPhotoUrl;
+    final messageId = ID.unique();
 
-    try {
-      await _chatService.sendMessage(
-        chatId: widget.chatId,
-        senderId: widget.currentUserId,
-        senderName: userName,
-        senderPhotoUrl: userPhoto,
-        text: text,
-      );
-      _messageController.clear();
-    } finally {
+    // Immediately add optimistic message and clear input
+    final optimisticMsg = MessageModel(
+      messageId: messageId,
+      chatId: widget.chatId,
+      senderId: widget.currentUserId,
+      senderName: userName,
+      senderPhotoUrl: userPhoto,
+      text: text,
+      type: MessageType.text,
+      timestamp: DateTime.now(),
+      status: MessageStatus.sending,
+    );
+    setState(() {
+      _optimisticMessages.add(optimisticMsg);
+    });
+    _messageController.clear();
+
+    // Send in background without awaiting
+    _chatService.sendMessage(
+      messageId: messageId,
+      chatId: widget.chatId,
+      senderId: widget.currentUserId,
+      senderName: userName,
+      senderPhotoUrl: userPhoto,
+      text: text,
+    ).then((_) {
+      // Success - remove from optimistic messages
+      // The realtime will bring in the real message
       if (mounted) {
         setState(() {
-          _isSending = false;
+          _optimisticMessages.removeWhere((m) => m.messageId == messageId);
         });
       }
-    }
+    }).catchError((e) {
+      // Failure - remove the optimistic message (user can retry)
+      debugPrint('Failed to send message: $e');
+      if (mounted) {
+        setState(() {
+          _optimisticMessages.removeWhere((m) => m.messageId == messageId);
+        });
+      }
+    });
   }
   @override
   Widget build(BuildContext context) {
@@ -161,15 +184,25 @@ class _ChatScreenState extends State<ChatScreen> {
             child: StreamBuilder<List<MessageModel>>(
               stream: _chatService.getChatMessages(widget.chatId),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                final serverMessages = snapshot.data ?? [];
+                final serverMessageIds = serverMessages.map((m) => m.messageId).toSet();
+                
+                final pendingMessages = _optimisticMessages
+                    .where((m) => !serverMessageIds.contains(m.messageId))
+                    .toList();
+
+                final messages = <MessageModel>[
+                  ...pendingMessages.reversed,
+                  ...serverMessages,
+                ];
+
+                if (messages.isEmpty && snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                if (messages.isEmpty) {
                   return _buildEmptyChat();
                 }
-
-                final messages = snapshot.data!;
 
                 // Mark messages as read
                 _chatService.markMessagesAsRead(
@@ -323,23 +356,14 @@ class _ChatScreenState extends State<ChatScreen> {
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              icon: _isSending
-                  ? SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        color: colorScheme.onPrimary,
-                        strokeWidth: 2.5,
-                      ),
-                    )
-                  : Icon(
-                      _isRecording
-                          ? Icons.stop
-                          : (_isComposing ? Icons.send_rounded : Icons.mic),
-                      color:
-                          _isRecording ? colorScheme.onError : colorScheme.onPrimary,
-                    ),
-              onPressed: _isSending ? null : () {
+              icon: Icon(
+                _isRecording
+                    ? Icons.stop
+                    : (_isComposing ? Icons.send_rounded : Icons.mic),
+                color:
+                    _isRecording ? colorScheme.onError : colorScheme.onPrimary,
+              ),
+              onPressed: () {
                 if (_isRecording) {
                   setState(() {
                     _isRecording = false;

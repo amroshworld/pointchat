@@ -19,7 +19,11 @@ class UserService {
       return UserModel.fromMap(doc.data);
     } on AppwriteException catch (e) {
       if (e.code == 404) return null;
-      rethrow; // keep throwing so callers can handle it
+      if (kDebugMode) debugPrint('getUserById($uid): $e');
+      return null;
+    } catch (e, st) {
+      if (kDebugMode) debugPrint('getUserById($uid): $e\n$st');
+      return null;
     }
   }
 
@@ -30,7 +34,8 @@ class UserService {
     getUserById(uid).then((user) {
       if (!controller.isClosed) controller.add(user);
     }).catchError((e) {
-      if (!controller.isClosed) controller.addError(e);
+      if (kDebugMode) debugPrint('getUserStream initial: $e');
+      if (!controller.isClosed) controller.add(null);
     });
 
     final sub = _realtime.subscribe([
@@ -53,7 +58,8 @@ class UserService {
       getUserById(uid).then((user) {
         if (!controller.isClosed) controller.add(user);
       }).catchError((e) {
-        if (!controller.isClosed) controller.addError(e);
+        if (kDebugMode) debugPrint('getUserStream refresh: $e');
+        if (!controller.isClosed) controller.add(null);
       });
     });
 

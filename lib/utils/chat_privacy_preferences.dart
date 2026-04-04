@@ -90,4 +90,14 @@ class ChatPrivacyPreferences {
       privacyPinListenable.value = pin;
     }
   }
+
+  static Future<void> clearAll() async {
+    final p = await SharedPreferences.getInstance();
+    await p.remove(_kChatPin);
+    await p.remove(_kLockedChatIds);
+    await p.remove(_kAppLockEnabled);
+    privacyPinListenable.value = '';
+    lockedChatsListenable.value = {};
+    appLockEnabledListenable.value = false;
+  }
 }

@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:appwrite/appwrite.dart';
 import '../../appwrite_client.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -56,6 +57,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Color get _bubbleOther => Theme.of(context).colorScheme.primaryContainer;
 
   bool _isSending = false;
+
+  final List<MessageModel> _optimisticMessages = [];
 
   @override
   void initState() {
@@ -288,20 +291,56 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
     try {
       if (_isSelectionMode && _selectedChatIds.isNotEmpty) {
+        _messageController.clear();
         await Future.wait(
           _selectedChatIds.map(
-            (chatId) => _chatService.sendMessage(
-              chatId: chatId,
-              senderId: widget.currentUserId,
-              senderName: senderName,
-              senderPhotoUrl: senderPhoto,
-              text: text,
-            ),
+            (chatId) {
+              final messageId = ID.unique();
+              final optimisticMsg = MessageModel(
+                messageId: messageId,
+                chatId: chatId,
+                senderId: widget.currentUserId,
+                senderName: senderName,
+                senderPhotoUrl: senderPhoto,
+                text: text,
+                type: MessageType.text,
+                timestamp: DateTime.now(),
+                status: MessageStatus.sending,
+              );
+              setState(() {
+                _optimisticMessages.add(optimisticMsg);
+              });
+              return _chatService.sendMessage(
+                messageId: messageId,
+                chatId: chatId,
+                senderId: widget.currentUserId,
+                senderName: senderName,
+                senderPhotoUrl: senderPhoto,
+                text: text,
+              );
+            },
           ),
         );
         _clearSelection();
       } else if (_expandedChatId != null) {
+        final messageId = ID.unique();
+        final optimisticMsg = MessageModel(
+          messageId: messageId,
+          chatId: _expandedChatId!,
+          senderId: widget.currentUserId,
+          senderName: senderName,
+          senderPhotoUrl: senderPhoto,
+          text: text,
+          type: MessageType.text,
+          timestamp: DateTime.now(),
+          status: MessageStatus.sending,
+        );
+        setState(() {
+          _optimisticMessages.add(optimisticMsg);
+        });
+        _messageController.clear();
         await _chatService.sendMessage(
+          messageId: messageId,
           chatId: _expandedChatId!,
           senderId: widget.currentUserId,
           senderName: senderName,
@@ -309,7 +348,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
           text: text,
         );
       }
-      _messageController.clear();
     } finally {
       if (mounted) {
         setState(() {
@@ -714,7 +752,23 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return StreamBuilder<List<MessageModel>>(
       stream: _chatService.getChatMessages(chatId),
       builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+        final serverMessages = snapshot.data ?? [];
+        final serverMessageIds = serverMessages.map((m) => m.messageId).toSet();
+        
+        final pendingMessages = _optimisticMessages
+            .where((m) => m.chatId == chatId && !serverMessageIds.contains(m.messageId))
+            .toList();
+
+        final allMessages = <MessageModel>[
+          ...pendingMessages.reversed,
+          ...serverMessages,
+        ];
+
+        if (allMessages.isEmpty && snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (allMessages.isEmpty) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 16),
             child: Center(
@@ -727,7 +781,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         }
 
         final messages =
-            snapshot.data!.take(_inlineMessageCap).toList().reversed.toList();
+            allMessages.take(_inlineMessageCap).toList().reversed.toList();
 
         return Container(
           constraints: const BoxConstraints(maxHeight: 320),
@@ -865,22 +919,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     : Theme.of(context).colorScheme.outline,
               ),
             ),
-            child: _isSending
-                ? Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    ),
-                  )
-                : Icon(
-                    Icons.send_rounded,
-                    color: _hasTarget ? Colors.white : _textSecondary,
-                    size: 18,
-                  ),
+            child: Icon(
+              Icons.send_rounded,
+              color: _hasTarget ? Colors.white : _textSecondary,
+              size: 18,
+            ),
           ),
         ),
       ],

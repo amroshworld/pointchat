@@ -424,6 +424,7 @@ class GroupService {
 
   // Send a group message
   Future<void> sendGroupMessage({
+    String? messageId,
     required String groupId,
     required String senderId,
     required String senderName,
@@ -437,9 +438,9 @@ class GroupService {
     double? longitude,
     String? skipUnreadIncrementFor,
   }) async {
-    final messageId = ID.unique();
+    final id = messageId ?? ID.unique();
     final message = MessageModel(
-      messageId: messageId,
+      messageId: id,
       groupId: groupId,
       senderId: senderId,
       senderName: senderName,
@@ -457,7 +458,7 @@ class GroupService {
     await _databases.createRow(
       databaseId: AppwriteConstants.databaseId,
       tableId: AppwriteConstants.messagesCollection,
-      rowId: messageId,
+      rowId: id,
       data: message.toMap(),
     );
 

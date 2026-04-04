@@ -59,7 +59,6 @@ dependencies:
   flutter_web_auth_2: 5.0.1
   shared_preferences: ^2.5.3
   local_auth: ^2.3.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

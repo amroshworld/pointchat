@@ -7,6 +7,7 @@ import 'package:appwrite/models.dart' as models;
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import '../appwrite_client.dart';
 import '../models/user_model.dart';
+import '../utils/chat_privacy_preferences.dart';
 import 'notification_service.dart';
 import 'subscription_service.dart';
 
@@ -212,6 +213,7 @@ class AuthService {
     cachedUserName = '';
     cachedUserPhotoUrl = '';
     cachedUserEmail = '';
+    await ChatPrivacyPreferences.clearAll();
     await SubscriptionService.instance.logOut();
     await NotificationService.instance.unbind();
   }

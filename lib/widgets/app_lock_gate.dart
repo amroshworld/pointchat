@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../appwrite_client.dart';
+import '../services/auth_service.dart';
 import '../utils/chat_privacy_preferences.dart';
 
 /// When app lock is enabled and a PIN exists, blocks the child until biometric or PIN succeeds.
@@ -317,12 +318,24 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
                             children: [
                               _buildKeypadAction(
                                 onTap: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          'Please reinstall the app to reset PIN',
-                                          style: GoogleFonts.inter()),
-                                      behavior: SnackBarBehavior.floating,
+                                  showDialog(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: Text('Forgot PIN?', style: GoogleFonts.inter()),
+                                      content: Text('Logging out will reset your PIN and locked chats. You will need to log back in.', style: GoogleFonts.inter()),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(ctx),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () async {
+                                            Navigator.pop(ctx);
+                                            await AuthService().signOut();
+                                          },
+                                          child: const Text('Log Out', style: TextStyle(color: Colors.redAccent)),
+                                        ),
+                                      ],
                                     ),
                                   );
                                 },

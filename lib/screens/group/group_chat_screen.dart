@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:appwrite/appwrite.dart';
 import '../../appwrite_client.dart';
 import '../../services/group_service.dart';
 import '../../models/message_model.dart';
@@ -27,6 +28,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   final GroupService _groupService = GroupService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final List<MessageModel> _optimisticMessages = [];
 
   bool _isSending = false;
 
@@ -56,14 +58,33 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     });
 
     try {
+      final messageId = ID.unique();
+      // Add optimistic message to the list
+      final optimisticMsg = MessageModel(
+        messageId: messageId,
+        groupId: widget.groupId,
+        senderId: widget.currentUserId,
+        senderName: cachedUserName,
+        senderPhotoUrl: cachedUserPhotoUrl,
+        text: text,
+        type: MessageType.text,
+        timestamp: DateTime.now(),
+        status: MessageStatus.sending,
+      );
+      setState(() {
+        _optimisticMessages.add(optimisticMsg);
+      });
+
+      _messageController.clear();
+
       await _groupService.sendGroupMessage(
+        messageId: messageId,
         groupId: widget.groupId,
         senderId: widget.currentUserId,
         senderName: cachedUserName,
         senderPhotoUrl: cachedUserPhotoUrl,
         text: text,
       );
-      _messageController.clear();
     } finally {
       if (mounted) {
         setState(() {
@@ -147,15 +168,25 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
             child: StreamBuilder<List<MessageModel>>(
               stream: _groupService.getGroupMessages(widget.groupId),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                final serverMessages = snapshot.data ?? [];
+                final serverMessageIds = serverMessages.map((m) => m.messageId).toSet();
+                
+                final pendingMessages = _optimisticMessages
+                    .where((m) => !serverMessageIds.contains(m.messageId))
+                    .toList();
+
+                final messages = <MessageModel>[
+                  ...pendingMessages.reversed,
+                  ...serverMessages,
+                ];
+
+                if (messages.isEmpty && snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                if (messages.isEmpty) {
                   return _buildEmptyGroupChat();
                 }
-
-                final messages = snapshot.data!;
 
                 return ListView.builder(
                   controller: _scrollController,
@@ -263,16 +294,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              icon: _isSending
-                  ? SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        color: colorScheme.onPrimary,
-                        strokeWidth: 2.5,
-                      ),
-                    )
-                  : Icon(Icons.send_rounded, color: colorScheme.onPrimary),
+              icon: Icon(Icons.send_rounded, color: colorScheme.onPrimary),
               onPressed: _isSending ? null : _sendMessage,
             ),
           ),

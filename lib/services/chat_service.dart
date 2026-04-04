@@ -322,6 +322,7 @@ class ChatService {
 
   // Send a message
   Future<void> sendMessage({
+    String? messageId,
     required String chatId,
     required String senderId,
     required String senderName,
@@ -334,11 +335,11 @@ class ChatService {
     double? latitude,
     double? longitude,
   }) async {
-    final messageId = ID.unique();
+    final id = messageId ?? ID.unique();
     final now = DateTime.now().toUtc().toIso8601String();
 
     final message = MessageModel(
-      messageId: messageId,
+      messageId: id,
       chatId: chatId,
       senderId: senderId,
       senderName: senderName,
@@ -357,7 +358,7 @@ class ChatService {
       _databases.createRow(
         databaseId: AppwriteConstants.databaseId,
         tableId: AppwriteConstants.messagesCollection,
-        rowId: messageId,
+        rowId: id,
         data: message.toMap(),
       ),
       _updateChatMetadata(chatId, message.preview, now, senderId),

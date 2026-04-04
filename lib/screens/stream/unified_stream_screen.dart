@@ -119,7 +119,10 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
   String? _expandedItemId;
   String? _focusedHandle;
-  final Map<Key, GlobalKey<_StreamItemWidgetState>> _streamItemKeys = {};
+  /// Optimistic messages keyed by conversation row id (chat or group id).
+  final Map<String, List<MessageModel>> _optimisticMessagesByConversationId =
+      {};
+  final ScrollController _streamScrollController = ScrollController();
 
   bool _isMentioning = false;
   List<dynamic> _mentionSuggestions = [];
@@ -304,6 +307,32 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         ),
         actions: [
           TextButton(
+            onPressed: () {
+              Navigator.pop(ctx, false);
+              showDialog(
+                context: context,
+                builder: (ctx2) => AlertDialog(
+                  title: Text('Forgot PIN?', style: GoogleFonts.inter()),
+                  content: Text('Logging out will reset your PIN and locked chats. You will need to log back in.', style: GoogleFonts.inter()),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx2),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        Navigator.pop(ctx2);
+                        await AuthService().signOut();
+                      },
+                      child: const Text('Log Out', style: TextStyle(color: Colors.redAccent)),
+                    ),
+                  ],
+                ),
+              );
+            },
+            child: Text('Forgot?', style: TextStyle(color: Colors.blueAccent.shade100)),
+          ),
+          TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
@@ -340,6 +369,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     if (!mounted) return;
     setState(() {
       if (isExpanded) {
+        if (id != null) {
+          _optimisticMessagesByConversationId.remove(id);
+        }
         _expandedItemId = null;
         if (_focusedHandle == item['handle']) {
           _focusedHandle = null;
@@ -350,6 +382,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       }
     });
     if (!isExpanded) {
+      _scrollExpandedStreamItemIntoView();
       if (item['type'] == 'dm') {
         _chatService.markMessagesAsRead(item['id'], currentUserId);
       } else if (item['type'] == 'group') {
@@ -375,6 +408,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       }
     });
     if (_focusedHandle == item['handle']) {
+      _scrollExpandedStreamItemIntoView();
       if (item['type'] == 'dm') {
         _chatService.markMessagesAsRead(item['id'], currentUserId);
       } else if (item['type'] == 'group') {
@@ -644,6 +678,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     });
 
     _commandController.addListener(_onCommandChanged);
+    _commandFocusNode.addListener(_onComposerFocusChanged);
 
     unawaited(_loadComposerPrefsAndTips());
   }
@@ -988,7 +1023,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     _composerTipTimer?.cancel();
     _commandController.removeListener(_onCommandChanged);
     _commandController.dispose();
+    _commandFocusNode.removeListener(_onComposerFocusChanged);
     _commandFocusNode.dispose();
+    _streamScrollController.dispose();
     _recordingTimer?.cancel();
     _audioRecorder.dispose();
     super.dispose();
@@ -1003,6 +1040,17 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         state == AppLifecycleState.hidden) {
       _stopHeartbeat();
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (!mounted || _expandedItemId == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _expandedItemId != null) {
+        _scrollExpandedStreamItemIntoView();
+      }
+    });
   }
 
   /// Match handles to stored names (users / groups). Keeps all Unicode letters;
@@ -1142,12 +1190,48 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     return '${_focusedHandle!} $trimmed';
   }
 
-  void _addOptimisticMessageToExpanded(MessageModel msg) {
+  /// Registers a pending outgoing message for [conversationId] (DM [chatId] or
+  /// [groupId]) so every matching stream row updates — not only the expanded one.
+  void _addOptimisticMessageForConversation(
+    String conversationId,
+    MessageModel msg,
+  ) {
+    if (conversationId.isEmpty) return;
+    setState(() {
+      final list = List<MessageModel>.from(
+        _optimisticMessagesByConversationId[conversationId] ?? const [],
+      );
+      list.add(msg);
+      _optimisticMessagesByConversationId[conversationId] = list;
+    });
+  }
+
+  /// Keeps the expanded conversation row aligned to the top of the stream when
+  /// the composer is focused or the keyboard opens/closes, so lower chats are
+  /// not hidden behind the IME and layout recovers after dismiss.
+  void _scrollExpandedStreamItemIntoView() {
     if (_expandedItemId == null) return;
-    final itemKey = ValueKey(_expandedItemId);
-    final state = _streamItemKeys[itemKey]?.currentState;
-    if (state != null) {
-      state.addOptimisticMessage(msg);
+    void scrollOnce() {
+      if (!mounted || _expandedItemId == null) return;
+      if (!_streamScrollController.hasClients) return;
+      unawaited(
+        _streamScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      scrollOnce();
+      Future<void>.delayed(const Duration(milliseconds: 300), scrollOnce);
+    });
+  }
+
+  void _onComposerFocusChanged() {
+    if (_commandFocusNode.hasFocus && _expandedItemId != null) {
+      _scrollExpandedStreamItemIntoView();
     }
   }
 
@@ -2792,6 +2876,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       return;
     }
 
+    _commandController.clear();
+
     switch (message.type) {
       case MessageType.image:
         await _processCommand(
@@ -2860,7 +2946,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     setState(() {
       _forwardingMessage = null;
     });
-    _commandController.clear();
   }
 
   void _pickAndSendImage() async {
@@ -3303,9 +3388,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       targetUser.uid,
     );
 
-    final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
+    final messageId = ID.unique();
     final optimisticMsg = MessageModel(
-      messageId: tempId,
+      messageId: messageId,
       chatId: chatId,
       senderId: currentUserId,
       senderName: currentUserName,
@@ -3321,9 +3406,10 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       longitude: longitude,
     );
 
-    _addOptimisticMessageToExpanded(optimisticMsg);
+    _addOptimisticMessageForConversation(chatId, optimisticMsg);
 
     await _chatService.sendMessage(
+      messageId: messageId,
       chatId: chatId,
       senderId: currentUserId,
       senderName: currentUserName,
@@ -3599,9 +3685,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
         if (targetGroupId.isNotEmpty &&
             (content.isNotEmpty || type != MessageType.text)) {
-          final tempId = 'temp_g_${DateTime.now().millisecondsSinceEpoch}';
+          final messageId = ID.unique();
           final optimisticMsg = MessageModel(
-            messageId: tempId,
+            messageId: messageId,
             groupId: targetGroupId,
             senderId: currentUserId,
             senderName: currentUserName,
@@ -3616,9 +3702,10 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             latitude: latitude,
             longitude: longitude,
           );
-          _addOptimisticMessageToExpanded(optimisticMsg);
+          _addOptimisticMessageForConversation(targetGroupId, optimisticMsg);
 
           await _groupService.sendGroupMessage(
+            messageId: messageId,
             groupId: targetGroupId,
             senderId: currentUserId,
             senderName: currentUserName,
@@ -3762,7 +3849,22 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             currentUserId,
           );
 
+          final messageId = ID.unique();
+          final optimisticMsg = MessageModel(
+            messageId: messageId,
+            chatId: chatId,
+            senderId: currentUserId,
+            senderName: cachedUserName,
+            senderPhotoUrl: cachedUserPhotoUrl,
+            text: privateAiPrompt,
+            type: MessageType.text,
+            timestamp: DateTime.now(),
+            status: MessageStatus.sending,
+          );
+          _addOptimisticMessageForConversation(chatId, optimisticMsg);
+
           await _chatService.sendMessage(
+            messageId: messageId,
             chatId: chatId,
             senderId: currentUserId,
             senderName: cachedUserName,
@@ -3991,8 +4093,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         }
       }
 
-      await _processCommand(normalizedInput);
       _commandController.clear();
+      await _processCommand(normalizedInput);
     } finally {
       if (mounted) {
         setState(() {
@@ -4005,6 +4107,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
@@ -4151,7 +4254,22 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           );
         }
 
-        final items = snapshot.data ?? [];
+        final items = List<Map<String, dynamic>>.from(snapshot.data ?? []);
+
+        DateTime effectiveSortTime(Map<String, dynamic> item) {
+          final base = item['timeRaw'] as DateTime;
+          final id = item['id'] as String?;
+          if (id == null) return base;
+          final pending = _optimisticMessagesByConversationId[id];
+          if (pending == null || pending.isEmpty) return base;
+          var best = base;
+          for (final m in pending) {
+            final t = m.timestamp ?? DateTime.now();
+            if (t.isAfter(best)) best = t;
+          }
+          return best;
+        }
+
         if (items.isEmpty) {
           return Center(
             child: Column(
@@ -4184,8 +4302,21 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           );
         }
 
+        // Sort so the expanded item is at the top
+        items.sort((a, b) {
+          final aId = a['id'] as String?;
+          final bId = b['id'] as String?;
+          final aIsExpanded = _expandedItemId != null && aId == _expandedItemId;
+          final bIsExpanded = _expandedItemId != null && bId == _expandedItemId;
+          
+          if (aIsExpanded && !bIsExpanded) return -1;
+          if (!aIsExpanded && bIsExpanded) return 1;
+
+          return effectiveSortTime(b).compareTo(effectiveSortTime(a));
+        });
+
         return ListView.builder(
-          reverse: false,
+          controller: _streamScrollController,
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.only(top: 8, bottom: 8),
           itemCount: items.length,
@@ -4196,10 +4327,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             final lockedPreview =
                 chatId != null && _lockedChatIds.contains(chatId);
 
-            final itemKey = ValueKey(item['id']);
-            final stateKey = _streamItemKeys[itemKey] ??= GlobalKey<_StreamItemWidgetState>();
             return StreamItemWidget(
-              key: stateKey,
+              key: ValueKey(item['id']),
               item: item,
               isExpanded: isExpanded,
               lockedPreview: lockedPreview,
@@ -4210,6 +4339,10 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               groupService: _groupService,
               inviteService: _inviteService,
               userService: _userService,
+              extraOptimisticMessages:
+                  _optimisticMessagesByConversationId[
+                          item['id']?.toString() ?? ''] ??
+                      const [],
               onTap: () => unawaited(_onStreamItemTap(item, isExpanded)),
               onLongPress: () => unawaited(_onStreamItemLongPress(item)),
               onReply: (replyData) {
@@ -4900,7 +5033,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                   return Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      if (_isAiLoading || _isSending)
+                                      if (_isAiLoading)
                                         const Padding(
                                           padding: EdgeInsets.only(right: 12),
                                           child: SizedBox(                                            width: 22,
@@ -5359,6 +5492,9 @@ class StreamItemWidget extends StatefulWidget {
   final VoidCallback onSwipeLeft; // Lock/hide chat
   final VoidCallback onSwipeRight; // Delete chat
 
+  /// Pending messages from parent (optimistic send) until server stream includes them.
+  final List<MessageModel> extraOptimisticMessages;
+
   const StreamItemWidget({
     super.key,
     required this.item,
@@ -5371,6 +5507,7 @@ class StreamItemWidget extends StatefulWidget {
     required this.groupService,
     required this.inviteService,
     required this.userService,
+    this.extraOptimisticMessages = const [],
     required this.onTap,
     required this.onLongPress,
     required this.onHandleTap,
@@ -5388,7 +5525,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     with SingleTickerProviderStateMixin {
   bool _showInfo = false;
   late AnimationController _swipeController;
-  final List<MessageModel> _optimisticMessages = [];
 
   double _presencePct(dynamic raw) {
     if (raw is num) {
@@ -5430,25 +5566,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
       _showInfo = false;
     }
     super.didUpdateWidget(oldWidget);
-  }
-
-  void addOptimisticMessage(MessageModel msg) {
-    setState(() {
-      _optimisticMessages.add(msg);
-    });
-  }
-
-  void updateMessageStatus(String tempId, MessageStatus status) {
-    setState(() {
-      final index = _optimisticMessages.indexWhere((m) => m.messageId == tempId);
-      if (index != -1) {
-        if (status == MessageStatus.sent) {
-          _optimisticMessages.removeAt(index);
-        } else {
-          _optimisticMessages[index] = _optimisticMessages[index].copyWith(status: status);
-        }
-      }
-    });
   }
 
   Widget _buildAvatar(Map<String, dynamic> item, ColorScheme colorScheme) {
@@ -5630,6 +5747,35 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     );
   }
 
+  String _previewTextFromOptimistic(MessageModel m) {
+    switch (m.type) {
+      case MessageType.image:
+        return '📷';
+      case MessageType.file:
+        return m.fileName?.isNotEmpty == true ? m.fileName! : 'File';
+      case MessageType.audio:
+        return 'Voice message';
+      case MessageType.location:
+        return 'Location';
+      case MessageType.system:
+      case MessageType.text:
+        return m.text.replaceAll('\n', ' ').trim();
+    }
+  }
+
+  bool _optimisticPreviewIsImage(MessageModel m) {
+    if (m.type == MessageType.image) return true;
+    if (m.type == MessageType.text && m.text.contains('📷')) return true;
+    return false;
+  }
+
+  String _sanitizeGroupPreviewLocal(String text) {
+    if (text.contains('[invite-pending]:')) {
+      return 'Invitation pending approval';
+    }
+    return text;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isUnread = widget.item['isUnread'] ?? false;
@@ -5654,6 +5800,39 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
             : Theme.of(context).colorScheme.surface);
 
     final blurLocked = widget.lockedPreview && !widget.isExpanded;
+
+    MessageModel? latestOptimistic;
+    if (widget.extraOptimisticMessages.isNotEmpty) {
+      latestOptimistic = widget.extraOptimisticMessages.reduce((a, b) {
+        final ta = a.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final tb = b.timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return ta.isAfter(tb) ? a : b;
+      });
+    }
+
+    String previewContent;
+    String previewSender;
+    String previewTime;
+    bool previewIsImage;
+    if (latestOptimistic != null) {
+      var line = _previewTextFromOptimistic(latestOptimistic);
+      if (isGroup && latestOptimistic.type == MessageType.text) {
+        line = _sanitizeGroupPreviewLocal(line);
+      }
+      previewContent = line;
+      previewSender = latestOptimistic.senderId == widget.currentUserId
+          ? 'me'
+          : latestOptimistic.senderName;
+      previewTime = latestOptimistic.timestamp != null
+          ? DateFormat('HH:mm').format(latestOptimistic.timestamp!)
+          : (widget.item['time'] as String? ?? '');
+      previewIsImage = _optimisticPreviewIsImage(latestOptimistic);
+    } else {
+      previewContent = widget.item['content'] as String? ?? '';
+      previewSender = widget.item['sender'] as String? ?? '';
+      previewTime = widget.item['time'] as String? ?? '';
+      previewIsImage = isImage;
+    }
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
@@ -5753,7 +5932,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
                                           ),
                                         ),
                                       Text(
-                                        widget.item['time'] ?? '',
+                                        previewTime,
                                         style: GoogleFonts.inter(
                                           color: Theme.of(
                                             context,
@@ -5781,7 +5960,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
                                   children: [
                                     if (isGroup)
                                       TextSpan(
-                                        text: '${widget.item['sender']}  ',
+                                        text: '$previewSender  ',
                                         style: TextStyle(
                                           color: Theme.of(
                                             context,
@@ -5789,7 +5968,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
-                                    if (isImage)
+                                    if (previewIsImage)
                                       WidgetSpan(
                                         child: Icon(
                                           Icons.image_outlined,
@@ -5799,7 +5978,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
                                           size: 14,
                                         ),
                                       ),
-                                    TextSpan(text: widget.item['content']),
+                                    TextSpan(text: previewContent),
                                   ],
                                 ),
                               ),
@@ -6478,9 +6657,16 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     return StreamBuilder<List<MessageModel>>(
       stream: stream,
       builder: (context, snapshot) {
+        final serverMessages = snapshot.data ?? [];
+        final serverMessageIds = serverMessages.map((m) => m.messageId).toSet();
+
+        final pendingMessages = widget.extraOptimisticMessages
+            .where((m) => !serverMessageIds.contains(m.messageId))
+            .toList();
+
         final allMessages = <MessageModel>[
-          ...snapshot.data ?? [],
-          ..._optimisticMessages,
+          ...pendingMessages.reversed,
+          ...serverMessages,
         ];
         if (allMessages.isEmpty) return Container();
 
