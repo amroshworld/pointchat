@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../services/chat_service.dart';
+import '../../services/moderation_service.dart';
 import '../../services/user_service.dart';
 import '../../models/chat_model.dart';
 import '../../models/message_model.dart';
@@ -28,6 +29,7 @@ class ChatListScreen extends StatefulWidget {
 class _ChatListScreenState extends State<ChatListScreen> {
   final ChatService _chatService = ChatService();
   final UserService _userService = UserService();
+  final ModerationService _moderationService = ModerationService.instance;
   final TextEditingController _messageController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final LocalAuthentication _localAuth = LocalAuthentication();
@@ -57,6 +59,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Color get _bubbleOther => Theme.of(context).colorScheme.primaryContainer;
 
   bool _isSending = false;
+  Set<String> _blockedUserIds = <String>{};
 
   final List<MessageModel> _optimisticMessages = [];
 
@@ -65,6 +68,31 @@ class _ChatListScreenState extends State<ChatListScreen> {
     super.initState();
     _chatsStream = _chatService.getUserChats(widget.currentUserId);
     _bootstrapPrivacy();
+    _bootstrapModeration();
+  }
+
+  Future<void> _bootstrapModeration() async {
+    await _moderationService.initialize();
+    _blockedUserIds = Set<String>.from(
+      _moderationService.blockedUserIdsListenable.value,
+    );
+    _moderationService.blockedUserIdsListenable.addListener(
+      _onBlockedUsersChanged,
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _onBlockedUsersChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _blockedUserIds = Set<String>.from(
+        _moderationService.blockedUserIdsListenable.value,
+      );
+    });
   }
 
   Future<void> _bootstrapPrivacy() async {
@@ -94,6 +122,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
   void dispose() {
     ChatPrivacyPreferences.lockedChatsListenable.removeListener(
       _onLockedChanged,
+    );
+    _moderationService.blockedUserIdsListenable.removeListener(
+      _onBlockedUsersChanged,
     );
     _messageController.dispose();
     _focusNode.dispose();
@@ -434,7 +465,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return _buildEmptyState();
               }
-              final chats = snapshot.data!;
+              final chats = snapshot.data!
+                  .where((chat) {
+                    final otherUserId = chat.getOtherUserId(widget.currentUserId);
+                    return !_blockedUserIds.contains(otherUserId);
+                  })
+                  .toList();
+
+              if (chats.isEmpty) {
+                return _buildEmptyState();
+              }
+
               return ListView.builder(
                 padding: const EdgeInsets.only(top: 4, bottom: 100),
                 itemCount: chats.length,

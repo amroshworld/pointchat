@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../services/user_service.dart';
 import '../../services/chat_service.dart';
+import '../../services/moderation_service.dart';
 import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
 import '../../theme/app_theme.dart';
 import '../chat/chat_screen.dart';
+import 'user_info_screen.dart';
 
 class PeopleScreen extends StatefulWidget {
   final String currentUserId;
@@ -19,16 +21,65 @@ class PeopleScreen extends StatefulWidget {
 class _PeopleScreenState extends State<PeopleScreen> {
   final UserService _userService = UserService();
   final ChatService _chatService = ChatService();
+  final ModerationService _moderationService = ModerationService.instance;
   final TextEditingController _searchController = TextEditingController();
   final String _searchQuery = '';
+  Set<String> _blockedUserIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _moderationService.initialize();
+    _blockedUserIds = Set<String>.from(
+      _moderationService.blockedUserIdsListenable.value,
+    );
+    _moderationService.blockedUserIdsListenable.addListener(
+      _onBlockedUsersChanged,
+    );
+  }
 
   @override
   void dispose() {
+    _moderationService.blockedUserIdsListenable.removeListener(
+      _onBlockedUsersChanged,
+    );
     _searchController.dispose();
     super.dispose();
   }
 
+  void _onBlockedUsersChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _blockedUserIds = Set<String>.from(
+        _moderationService.blockedUserIdsListenable.value,
+      );
+    });
+  }
+
+  void _openUserInfo(String userId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => UserInfoScreen(userId: userId)),
+    );
+  }
+
   void _openChat(UserModel user) async {
+    if (_blockedUserIds.contains(user.uid)) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This user is blocked. Open profile to unblock before chatting.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final chatId = await _chatService.getOrCreateChat(
       widget.currentUserId,
       user.uid,
@@ -94,11 +145,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
             }
 
             final allUsers = snapshot.data ?? [];
+      final visibleUsers = allUsers
+        .where((u) => !_blockedUserIds.contains(u.uid))
+        .toList();
 
             // Client-side filter
             final users = _searchQuery.isEmpty
-                ? allUsers
-                : allUsers
+        ? visibleUsers
+        : visibleUsers
                     .where(
                       (u) =>
                           u.displayName.toLowerCase().contains(
@@ -124,7 +178,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                     ),
                   ),
                 ),
-                if (_searchQuery.isEmpty && allUsers.isNotEmpty)
+                if (_searchQuery.isEmpty && visibleUsers.isNotEmpty)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -144,9 +198,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
                             height: 85,
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal,
-                              itemCount: allUsers.take(6).length,
+                              itemCount: visibleUsers.take(6).length,
                               itemBuilder: (context, index) {
-                                final user = allUsers[index];
+                                final user = visibleUsers[index];
                                 return GestureDetector(
                                   onTap: () => _openChat(user),
                                   child: Padding(
@@ -181,7 +235,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                       ),
                     ),
                   ),
-                if (allUsers.isEmpty)
+                if (visibleUsers.isEmpty)
                   SliverFillRemaining(
                     child: Center(
                       child: Column(
@@ -256,6 +310,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                                 color: Theme.of(context).colorScheme.outline),
                           ),
                           child: ListTile(
+                            onTap: () => _openUserInfo(user.uid),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 14,
                               vertical: 8,

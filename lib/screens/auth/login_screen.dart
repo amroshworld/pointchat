@@ -12,6 +12,40 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  bool _obscurePassword = true;
+  bool _showTesterLogin = false;
+  int _logoTapCount = 0;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _signInWithEmailPassword() async {
+    await ref.read(authProvider.notifier).signInWithEmailPassword(
+      email: _emailController.text,
+      password: _passwordController.text,
+    );
+  }
+
+  void _onLogoTap() {
+    if (_showTesterLogin) {
+      return;
+    }
+
+    _logoTapCount += 1;
+    if (_logoTapCount >= 5) {
+      setState(() {
+        _showTesterLogin = true;
+        _logoTapCount = 0;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
@@ -55,20 +89,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       children: [
                         // ── Logo mark ──
                         Center(
-                          child: Container(
-                            width: 64,
-                            height: 64,
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(32),
-                              child: Image.asset(
-                                'assets/icon.png',
-                                width: 48,
-                                height: 48,
-                                fit: BoxFit.cover,
+                          child: GestureDetector(
+                            onTap: _onLogoTap,
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              width: 64,
+                              height: 64,
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(32),
+                                child: Image.asset(
+                                  'assets/icon.png',
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                ),
                               ),
                             ),
                           ),
@@ -186,6 +224,71 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                           ),
                         ),
+                        if (_showTesterLogin) ...[
+                          const SizedBox(height: 22),
+                          TextField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            decoration: InputDecoration(
+                              labelText: 'Email',
+                              border: const OutlineInputBorder(),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: 1.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            onSubmitted: (_) => _signInWithEmailPassword(),
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              border: const OutlineInputBorder(),
+                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: 1.5,
+                                ),
+                              ),
+                              suffixIcon: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _obscurePassword = !_obscurePassword;
+                                  });
+                                },
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: FilledButton(
+                              onPressed: authState.isLoading
+                                  ? null
+                                  : _signInWithEmailPassword,
+                              child: Text(
+                                authState.isLoading
+                                    ? 'Signing in...'
+                                    : 'Sign in with email',
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

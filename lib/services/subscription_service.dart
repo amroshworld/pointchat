@@ -29,6 +29,32 @@ class RevenueCatConfig {
   }
 }
 
+class ReviewerAccessConfig {
+  static const bool enabled = bool.fromEnvironment(
+    'REVIEWER_FREE_AI_ENABLED',
+    defaultValue: true,
+  );
+  static const String _userIdsCsv = String.fromEnvironment(
+    'REVIEWER_FREE_AI_USER_IDS',
+    defaultValue: 'reviewer_ai_01',
+  );
+  static const String _emailsCsv = String.fromEnvironment(
+    'REVIEWER_FREE_AI_EMAILS',
+    defaultValue: 'reviewer.ai.pointchat@gmail.com',
+  );
+
+  static final Set<String> userIds = _parseCsv(_userIdsCsv);
+  static final Set<String> emails = _parseCsv(_emailsCsv);
+
+  static Set<String> _parseCsv(String raw) {
+    return raw
+        .split(',')
+        .map((value) => value.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+  }
+}
+
 class SubscriptionState {
   final bool isReady;
   final bool isConfigured;
@@ -88,8 +114,34 @@ class SubscriptionService {
   bool _listenerAttached = false;
 
   bool get hasAiAccess => state.value.hasAiAccess;
+  bool get isReviewerAiAccess => _hasReviewerAiAccess();
+
+  bool _hasReviewerAiAccess() {
+    if (!ReviewerAccessConfig.enabled) {
+      return false;
+    }
+
+    final normalizedUserId = cachedUserId.trim().toLowerCase();
+    if (normalizedUserId.isNotEmpty &&
+        ReviewerAccessConfig.userIds.contains(normalizedUserId)) {
+      return true;
+    }
+
+    final normalizedEmail = cachedUserEmail.trim().toLowerCase();
+    if (normalizedEmail.isNotEmpty &&
+        ReviewerAccessConfig.emails.contains(normalizedEmail)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  String _reviewerAccessMessage() {
+    return 'Reviewer AI access is active for this account.';
+  }
 
   Future<void> initialize({String? appUserId}) async {
+    final reviewerAccess = _hasReviewerAiAccess();
     final apiKey = RevenueCatConfig.apiKey;
     if (apiKey == null || apiKey.isEmpty) {
       final setupMessage = kIsWeb
@@ -98,8 +150,8 @@ class SubscriptionService {
       state.value = state.value.copyWith(
         isReady: true,
         isConfigured: false,
-        hasAiAccess: false,
-        message: setupMessage,
+        hasAiAccess: reviewerAccess,
+        message: reviewerAccess ? _reviewerAccessMessage() : setupMessage,
         clearOffering: true,
       );
       return;
@@ -152,6 +204,13 @@ class SubscriptionService {
 
   Future<void> refresh() async {
     if (!_isConfigured) {
+      final reviewerAccess = _hasReviewerAiAccess();
+      state.value = state.value.copyWith(
+        isReady: true,
+        isBusy: false,
+        hasAiAccess: reviewerAccess,
+        message: reviewerAccess ? _reviewerAccessMessage() : state.value.message,
+      );
       return;
     }
 
@@ -162,18 +221,24 @@ class SubscriptionService {
       final offerings = await Purchases.getOfferings();
       _applyCustomerInfo(customerInfo, offerings.current);
     } on PlatformException {
+      final reviewerAccess = _hasReviewerAiAccess();
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message:
-            'Subscription status is unavailable right now. Please try again.',
+        hasAiAccess: reviewerAccess,
+        message: reviewerAccess
+            ? _reviewerAccessMessage()
+            : 'Subscription status is unavailable right now. Please try again.',
       );
     } catch (_) {
+      final reviewerAccess = _hasReviewerAiAccess();
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message:
-            'Subscription status is unavailable right now. Please try again.',
+        hasAiAccess: reviewerAccess,
+        message: reviewerAccess
+            ? _reviewerAccessMessage()
+            : 'Subscription status is unavailable right now. Please try again.',
       );
     }
   }
@@ -183,7 +248,7 @@ class SubscriptionService {
     if (_isConfigured) {
       await refresh();
     }
-    return hasAiAccess;
+    return hasAiAccess || _hasReviewerAiAccess();
   }
 
   Future<bool> purchasePackage(Package package) async {
@@ -204,19 +269,27 @@ class SubscriptionService {
       final errorCode = PurchasesErrorHelper.getErrorCode(error);
       final isCancelled =
           errorCode == PurchasesErrorCode.purchaseCancelledError;
+      final reviewerAccess = _hasReviewerAiAccess();
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message: isCancelled
-            ? 'Purchase canceled.'
-            : 'Purchase could not be completed. Please try again.',
+        hasAiAccess: reviewerAccess,
+        message: reviewerAccess
+            ? _reviewerAccessMessage()
+            : (isCancelled
+                ? 'Purchase canceled.'
+                : 'Purchase could not be completed. Please try again.'),
       );
       return false;
     } catch (error) {
+      final reviewerAccess = _hasReviewerAiAccess();
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message: 'Purchase could not be completed. Please try again.',
+        hasAiAccess: reviewerAccess,
+        message: reviewerAccess
+            ? _reviewerAccessMessage()
+            : 'Purchase could not be completed. Please try again.',
       );
       return false;
     }
@@ -234,16 +307,24 @@ class SubscriptionService {
       final offerings = await Purchases.getOfferings();
       _applyCustomerInfo(customerInfo, offerings.current);
     } on PlatformException {
+      final reviewerAccess = _hasReviewerAiAccess();
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message: 'Restore failed. Please try again.',
+        hasAiAccess: reviewerAccess,
+        message: reviewerAccess
+            ? _reviewerAccessMessage()
+            : 'Restore failed. Please try again.',
       );
     } catch (error) {
+      final reviewerAccess = _hasReviewerAiAccess();
       state.value = state.value.copyWith(
         isReady: true,
         isBusy: false,
-        message: 'Restore failed. Please try again.',
+        hasAiAccess: reviewerAccess,
+        message: reviewerAccess
+            ? _reviewerAccessMessage()
+            : 'Restore failed. Please try again.',
       );
     }
   }
@@ -273,13 +354,15 @@ class SubscriptionService {
   void _applyCustomerInfo(CustomerInfo customerInfo, Offering? offering) {
     final entitlement =
         customerInfo.entitlements.active[RevenueCatConfig.entitlementId];
+    final reviewerAccess = _hasReviewerAiAccess();
     state.value = state.value.copyWith(
       isReady: true,
       isConfigured: true,
       isBusy: false,
-      hasAiAccess: entitlement?.isActive == true,
+      hasAiAccess: entitlement?.isActive == true || reviewerAccess,
       offering: offering,
-      clearMessage: true,
+      message: reviewerAccess ? _reviewerAccessMessage() : null,
+      clearMessage: !reviewerAccess,
     );
   }
 }

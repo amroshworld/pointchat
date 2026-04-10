@@ -16,6 +16,7 @@ import '../../utils/composer_preferences.dart';
 import '../../providers/theme_provider.dart';
 import '../subscription/ai_subscription_screen.dart';
 import 'chat_security_panel.dart';
+import 'blocked_users_screen.dart';
 import 'seen_message_settings_screen.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -366,6 +367,32 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             ),
                           ],
                         ),
+                      ),
+                      const Divider(height: 1, indent: 72),
+                      ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.block_outlined,
+                            color: colorScheme.onErrorContainer,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text('Blocked users'),
+                        subtitle: const Text('Review and unblock people'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const BlockedUsersScreen(),
+                            ),
+                          );
+                        },
                       ),
                       const Divider(height: 1, indent: 72),
                       ListTile(

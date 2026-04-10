@@ -29,6 +29,31 @@ class AuthService {
     }
   }
 
+  // Sign in with email/password using a pre-created Appwrite account.
+  Future<void> signInWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
+    final normalizedEmail = email.trim();
+    if (normalizedEmail.isEmpty || password.isEmpty) {
+      throw AppwriteException('Email and password are required.');
+    }
+
+    try {
+      await _account.deleteSession(sessionId: 'current');
+    } catch (_) {}
+
+    await _account.createEmailPasswordSession(
+      email: normalizedEmail,
+      password: password,
+    );
+
+    final user = await _account.get();
+    await _saveUserToDatabase(user);
+    _cacheCurrentUser(user);
+    await SubscriptionService.instance.logIn(user.$id);
+  }
+
   // Sign in with Google (requires Google OAuth provider in Appwrite console)
   Future<void> signInWithGoogle() async {
     try {

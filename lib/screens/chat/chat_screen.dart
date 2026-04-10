@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:appwrite/appwrite.dart';
 import '../../appwrite_client.dart';
 import '../../services/chat_service.dart';
+import '../../services/moderation_service.dart';
 import '../../services/user_service.dart';
 import '../../models/message_model.dart';
 import '../../models/user_model.dart';
+import '../people/user_info_screen.dart';
 import '../../widgets/message_bubble.dart';
 import '../../widgets/user_avatar.dart';
 
@@ -31,18 +33,21 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final ChatService _chatService = ChatService();
   final UserService _userService = UserService();
+  final ModerationService _moderationService = ModerationService.instance;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
 
   bool _isComposing = false;
   bool _isRecording = false;
+  bool _isBlockedUser = false;
   final List<MessageModel> _optimisticMessages = [];
 
   @override
   void initState() {
     super.initState();
     _chatService.markMessagesAsRead(widget.chatId, widget.currentUserId);
+    _bootstrapModeration();
     _messageController.addListener(() {
       setState(() {
         _isComposing = _messageController.text.trim().isNotEmpty;
@@ -50,8 +55,141 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  Future<void> _bootstrapModeration() async {
+    await _moderationService.initialize();
+    _isBlockedUser = _moderationService.isBlocked(widget.otherUserId);
+    _moderationService.blockedUserIdsListenable.addListener(
+      _onBlockedUsersChanged,
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _onBlockedUsersChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isBlockedUser = _moderationService.isBlocked(widget.otherUserId);
+    });
+  }
+
+  Future<void> _toggleBlockFromChat() async {
+    if (_isBlockedUser) {
+      await _moderationService.unblockUser(widget.otherUserId);
+    } else {
+      await _moderationService.blockUser(widget.otherUserId);
+    }
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isBlockedUser = _moderationService.isBlocked(widget.otherUserId);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _isBlockedUser
+              ? 'User blocked. Messages are now restricted.'
+              : 'User unblocked.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _reportUserFromChat() async {
+    final reasonController = TextEditingController();
+    final detailsController = TextEditingController();
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Report user'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: reasonController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Reason',
+                  hintText: 'Spam, harassment, abusive content',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: detailsController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Details (optional)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final reason = reasonController.text.trim();
+                if (reason.isEmpty) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(content: Text('Please enter a reason.')),
+                  );
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop(<String, String>{
+                  'reason': reason,
+                  'details': detailsController.text.trim(),
+                });
+              },
+              child: const Text('Submit'),
+            ),
+          ],
+        );
+      },
+    );
+    reasonController.dispose();
+    detailsController.dispose();
+
+    if (result == null) {
+      return;
+    }
+
+    await _moderationService.submitUserReport(
+      reporterUserId: widget.currentUserId,
+      targetUserId: widget.otherUserId,
+      reason: result['reason'] ?? '',
+      details: result['details'] ?? '',
+    );
+
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Report submitted. Thank you.')),
+    );
+  }
+
+  void _openUserProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserInfoScreen(userId: widget.otherUserId),
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _moderationService.blockedUserIdsListenable.removeListener(
+      _onBlockedUsersChanged,
+    );
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -59,6 +197,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _sendMessage() {
+    if (_isBlockedUser) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You blocked this user. Unblock to send messages.'),
+        ),
+      );
+      return;
+    }
+
     final text = _messageController.text.trim();
     if (text.isEmpty && !_isRecording) return;
 
@@ -246,7 +393,46 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
 
           // Message Input
-          _buildMessageInput(colorScheme),
+          _isBlockedUser
+              ? _buildBlockedComposerNotice(colorScheme)
+              : _buildMessageInput(colorScheme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBlockedComposerNotice(ColorScheme colorScheme) {
+    return Container(
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        top: 10,
+        bottom: MediaQuery.of(context).padding.bottom + 10,
+      ),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.block_outlined, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'You blocked this user. Unblock to continue chatting.',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+          ),
+          TextButton(
+            onPressed: _openUserProfile,
+            child: const Text('Manage'),
+          ),
         ],
       ),
     );
@@ -451,7 +637,30 @@ class _ChatScreenState extends State<ChatScreen> {
                 ListTile(
                   leading: const Icon(Icons.info_outline),
                   title: const Text('View profile'),
-                  onTap: () => Navigator.pop(context),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _openUserProfile();
+                  },
+                ),
+                ListTile(
+                  leading: Icon(
+                    _isBlockedUser
+                        ? Icons.person_add_alt_1_outlined
+                        : Icons.block_outlined,
+                  ),
+                  title: Text(_isBlockedUser ? 'Unblock user' : 'Block user'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _toggleBlockFromChat();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.report_outlined),
+                  title: const Text('Report user'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _reportUserFromChat();
+                  },
                 ),
                 ListTile(
                   leading: const Icon(Icons.wallpaper_outlined),

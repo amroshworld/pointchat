@@ -111,7 +111,11 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                             : 'Subscription is not available right now.'),
                   )
                 else if (state.hasAiAccess)
-                  const _MessageCard(message: 'AI access is active.')
+                  _MessageCard(
+                    message: _subscriptionService.isReviewerAiAccess
+                        ? 'AI access is active for the reviewer account.'
+                        : 'AI access is active.',
+                  )
                 else if (packages.isEmpty && state.isBusy)
                   const Center(
                     child: Padding(
@@ -136,6 +140,22 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
                       ),
                     ),
                   ),
+                if (state.hasAiAccess) ...[
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Text(
+                      'Continue',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 const SizedBox(height: 12),
                 OutlinedButton(

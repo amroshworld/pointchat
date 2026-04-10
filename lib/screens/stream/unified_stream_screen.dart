@@ -20,6 +20,7 @@ import '../../services/cache_service.dart';
 import '../../services/ai_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/subscription_service.dart';
+import '../../services/moderation_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:record/record.dart';
@@ -50,6 +51,7 @@ import '../../utils/chat_image_upload.dart';
 import '../../utils/group_handle_resolver.dart';
 import '../../utils/chat_privacy_preferences.dart';
 import '../../widgets/four_digit_pin_entry.dart';
+import '../profile/blocked_users_screen.dart';
 import '../profile/chat_security_panel.dart';
 
 /// Shown when typing `@` so features like `@ai` are discoverable.
@@ -109,10 +111,12 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
   final _userService = UserService();
   final _botService = BotService();
   final _authService = AuthService();
+  final _moderationService = ModerationService.instance;
   late final String currentUserId = widget.currentUserId;
 
   List<UserModel> _allUsers = [];
   final Map<String, UserModel> _normalizedUsersMap = {};
+  Set<String> _blockedUserIds = <String>{};
   List<GroupModel> _allGroups = [];
   UserModel? _currentUserModel;
   bool _isUploading = false;
@@ -194,6 +198,50 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         );
       });
     }
+  }
+
+  Future<void> _bootstrapModeration() async {
+    await _moderationService.initialize();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _blockedUserIds = Set<String>.from(
+        _moderationService.blockedUserIdsListenable.value,
+      );
+    });
+    _moderationService.blockedUserIdsListenable.addListener(
+      _onModerationBlockedChanged,
+    );
+  }
+
+  void _onModerationBlockedChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _blockedUserIds = Set<String>.from(
+        _moderationService.blockedUserIdsListenable.value,
+      );
+      _globalMentionResults = _globalMentionResults
+          .where((user) => !_blockedUserIds.contains(user.uid))
+          .toList(growable: false);
+      _mentionSuggestions = _mentionSuggestions
+          .where(
+            (suggestion) => suggestion is! UserModel
+                ? true
+                : !_blockedUserIds.contains(suggestion.uid),
+          )
+          .toList(growable: false);
+      _chatParticipantIds = _chatParticipantIds
+          .where((uid) => !_blockedUserIds.contains(uid))
+          .toSet();
+      _recentParticipantOrder = _recentParticipantOrder
+          .where((uid) => !_blockedUserIds.contains(uid))
+          .toList(growable: false);
+    });
   }
 
   /// Biometric or PIN before expanding a locked chat (preview is blurred when collapsed).
@@ -445,6 +493,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     NotificationService.instance.bindToUser(currentUserId);
 
     unawaited(_bootstrapStreamPrivacy());
+    unawaited(_bootstrapModeration());
 
     // Single-subscription streams cannot be listened to twice (e.g. combineLatest
     // + StreamBuilder + separate .listen). Broadcast allows multiple listeners.
@@ -479,6 +528,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
         for (var chat in chats) {
           final otherUserId = chat.getOtherUserId(currentUserId);
+          if (_blockedUserIds.contains(otherUserId)) {
+            continue;
+          }
           final isAiSelfChat = chat.isSelfParticipantChat;
           final otherUser = isAiSelfChat ? null : usersMap[otherUserId];
           final isBotDm = otherUser?.isBot ?? false;
@@ -649,7 +701,11 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       },
     ).listen((ids) {
       if (mounted) {
-        setState(() => _chatParticipantIds = ids);
+        setState(
+          () => _chatParticipantIds = ids
+              .where((uid) => !_blockedUserIds.contains(uid))
+              .toSet(),
+        );
       }
     });
 
@@ -673,7 +729,11 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         }
       }
       if (mounted) {
-        setState(() => _recentParticipantOrder = order);
+        setState(
+          () => _recentParticipantOrder = order
+              .where((uid) => !_blockedUserIds.contains(uid))
+              .toList(growable: false),
+        );
       }
     });
 
@@ -761,7 +821,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           return;
         }
         setState(() {
-          _globalMentionResults = list;
+          _globalMentionResults = list
+              .where((user) => !_blockedUserIds.contains(user.uid))
+              .toList(growable: false);
           _globalMentionLoading = false;
         });
       } catch (_) {
@@ -922,9 +984,14 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
       List<UserModel> userMatches;
       if (_mentionScopeEveryone) {
-        userMatches = _globalMentionResults;
+        userMatches = _globalMentionResults
+            .where((u) => !_blockedUserIds.contains(u.uid))
+            .toList(growable: false);
       } else {
         userMatches = _allUsers.where((u) {
+          if (_blockedUserIds.contains(u.uid)) {
+            return false;
+          }
           if (!_chatParticipantIds.contains(u.uid)) {
             return false;
           }
@@ -1009,6 +1076,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
   @override
   void dispose() {
+    _moderationService.blockedUserIdsListenable.removeListener(
+      _onModerationBlockedChanged,
+    );
     ChatPrivacyPreferences.lockedChatsListenable.removeListener(
       _onStreamLockedChanged,
     );
@@ -1931,6 +2001,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                     chat?.notifyOnSeen[currentUserId] ?? false;
                 final otherNotifyOnSeen =
                     chat?.notifyOnSeen[otherUserId] ?? false;
+                final isBlocked = _blockedUserIds.contains(otherUserId);
 
                 return SingleChildScrollView(
                   child: Column(
@@ -2027,6 +2098,60 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                             ? AppTheme.focusBlue
                             : Theme.of(context).colorScheme.secondary,
                       ),
+                      const SizedBox(height: 12),
+                      _settingsSectionTitle('SAFETY'),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () => _toggleBlockFromUserSettings(user),
+                          icon: Icon(
+                            isBlocked
+                                ? Icons.person_add_alt_1_outlined
+                                : Icons.block_outlined,
+                          ),
+                          label: Text(
+                            isBlocked ? 'Unblock user' : 'Block user',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _reportUserFromUserSettings(user),
+                          icon: const Icon(Icons.report_outlined),
+                          label: Text(
+                            'Report user',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const BlockedUsersScreen(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.manage_accounts_outlined),
+                          label: Text(
+                            'Manage blocked users',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -2036,6 +2161,120 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         );
       },
     );
+  }
+
+  Future<void> _toggleBlockFromUserSettings(UserModel user) async {
+    final wasBlocked = _moderationService.isBlocked(user.uid);
+    if (wasBlocked) {
+      await _moderationService.unblockUser(user.uid);
+    } else {
+      await _moderationService.blockUser(user.uid);
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    final isBlockedNow = _moderationService.isBlocked(user.uid);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isBlockedNow
+              ? '${user.displayName} blocked.'
+              : '${user.displayName} unblocked.',
+          style: GoogleFonts.inter(),
+        ),
+      ),
+    );
+    setState(() {
+      _blockedUserIds = Set<String>.from(
+        _moderationService.blockedUserIdsListenable.value,
+      );
+    });
+  }
+
+  Future<void> _reportUserFromUserSettings(UserModel user) async {
+    final reportData = await _showUserReportDialog(user.displayName);
+    if (reportData == null) {
+      return;
+    }
+
+    await _moderationService.submitUserReport(
+      reporterUserId: currentUserId,
+      targetUserId: user.uid,
+      reason: reportData['reason'] ?? '',
+      details: reportData['details'] ?? '',
+    );
+
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Report submitted. Thank you.', style: GoogleFonts.inter()),
+      ),
+    );
+  }
+
+  Future<Map<String, String>?> _showUserReportDialog(String displayName) async {
+    final reasonController = TextEditingController();
+    final detailsController = TextEditingController();
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text('Report $displayName', style: GoogleFonts.inter()),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: reasonController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Reason',
+                  hintText: 'Spam, harassment, abusive behavior',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: detailsController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Details (optional)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final reason = reasonController.text.trim();
+                if (reason.isEmpty) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(
+                      content: Text('Please enter a reason.', style: GoogleFonts.inter()),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.of(dialogContext).pop(<String, String>{
+                  'reason': reason,
+                  'details': detailsController.text.trim(),
+                });
+              },
+              child: const Text('Submit'),
+            ),
+          ],
+        );
+      },
+    );
+    reasonController.dispose();
+    detailsController.dispose();
+    return result;
   }
 
   Widget _buildMyProfileContent() {
@@ -2170,6 +2409,24 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                 ),
                 child: const ChatSecuritySettingsPanel(),
               ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const BlockedUsersScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.block_outlined),
+                  label: Text(
+                    'Blocked users',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
 
               const SizedBox(height: 16),
 
@@ -2183,16 +2440,19 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                   if (mounted) setState(() {});
                 },
               ),
-              _settingsToggle(
-                icon: Icons.hide_source_outlined,
-                title: 'Hide composer tips',
-                subtitle: 'Tips above message box',
-                value: settings.tipsHidden,
-                onChanged: (v) async {
-                  _mySettingsData?.tipsHidden = v;
-                  await ComposerPreferences.setTipsHidden(v);
-                  if (mounted) setState(() {});
-                },
+              ValueListenableBuilder<bool>(
+                valueListenable: ComposerPreferences.tipsHiddenListenable,
+                builder: (context, tipsHidden, _) => _settingsToggle(
+                  icon: Icons.hide_source_outlined,
+                  title: 'Hide composer tips',
+                  subtitle: 'Tips above message box',
+                  value: tipsHidden,
+                  onChanged: (v) async {
+                    _mySettingsData?.tipsHidden = v;
+                    await ComposerPreferences.setTipsHidden(v);
+                    if (mounted) setState(() {});
+                  },
+                ),
               ),
 
               const SizedBox(height: 16),
@@ -3504,7 +3764,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     for (final handle in handles.where((h) => h.startsWith('@'))) {
       final tHandle = _normalizeHandleToken(handle.substring(1));
       final targetUser = _normalizedUsersMap[tHandle];
-      if (targetUser != null) {
+      if (targetUser != null && !_blockedUserIds.contains(targetUser.uid)) {
         mentionedUsersByHandle[handle] = targetUser;
       }
     }
@@ -3568,6 +3828,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         final targetUser = _normalizedUsersMap[tHandle];
 
         if (targetUser != null) {
+          if (_blockedUserIds.contains(targetUser.uid)) {
+            continue;
+          }
           if (!dmTargetsSent.add(targetUser.uid)) {
             continue;
           }
@@ -3909,13 +4172,14 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       if (slashIndex >= 0) {
         final beforeSlash = normalizedInput.substring(0, slashIndex).trim();
         final aiPrompt = normalizedInput.substring(slashIndex + 1).trim();
+        final aiPromptLower = aiPrompt.toLowerCase();
 
-        if (aiPrompt.toLowerCase().startsWith('setting')) {
+        if (aiPromptLower.startsWith('setting')) {
           final targetHandle = beforeSlash
-              .split(' ')
+              .split(RegExp(r'\s+'))
               .where((word) => word.startsWith('@') || word.startsWith('#'))
               .cast<String?>()
-              .firstWhere((word) => word != null, orElse: () => _focusedHandle);
+              .firstWhere((word) => word != null, orElse: () => null);
           _commandController.clear();
           if (targetHandle != null && targetHandle.isNotEmpty) {
             await _showSettingsOverlayForHandle(targetHandle);
@@ -4254,7 +4518,14 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           );
         }
 
-        final items = List<Map<String, dynamic>>.from(snapshot.data ?? []);
+        final items = List<Map<String, dynamic>>.from(snapshot.data ?? [])
+          ..removeWhere(
+            (item) =>
+                item['type'] == 'dm' &&
+                _blockedUserIds.contains(
+                  (item['otherUserId'] ?? '').toString(),
+                ),
+          );
 
         DateTime effectiveSortTime(Map<String, dynamic> item) {
           final base = item['timeRaw'] as DateTime;

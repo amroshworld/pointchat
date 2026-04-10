@@ -95,6 +95,34 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<models.User?> getCurrentUser() => _authService.getCurrentUser();
 
+  Future<bool> signInWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
+    final normalizedEmail = email.trim();
+    if (normalizedEmail.isEmpty || password.isEmpty) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Please enter both email and password.',
+      );
+      return false;
+    }
+
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      await _authService.signInWithEmailPassword(
+        email: normalizedEmail,
+        password: password,
+      );
+      ref.invalidate(authStateProvider);
+      state = state.copyWith(isLoading: false);
+      return true;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
+      return false;
+    }
+  }
+
   Future<bool> signInWithGoogle() async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
