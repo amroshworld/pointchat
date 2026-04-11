@@ -35,6 +35,7 @@ import 'package:uuid/uuid.dart';
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
 import '../../services/invite_service.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/user_service.dart';
 import '../../services/bot_service.dart';
 import '../../models/group_model.dart';
@@ -51,8 +52,8 @@ import '../../utils/chat_image_upload.dart';
 import '../../utils/group_handle_resolver.dart';
 import '../../utils/chat_privacy_preferences.dart';
 import '../../widgets/four_digit_pin_entry.dart';
-import '../profile/blocked_users_screen.dart';
-import '../profile/chat_security_panel.dart';
+import '../settings/blocked_users_screen.dart';
+import '../settings/chat_security_panel.dart';
 
 /// Shown when typing `@` so features like `@ai` are discoverable.
 class _AtCommandSuggestion {
@@ -123,6 +124,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
   String? _expandedItemId;
   String? _focusedHandle;
+
   /// Optimistic messages keyed by conversation row id (chat or group id).
   final Map<String, List<MessageModel>> _optimisticMessagesByConversationId =
       {};
@@ -361,7 +363,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                 context: context,
                 builder: (ctx2) => AlertDialog(
                   title: Text('Forgot PIN?', style: GoogleFonts.inter()),
-                  content: Text('Logging out will reset your PIN and locked chats. You will need to log back in.', style: GoogleFonts.inter()),
+                  content: Text(
+                      'Logging out will reset your PIN and locked chats. You will need to log back in.',
+                      style: GoogleFonts.inter()),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx2),
@@ -372,13 +376,15 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                         Navigator.pop(ctx2);
                         await AuthService().signOut();
                       },
-                      child: const Text('Log Out', style: TextStyle(color: Colors.redAccent)),
+                      child: const Text('Log Out',
+                          style: TextStyle(color: Colors.redAccent)),
                     ),
                   ],
                 ),
               );
             },
-            child: Text('Forgot?', style: TextStyle(color: Colors.blueAccent.shade100)),
+            child: Text('Forgot?',
+                style: TextStyle(color: Colors.blueAccent.shade100)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -481,6 +487,18 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     unawaited(_authService.setUserOnlineStatus(false));
   }
 
+  Future<void> _initializePresence() async {
+    try {
+      await _authService.ensureCurrentUserRow();
+    } catch (e) {
+      debugPrint('Error ensuring current user row: $e');
+    }
+    if (!mounted) {
+      return;
+    }
+    _startHeartbeat();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -488,7 +506,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       _onComposerTipsHiddenChanged,
     );
     WidgetsBinding.instance.addObserver(this);
-    _startHeartbeat();
+    unawaited(_initializePresence());
 
     NotificationService.instance.bindToUser(currentUserId);
 
@@ -702,9 +720,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     ).listen((ids) {
       if (mounted) {
         setState(
-          () => _chatParticipantIds = ids
-              .where((uid) => !_blockedUserIds.contains(uid))
-              .toSet(),
+          () => _chatParticipantIds =
+              ids.where((uid) => !_blockedUserIds.contains(uid)).toSet(),
         );
       }
     });
@@ -879,7 +896,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               _helpRow(
                 ctx,
                 '/setting',
-                'Open Settings: profile, privacy, PIN & app lock, appearance',
+                'Open Settings: account, privacy, PIN & app lock, appearance',
               ),
             ],
           ),
@@ -1489,7 +1506,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     await _showSettingsOverlay(item);
   }
 
-  Future<void> _showMyProfileOverlay() async {
+  Future<void> _showMySettingsOverlay() async {
     await _showSettingsOverlay({
       'type': 'self',
       'handle': '@me',
@@ -1589,7 +1606,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           child: isGroup
               ? _buildGroupSettingsContent(item)
               : (isSelf
-                  ? _buildMyProfileContent()
+                  ? _buildMySettingsContent()
                   : _buildUserSettingsContent(item)),
         ),
       ],
@@ -2211,7 +2228,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Report submitted. Thank you.', style: GoogleFonts.inter()),
+        content:
+            Text('Report submitted. Thank you.', style: GoogleFonts.inter()),
       ),
     );
   }
@@ -2256,7 +2274,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                 if (reason.isEmpty) {
                   ScaffoldMessenger.of(dialogContext).showSnackBar(
                     SnackBar(
-                      content: Text('Please enter a reason.', style: GoogleFonts.inter()),
+                      content: Text('Please enter a reason.',
+                          style: GoogleFonts.inter()),
                     ),
                   );
                   return;
@@ -2277,20 +2296,39 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     return result;
   }
 
-  Widget _buildMyProfileContent() {
+  Widget _buildMySettingsContent() {
     // Load settings data once
     if (_mySettingsData == null) {
       _loadMySettings();
     }
+
+    final authState = ref.watch(authProvider);
+    final authNotifier = ref.read(authProvider.notifier);
 
     return StreamBuilder<UserModel?>(
       stream: _userService.getUserStream(currentUserId),
       builder: (context, snapshot) {
         final user = snapshot.data ?? _currentUserModel;
         if (user == null) {
-          return const Center(
-            child: CircularProgressIndicator(
-                color: AppTheme.purple, strokeWidth: 2),
+          unawaited(_recoverMissingCurrentUserRow());
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(
+                  color: AppTheme.purple,
+                  strokeWidth: 2,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Preparing your settings...',
+                  style: GoogleFonts.inter(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           );
         }
 
@@ -2300,14 +2338,14 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Profile Header
+              // Account header
               Row(
                 children: [
                   _editableAvatar(
                     imageUrl: user.photoUrl,
                     initialsSource: user.displayName,
                     accent: AppTheme.focusBlue,
-                    onTap: _updateMyProfilePhoto,
+                    onTap: _updateMySettingsPhoto,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -2344,7 +2382,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                   _overlayActionButton(
                     icon: Icons.photo_camera_back_outlined,
                     label: 'Photo',
-                    onTap: _updateMyProfilePhoto,
+                    onTap: _updateMySettingsPhoto,
                   ),
                   _overlayActionButton(
                     icon: Icons.edit_note_rounded,
@@ -2509,6 +2547,47 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                         GoogleFonts.inter(color: Colors.white30, fontSize: 11)),
               ),
 
+              const SizedBox(height: 16),
+
+              // =============== ACCOUNT ===============
+              _settingsSectionTitle('ACCOUNT'),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: authState.isLoading
+                      ? null
+                      : () => _confirmSignOut(authNotifier),
+                  icon: const Icon(Icons.logout_rounded),
+                  label: Text(
+                    authState.isLoading ? 'Working...' : 'Sign out',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: authState.isLoading
+                      ? null
+                      : () => _confirmDeleteAccount(authNotifier),
+                  icon: Icon(
+                    Icons.delete_forever_outlined,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  label: Text(
+                    authState.isLoading ? 'Processing...' : 'Delete account',
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+              ),
+
               const SizedBox(height: 20),
             ],
           ),
@@ -2518,13 +2597,35 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
   }
 
   _MySettingsState? _mySettingsData;
+  bool _recoveringCurrentUserRow = false;
+
+  Future<void> _recoverMissingCurrentUserRow() async {
+    if (_recoveringCurrentUserRow) {
+      return;
+    }
+    _recoveringCurrentUserRow = true;
+    try {
+      await _authService.ensureCurrentUserRow();
+    } catch (e) {
+      debugPrint('Error recovering current user row: $e');
+    } finally {
+      _recoveringCurrentUserRow = false;
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
 
   Future<void> _loadMySettings() async {
+    final theme = ref.read(themeModeProvider);
     final seen = await _chatService.getDefaultSeenEnabledForMe();
     final notify = await _chatService.getDefaultNotifyOnSeenForMe();
     final pin = await ChatPrivacyPreferences.getPrivacyPin();
     final tips = await ComposerPreferences.getTipsHidden();
-    final theme = ref.read(themeModeProvider);
+
+    if (!mounted) {
+      return;
+    }
 
     _mySettingsData = _MySettingsState(
       seenEnabled: seen,
@@ -2533,7 +2634,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       tipsHidden: tips,
       themeMode: theme,
     );
-    if (mounted) setState(() {});
+    setState(() {});
   }
 
   Widget _settingsSectionTitle(String title) {
@@ -2793,9 +2894,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     return pickAndUploadSquareChatImage(filePrefix: filePrefix);
   }
 
-  Future<void> _updateMyProfilePhoto() async {
+  Future<void> _updateMySettingsPhoto() async {
     try {
-      final photoUrl = await _pickAndUploadSquareImage(filePrefix: 'profile');
+      final photoUrl = await _pickAndUploadSquareImage(filePrefix: 'user');
       if (photoUrl == null) {
         return;
       }
@@ -2809,7 +2910,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       setState(() {});
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Profile picture updated.')));
+      ).showSnackBar(const SnackBar(content: Text('Photo updated.')));
     } catch (_) {
       if (!mounted) {
         return;
@@ -2817,7 +2918,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Could not update your profile picture right now. Please try again.',
+            'Could not update your photo right now. Please try again.',
           ),
         ),
       );
@@ -2895,6 +2996,122 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             child: const Text('Save'),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _confirmSignOut(AuthNotifier authNotifier) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+          'You will need to sign in again to access your chats.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      final navigator = Navigator.of(context);
+      await authNotifier.signOut();
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteAccount(AuthNotifier authNotifier) async {
+    final warningAccepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete account?'),
+        content: const Text(
+          'This permanently removes your PointChat account and cannot be undone. Continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (warningAccepted != true || !mounted) {
+      return;
+    }
+
+    String confirmationInput = '';
+    final confirmationText = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Final confirmation'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Type DELETE MY ACCOUNT to confirm.'),
+            const SizedBox(height: 12),
+            TextField(
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              onChanged: (value) => confirmationInput = value,
+              decoration: const InputDecoration(
+                hintText: 'DELETE MY ACCOUNT',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, confirmationInput.trim()),
+            child: const Text('Delete account'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmationText == null || confirmationText.isEmpty || !mounted) {
+      return;
+    }
+
+    final navigator = Navigator.of(context);
+    final ok = await authNotifier.deleteCurrentAccount(
+      confirmationText: confirmationText,
+    );
+
+    if (ok) {
+      if (navigator.canPop()) {
+        navigator.pop();
+      }
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Could not delete your account right now. Please try again.'),
       ),
     );
   }
@@ -4184,7 +4401,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           if (targetHandle != null && targetHandle.isNotEmpty) {
             await _showSettingsOverlayForHandle(targetHandle);
           } else {
-            await _showMyProfileOverlay();
+            await _showMySettingsOverlay();
           }
           return;
         }
@@ -4579,7 +4796,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           final bId = b['id'] as String?;
           final aIsExpanded = _expandedItemId != null && aId == _expandedItemId;
           final bIsExpanded = _expandedItemId != null && bId == _expandedItemId;
-          
+
           if (aIsExpanded && !bIsExpanded) return -1;
           if (!aIsExpanded && bIsExpanded) return 1;
 
@@ -4610,10 +4827,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               groupService: _groupService,
               inviteService: _inviteService,
               userService: _userService,
-              extraOptimisticMessages:
-                  _optimisticMessagesByConversationId[
-                          item['id']?.toString() ?? ''] ??
-                      const [],
+              extraOptimisticMessages: _optimisticMessagesByConversationId[
+                      item['id']?.toString() ?? ''] ??
+                  const [],
               onTap: () => unawaited(_onStreamItemTap(item, isExpanded)),
               onLongPress: () => unawaited(_onStreamItemLongPress(item)),
               onReply: (replyData) {
@@ -5307,7 +5523,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                       if (_isAiLoading)
                                         const Padding(
                                           padding: EdgeInsets.only(right: 12),
-                                          child: SizedBox(                                            width: 22,
+                                          child: SizedBox(
+                                            width: 22,
                                             height: 22,
                                             child: CircularProgressIndicator(
                                               color: AppTheme.focusBlue,

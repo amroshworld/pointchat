@@ -26,6 +26,38 @@
             "execute": [
                 "users"
             ]
+        },
+        {
+            "$id": "account_deletion",
+            "name": "Account Deletion",
+            "runtime": "node-18.0",
+            "path": "appwrite_functions/account_deletion",
+            "entrypoint": "index.js",
+            "commands": "npm install",
+            "scopes": [
+                "users.read",
+                "users.write"
+            ],
+            "execute": [
+                "users"
+            ]
+        }
+    ],
+    "sites": [
+        {
+            "$id": "account-deletion-site",
+            "name": "PointChat Account Deletion",
+            "path": "appwrite_sites/account_deletion",
+            "framework": "other",
+            "enabled": true,
+            "logging": true,
+            "timeout": 15,
+            "buildRuntime": "node-22",
+            "adapter": "static",
+            "installCommand": "",
+            "buildCommand": ":",
+            "outputDirectory": "./",
+            "fallbackFile": ""
         }
     ]
 }

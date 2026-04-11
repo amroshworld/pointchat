@@ -81,6 +81,9 @@ class AuthNotifier extends Notifier<AuthState> {
       if (type.contains('user_blocked')) {
         return 'This account is currently restricted. Please contact support.';
       }
+      if (message.contains('please type exactly')) {
+        return error.message ?? 'Please type the confirmation phrase exactly.';
+      }
       return 'We could not complete authentication right now. Please try again.';
     }
 
@@ -147,6 +150,19 @@ class AuthNotifier extends Notifier<AuthState> {
       );
     }
     state = state.copyWith(isLoading: false);
+  }
+
+  Future<bool> deleteCurrentAccount({required String confirmationText}) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      await _authService.deleteCurrentAccount(confirmText: confirmationText);
+      ref.invalidate(authStateProvider);
+      state = state.copyWith(isLoading: false);
+      return true;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
+      return false;
+    }
   }
 
   void clearError() {

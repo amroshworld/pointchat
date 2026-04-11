@@ -321,8 +321,11 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
                                   showDialog(
                                     context: context,
                                     builder: (ctx) => AlertDialog(
-                                      title: Text('Forgot PIN?', style: GoogleFonts.inter()),
-                                      content: Text('Logging out will reset your PIN and locked chats. You will need to log back in.', style: GoogleFonts.inter()),
+                                      title: Text('Forgot PIN?',
+                                          style: GoogleFonts.inter()),
+                                      content: Text(
+                                          'Logging out will reset your PIN and locked chats. You will need to log back in.',
+                                          style: GoogleFonts.inter()),
                                       actions: [
                                         TextButton(
                                           onPressed: () => Navigator.pop(ctx),
@@ -333,7 +336,9 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
                                             Navigator.pop(ctx);
                                             await AuthService().signOut();
                                           },
-                                          child: const Text('Log Out', style: TextStyle(color: Colors.redAccent)),
+                                          child: const Text('Log Out',
+                                              style: TextStyle(
+                                                  color: Colors.redAccent)),
                                         ),
                                       ],
                                     ),

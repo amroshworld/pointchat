@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:appwrite/appwrite.dart';
@@ -145,6 +146,7 @@ class AuthService {
     try {
       final user = await _account.get();
       _cacheCurrentUser(user);
+      await _saveUserToDatabase(user);
       await SubscriptionService.instance.logIn(user.$id);
 
       // Also load photoUrl from database
@@ -157,6 +159,13 @@ class AuthService {
         cachedUserPhotoUrl = doc.data['photoUrl'] ?? '';
       } catch (_) {}
     } catch (_) {}
+  }
+
+  /// Ensures the current authenticated user has a row in Tables DB.
+  Future<void> ensureCurrentUserRow() async {
+    final user = await _account.get();
+    _cacheCurrentUser(user);
+    await _saveUserToDatabase(user);
   }
 
   // Save user data to Appwrite database
@@ -190,12 +199,41 @@ class AuthService {
           email: user.email,
           onlineFlag: true,
         );
-        await _databases.createRow(
-          databaseId: AppwriteConstants.databaseId,
-          tableId: AppwriteConstants.usersCollection,
-          rowId: user.$id,
-          data: newUser.toMap(),
-        );
+        try {
+          await _databases.createRow(
+            databaseId: AppwriteConstants.databaseId,
+            tableId: AppwriteConstants.usersCollection,
+            rowId: user.$id,
+            data: newUser.toMap(),
+          );
+        } on AppwriteException catch (ce) {
+          if (ce.code == 409 || (ce.type != null && ce.type!.contains('duplicate'))) {
+            try {
+              final oldRows = await _databases.listRows(
+                databaseId: AppwriteConstants.databaseId,
+                tableId: AppwriteConstants.usersCollection,
+                queries: [Query.equal('email', user.email)],
+              );
+              for (var oldRow in oldRows.rows) {
+                await _databases.deleteRow(
+                  databaseId: AppwriteConstants.databaseId,
+                  tableId: AppwriteConstants.usersCollection,
+                  rowId: oldRow.$id,
+                );
+              }
+              await _databases.createRow(
+                databaseId: AppwriteConstants.databaseId,
+                tableId: AppwriteConstants.usersCollection,
+                rowId: user.$id,
+                data: newUser.toMap(),
+              );
+            } catch (_) {
+              throw AppwriteException('This email is linked to an orphaned account. Please contact support.', 409, 'user_already_exists');
+            }
+          } else {
+            rethrow;
+          }
+        }
       } else {
         rethrow;
       }
@@ -215,6 +253,27 @@ class AuthService {
           'lastSeen': DateTime.now().toUtc().toIso8601String(),
         },
       );
+    } on AppwriteException catch (e) {
+      // If row was deleted/missing (e.g. after account deletion + fresh login),
+      // recreate it and retry once so heartbeat/settings recover automatically.
+      if (e.code == 404 || e.type == 'row_not_found') {
+        try {
+          await ensureCurrentUserRow();
+          await _databases.updateRow(
+            databaseId: AppwriteConstants.databaseId,
+            tableId: AppwriteConstants.usersCollection,
+            rowId: cachedUserId,
+            data: {
+              'isOnline': isOnline,
+              'lastSeen': DateTime.now().toUtc().toIso8601String(),
+            },
+          );
+          return;
+        } catch (retryError) {
+          debugPrint('Error recovering missing user row: $retryError');
+        }
+      }
+      debugPrint('Error setting online status: $e');
     } catch (e) {
       debugPrint('Error setting online status: $e');
     }
@@ -233,6 +292,100 @@ class AuthService {
     } catch (e) {
       debugPrint('Error deleting session during sign out: $e');
     }
+
+    cachedUserId = '';
+    cachedUserName = '';
+    cachedUserPhotoUrl = '';
+    cachedUserEmail = '';
+    await ChatPrivacyPreferences.clearAll();
+    await SubscriptionService.instance.logOut();
+    await NotificationService.instance.unbind();
+  }
+
+  // Delete currently signed-in account (production path used by Settings).
+  Future<void> deleteCurrentAccount({required String confirmText}) async {
+    const requiredPhrase = 'DELETE MY ACCOUNT';
+    final normalizedPhrase = confirmText.trim();
+    if (normalizedPhrase != requiredPhrase) {
+      throw AppwriteException('Please type exactly: $requiredPhrase');
+    }
+
+    if (cachedUserId.isEmpty) {
+      final current = await _account.get();
+      _cacheCurrentUser(current);
+    }
+
+    try {
+      await _databases.deleteRow(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.usersCollection,
+        rowId: cachedUserId,
+      );
+    } catch (e) {
+      debugPrint('Warning: Failed to delete user row: $e');
+    }
+
+    try {
+      await setUserOnlineStatus(false);
+    } catch (_) {}
+
+    late final models.Execution execution;
+    try {
+      execution = await appwriteFunctions
+          .createExecution(
+            functionId: 'account_deletion',
+            body: jsonEncode({'confirmText': normalizedPhrase}),
+            method: ExecutionMethod.pOST,
+            xasync: false,
+            headers: {'content-type': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 25));
+    } on TimeoutException {
+      throw AppwriteException(
+        'Deletion request timed out. Please try again in a moment.',
+      );
+    }
+
+    if (execution.status == ExecutionStatus.failed ||
+        execution.responseStatusCode < 200 ||
+        execution.responseStatusCode >= 300) {
+      var message =
+          'Could not delete your account right now. Please try again.';
+      final body = execution.responseBody;
+      if (body.isNotEmpty) {
+        try {
+          final data = jsonDecode(body);
+          if (data is Map<String, dynamic>) {
+            message = (data['error'] ?? data['message'] ?? message).toString();
+          }
+        } catch (_) {}
+      }
+      throw AppwriteException(message);
+    }
+
+    final responseBody = execution.responseBody.trim();
+    if (responseBody.isNotEmpty) {
+      try {
+        final data = jsonDecode(responseBody);
+        if (data is Map<String, dynamic> && data['success'] == false) {
+          final message = (data['error'] ?? data['message'] ??
+                  'Could not delete your account right now. Please try again.')
+              .toString();
+          throw AppwriteException(message);
+        }
+      } catch (e) {
+        if (e is AppwriteException) {
+          rethrow;
+        }
+        throw AppwriteException(
+          'Deletion service returned an unexpected response. Please try again.',
+        );
+      }
+    }
+
+    try {
+      await _account.deleteSession(sessionId: 'current');
+    } catch (_) {}
 
     cachedUserId = '';
     cachedUserName = '';

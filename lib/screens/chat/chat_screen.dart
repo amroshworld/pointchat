@@ -176,7 +176,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  void _openUserProfile() {
+  void _openUserDetails() {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -239,14 +239,16 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.clear();
 
     // Send in background without awaiting
-    _chatService.sendMessage(
+    _chatService
+        .sendMessage(
       messageId: messageId,
       chatId: widget.chatId,
       senderId: widget.currentUserId,
       senderName: userName,
       senderPhotoUrl: userPhoto,
       text: text,
-    ).then((_) {
+    )
+        .then((_) {
       // Success - remove from optimistic messages
       // The realtime will bring in the real message
       if (mounted) {
@@ -264,6 +266,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     });
   }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -332,8 +335,9 @@ class _ChatScreenState extends State<ChatScreen> {
               stream: _chatService.getChatMessages(widget.chatId),
               builder: (context, snapshot) {
                 final serverMessages = snapshot.data ?? [];
-                final serverMessageIds = serverMessages.map((m) => m.messageId).toSet();
-                
+                final serverMessageIds =
+                    serverMessages.map((m) => m.messageId).toSet();
+
                 final pendingMessages = _optimisticMessages
                     .where((m) => !serverMessageIds.contains(m.messageId))
                     .toList();
@@ -343,7 +347,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   ...serverMessages,
                 ];
 
-                if (messages.isEmpty && snapshot.connectionState == ConnectionState.waiting) {
+                if (messages.isEmpty &&
+                    snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
@@ -430,7 +435,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
           TextButton(
-            onPressed: _openUserProfile,
+            onPressed: _openUserDetails,
             child: const Text('Manage'),
           ),
         ],
@@ -636,10 +641,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.info_outline),
-                  title: const Text('View profile'),
+                  title: const Text('View details'),
                   onTap: () {
                     Navigator.pop(context);
-                    _openUserProfile();
+                    _openUserDetails();
                   },
                 ),
                 ListTile(

@@ -11,13 +11,13 @@ This Privacy Policy explains how our app, **PointChat**, collects, uses, and sha
 We may collect the following types of information when you use our application:
 
 ### a) Personal Information Provided by You
-- **Account Data:** When you sign in (e.g., via Google Sign-In or other authentication), we receive basic profile information such as your name, email address, and profile picture.
+- **Account Data:** When you sign in (e.g., via Google Sign-In or other authentication), we receive basic account information such as your name, email address, and account photo.
 - **Communications:** Any messages, text, or media you send through our chat system.
 
 ### b) Permissions and Device Features
 To provide our core chat functionalities, PointChat requests access to certain device features:
 - **Microphone (RECORD_AUDIO):** We require access to your device's microphone strictly so that you can record and send voice messages to other users within the chat. We do not listen to or record your background conversations.
-- **Camera & Photo Library:** We request access so you can take photos, record videos, or select media from your gallery to share in your chats and update your profile picture.
+- **Camera & Photo Library:** We request access so you can take photos, record videos, or select media from your gallery to share in your chats and update your account photo.
 - **Storage/Files:** We require storage access to save media files locally on your device or upload documents inside your chats.
 - **Location:** If you choose to share your location with other users in the chat, we will collect and process your location data strictly for this feature.
 
@@ -43,7 +43,11 @@ We value your trust in providing us your Personal Information, thus we are striv
 
 ## 5. Data Retention & Deletion
 
-We keep your information for as long as your account is active or as needed to provide you services. You can delete your account and associated data through the app settings or by contacting us directly. 
+We keep your information for as long as your account is active or as needed to provide you services. You can permanently delete your account in the app from **Settings -> Delete account**.
+
+For policy and support information, see: https://69d90bb2700499328634.appwrite.network
+
+For support help with deletion requests, contact: amrosh.world@gmail.com
 
 ## 6. Children's Privacy
 

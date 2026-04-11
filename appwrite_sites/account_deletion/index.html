@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PointChat Account Deletion</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f9fc;
+      --card: #ffffff;
+      --text: #101828;
+      --muted: #475467;
+      --danger: #b42318;
+      --ok: #027a48;
+      --border: #d0d5dd;
+      --accent: #0b4cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #eef4ff 0%, var(--bg) 50%, #fefefe 100%);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(700px, 100%);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 10px 40px rgba(16, 24, 40, 0.08);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+    p { color: var(--muted); margin: 0 0 12px; }
+    .note {
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 12px;
+      margin: 14px 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .small { font-size: 13px; color: var(--muted); }
+    code {
+      background: #f2f4f7;
+      border: 1px solid #eaecf0;
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: #111827;
+    }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>PointChat Account Deletion</h1>
+    <p>Use this page to request permanent deletion of your PointChat account.</p>
+
+    <div class="note">
+      <strong>Delete your account in the app:</strong>
+      <ul>
+        <li>Open PointChat.</li>
+        <li>Go to Settings.</li>
+        <li>Tap Delete account.</li>
+        <li>Type <code>DELETE MY ACCOUNT</code> and confirm.</li>
+      </ul>
+    </div>
+
+    <div class="note">
+      <strong>What is deleted:</strong>
+      <ul>
+        <li>Account data and sign-in access.</li>
+        <li>Associated PointChat account data.</li>
+      </ul>
+      <strong>What may be retained:</strong>
+      <ul>
+        <li>Security and backup logs for up to 90 days.</li>
+        <li>Store billing records required by legal/accounting obligations.</li>
+      </ul>
+    </div>
+
+    <p class="small" style="margin-top: 14px;">
+      If you cannot access the app, contact support:
+      <a href="mailto:amrosh.world@gmail.com">amrosh.world@gmail.com</a>
+    </p>
+  </main>
+</body>
+</html>

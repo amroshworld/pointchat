@@ -23,7 +23,7 @@ What you can do in PointChat:
 - Use built-in AI chat in your private thread
 - Control seen/read receipts and notification behavior
 - Lock the app and private chats with biometric unlock or PIN
-- Personalize your profile with photo and status
+- Personalize your account with photo and status
 
 PointChat is designed for everyday communication with extra privacy controls and optional AI features.
 
@@ -57,9 +57,9 @@ PointChat ("we", "us", "our") provides messaging, group communication, and optio
 
 We collect the following categories of information when you use PointChat:
 
-1. Account and profile information
+1. Account information
 - Google account sign-in data provided through authentication (such as account ID, name, and email).
-- Profile information you set in the app, such as display name, profile photo, and status.
+- Account information you set in the app, such as display name, account photo, and status.
 
 2. Messaging and communication data
 - Message content you send and receive, including text messages, image messages, file messages, voice messages, and location messages.
@@ -86,7 +86,7 @@ We collect the following categories of information when you use PointChat:
 
 Depending on your device and usage, PointChat may request:
 - Microphone permission: to record and send voice messages.
-- Photos/files/storage access: to select and send media/files and update profile/group photos.
+- Photos/files/storage access: to select and send media/files and update account/group photos.
 - Location permission: to share your location in chat when you choose to do so.
 - Notification permission: to show message and invite notifications.
 - Biometric/Face ID permission: to unlock app/chat privacy features.
@@ -96,7 +96,7 @@ We request these permissions only to provide related app functionality.
 ### 3. How We Use Information
 
 We use your information to:
-- Create and manage your account and profile.
+- Create and manage your account and settings.
 - Deliver messaging, group, media-sharing, and presence features.
 - Provide read receipts, seen controls, and notifications.
 - Process and enforce AI subscription access.

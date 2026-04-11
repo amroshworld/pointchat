@@ -155,7 +155,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Set a backup PIN under Profile → Chats & performance.',
+              'Set a backup PIN under Settings → Chats & performance.',
               style: GoogleFonts.inter(),
             ),
           ),
@@ -465,12 +465,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return _buildEmptyState();
               }
-              final chats = snapshot.data!
-                  .where((chat) {
-                    final otherUserId = chat.getOtherUserId(widget.currentUserId);
-                    return !_blockedUserIds.contains(otherUserId);
-                  })
-                  .toList();
+              final chats = snapshot.data!.where((chat) {
+                final otherUserId = chat.getOtherUserId(widget.currentUserId);
+                return !_blockedUserIds.contains(otherUserId);
+              }).toList();
 
               if (chats.isEmpty) {
                 return _buildEmptyState();
@@ -795,9 +793,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
       builder: (context, snapshot) {
         final serverMessages = snapshot.data ?? [];
         final serverMessageIds = serverMessages.map((m) => m.messageId).toSet();
-        
+
         final pendingMessages = _optimisticMessages
-            .where((m) => m.chatId == chatId && !serverMessageIds.contains(m.messageId))
+            .where((m) =>
+                m.chatId == chatId && !serverMessageIds.contains(m.messageId))
             .toList();
 
         final allMessages = <MessageModel>[
@@ -805,7 +804,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ...serverMessages,
         ];
 
-        if (allMessages.isEmpty && snapshot.connectionState == ConnectionState.waiting) {
+        if (allMessages.isEmpty &&
+            snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 

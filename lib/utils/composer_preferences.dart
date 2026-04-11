@@ -8,7 +8,7 @@ class ComposerPreferences {
   static const _kTipsRotate = 'composer_tips_rotate';
   static const _kTipsHidden = 'composer_tips_hidden';
 
-  /// Synced with [getTipsHidden] / [setTipsHidden] so profile changes apply without restart.
+  /// Synced with [getTipsHidden] / [setTipsHidden] so settings changes apply without restart.
   static final ValueNotifier<bool> tipsHiddenListenable = ValueNotifier(false);
 
   static Future<bool> getTipsRotateEnabled() async {

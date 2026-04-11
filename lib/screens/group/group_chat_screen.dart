@@ -93,6 +93,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       }
     }
   }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -169,8 +170,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
               stream: _groupService.getGroupMessages(widget.groupId),
               builder: (context, snapshot) {
                 final serverMessages = snapshot.data ?? [];
-                final serverMessageIds = serverMessages.map((m) => m.messageId).toSet();
-                
+                final serverMessageIds =
+                    serverMessages.map((m) => m.messageId).toSet();
+
                 final pendingMessages = _optimisticMessages
                     .where((m) => !serverMessageIds.contains(m.messageId))
                     .toList();
@@ -180,7 +182,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   ...serverMessages,
                 ];
 
-                if (messages.isEmpty && snapshot.connectionState == ConnectionState.waiting) {
+                if (messages.isEmpty &&
+                    snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
 

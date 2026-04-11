@@ -378,7 +378,8 @@ class ChatService {
         rowId: chatId,
       );
       final unreadCount = _decodeJsonMap(chatDoc.data['unreadCount']);
-      final participants = List<String>.from(chatDoc.data['participants'] ?? []);
+      final participants =
+          List<String>.from(chatDoc.data['participants'] ?? []);
 
       for (final participantId in participants) {
         unreadCount[participantId] = 0;

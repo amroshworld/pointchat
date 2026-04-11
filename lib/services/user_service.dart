@@ -167,16 +167,6 @@ class UserService {
     return controller.stream;
   }
 
-  // Update user profile
-  Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
-    await _databases.updateRow(
-      databaseId: AppwriteConstants.databaseId,
-      tableId: AppwriteConstants.usersCollection,
-      rowId: uid,
-      data: data,
-    );
-  }
-
   // Update user status message
   Future<void> updateStatus(String uid, String status) async {
     await _databases.updateRow(

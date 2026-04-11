@@ -6,7 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../utils/chat_privacy_preferences.dart';
 import 'pin_setup_screen.dart';
 
-/// App lock + 4-digit PIN UI. Used from [ProfileScreen] and stream settings overlay.
+/// App lock + 4-digit PIN UI. Used from the settings overlay.
 class ChatSecuritySettingsPanel extends StatefulWidget {
   const ChatSecuritySettingsPanel({super.key});
 

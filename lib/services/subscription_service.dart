@@ -209,7 +209,8 @@ class SubscriptionService {
         isReady: true,
         isBusy: false,
         hasAiAccess: reviewerAccess,
-        message: reviewerAccess ? _reviewerAccessMessage() : state.value.message,
+        message:
+            reviewerAccess ? _reviewerAccessMessage() : state.value.message,
       );
       return;
     }

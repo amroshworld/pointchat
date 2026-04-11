@@ -27,9 +27,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _signInWithEmailPassword() async {
     await ref.read(authProvider.notifier).signInWithEmailPassword(
-      email: _emailController.text,
-      password: _passwordController.text,
-    );
+          email: _emailController.text,
+          password: _passwordController.text,
+        );
   }
 
   void _onLogoTap() {

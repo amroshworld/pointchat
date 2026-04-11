@@ -122,7 +122,8 @@ class ModerationService {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getStringList(_userReportsKey) ?? <String>[];
     final report = <String, dynamic>{
-      'reportId': '${DateTime.now().millisecondsSinceEpoch}_$normalizedTargetUserId',
+      'reportId':
+          '${DateTime.now().millisecondsSinceEpoch}_$normalizedTargetUserId',
       'createdAt': DateTime.now().toUtc().toIso8601String(),
       'reporterUserId': normalizedReporterUserId,
       'targetUserId': normalizedTargetUserId,

@@ -73,7 +73,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'This user is blocked. Open profile to unblock before chatting.',
+            'This user is blocked. Open user settings to unblock before chatting.',
           ),
         ),
       );
@@ -145,14 +145,14 @@ class _PeopleScreenState extends State<PeopleScreen> {
             }
 
             final allUsers = snapshot.data ?? [];
-      final visibleUsers = allUsers
-        .where((u) => !_blockedUserIds.contains(u.uid))
-        .toList();
+            final visibleUsers = allUsers
+                .where((u) => !_blockedUserIds.contains(u.uid))
+                .toList();
 
             // Client-side filter
             final users = _searchQuery.isEmpty
-        ? visibleUsers
-        : visibleUsers
+                ? visibleUsers
+                : visibleUsers
                     .where(
                       (u) =>
                           u.displayName.toLowerCase().contains(
