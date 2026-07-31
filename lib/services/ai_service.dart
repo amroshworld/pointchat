@@ -11,11 +11,17 @@ class AiService {
   AiService._internal();
 
   /// Generate a single response from a prompt
-  Future<String> generateResponse(String prompt, {String? systemPrompt}) async {
+  Future<String> generateResponse(
+    String prompt, {
+    String? systemPrompt,
+    bool skipAccessCheck = false,
+  }) async {
     try {
-      final hasAccess = await SubscriptionService.instance.ensureAiAccess();
-      if (!hasAccess) {
-        return 'AI access is not active for this account.';
+      if (!skipAccessCheck) {
+        final hasAccess = await SubscriptionService.instance.ensureAiAccess();
+        if (!hasAccess) {
+          return 'You have reached your daily free limit of 10 AI messages. Upgrade to PointChat Pro for unlimited AI access!';
+        }
       }
 
       await PointchatTips.instance.ensureLoaded();

@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../appwrite_client.dart';
+import 'analytics_service.dart';
 
 class RevenueCatConfig {
   static const String entitlementId = 'ai_access';
@@ -244,12 +246,50 @@ class SubscriptionService {
     }
   }
 
+  static const int dailyFreeQuota = 10;
+  static const String _kQuotaCountKey = 'ai_daily_quota_count';
+  static const String _kQuotaDateKey = 'ai_daily_quota_date';
+
+  Future<int> getRemainingFreeQuota() async {
+    if (hasAiAccess || _hasReviewerAiAccess()) return dailyFreeQuota;
+    final prefs = await SharedPreferences.getInstance();
+    final todayStr = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+    final storedDate = prefs.getString(_kQuotaDateKey) ?? '';
+    if (storedDate != todayStr) {
+      await prefs.setString(_kQuotaDateKey, todayStr);
+      await prefs.setInt(_kQuotaCountKey, 0);
+      return dailyFreeQuota;
+    }
+    final used = prefs.getInt(_kQuotaCountKey) ?? 0;
+    return (dailyFreeQuota - used).clamp(0, dailyFreeQuota);
+  }
+
   Future<bool> ensureAiAccess() async {
     await initialize(appUserId: cachedUserId.isEmpty ? null : cachedUserId);
     if (_isConfigured) {
       await refresh();
     }
-    return hasAiAccess || _hasReviewerAiAccess();
+    if (hasAiAccess || _hasReviewerAiAccess()) {
+      return true;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final todayStr = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+    final storedDate = prefs.getString(_kQuotaDateKey) ?? '';
+    int usedCount = prefs.getInt(_kQuotaCountKey) ?? 0;
+
+    if (storedDate != todayStr) {
+      usedCount = 0;
+      await prefs.setString(_kQuotaDateKey, todayStr);
+      await prefs.setInt(_kQuotaCountKey, 0);
+    }
+
+    if (usedCount < dailyFreeQuota) {
+      await prefs.setInt(_kQuotaCountKey, usedCount + 1);
+      return true;
+    }
+
+    return false;
   }
 
   Future<bool> purchasePackage(Package package) async {
@@ -265,6 +305,9 @@ class SubscriptionService {
       );
       final offerings = await Purchases.getOfferings();
       _applyCustomerInfo(purchaseResult.customerInfo, offerings.current);
+      if (state.value.hasAiAccess) {
+        await AnalyticsService.instance.logSubscriptionPurchase(package);
+      }
       return state.value.hasAiAccess;
     } on PlatformException catch (error) {
       final errorCode = PurchasesErrorHelper.getErrorCode(error);
@@ -356,11 +399,17 @@ class SubscriptionService {
     final entitlement =
         customerInfo.entitlements.active[RevenueCatConfig.entitlementId];
     final reviewerAccess = _hasReviewerAiAccess();
+    final hasAiAccess = entitlement?.isActive == true || reviewerAccess;
+
+    AnalyticsService.instance.setUserSubscriptionStatus(
+      isSubscribed: hasAiAccess,
+    );
+
     state.value = state.value.copyWith(
       isReady: true,
       isConfigured: true,
       isBusy: false,
-      hasAiAccess: entitlement?.isActive == true || reviewerAccess,
+      hasAiAccess: hasAiAccess,
       offering: offering,
       message: reviewerAccess ? _reviewerAccessMessage() : null,
       clearMessage: !reviewerAccess,

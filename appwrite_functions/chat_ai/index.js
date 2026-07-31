@@ -1,6 +1,6 @@
 const { GoogleGenAI, ThinkingLevel } = require('@google/genai');
 
-const MODEL_NAME = 'gemini-3.1-flash-lite-preview';
+const MODEL_NAME = 'gemini-3.6-flash';
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant for PointChat.';
 
 function parseBody(req, log) {

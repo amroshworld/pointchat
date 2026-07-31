@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
 import '../../services/subscription_service.dart';
+import '../../services/analytics_service.dart';
 import '../../theme/app_theme.dart';
 
 class AiSubscriptionScreen extends StatefulWidget {
@@ -20,6 +21,7 @@ class _AiSubscriptionScreenState extends State<AiSubscriptionScreen> {
   void initState() {
     super.initState();
     _subscriptionService.refresh();
+    AnalyticsService.instance.logPaywallImpression();
   }
 
   Future<void> _purchase(Package package) async {

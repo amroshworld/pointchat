@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show ImageFilter;
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -145,8 +145,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
   // AI state
   bool _isAiMode = false;
-  bool _isAiLoading = false;
-  bool _isSending = false;
   final AiService _aiService = AiService();
 
   bool _showActions = false;
@@ -1293,6 +1291,25 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     });
   }
 
+  void _removeOptimisticMessageForConversation(
+    String conversationId,
+    String messageId,
+  ) {
+    if (conversationId.isEmpty || messageId.isEmpty) return;
+    if (!mounted) return;
+    setState(() {
+      final list = List<MessageModel>.from(
+        _optimisticMessagesByConversationId[conversationId] ?? const [],
+      );
+      list.removeWhere((m) => m.messageId == messageId);
+      if (list.isEmpty) {
+        _optimisticMessagesByConversationId.remove(conversationId);
+      } else {
+        _optimisticMessagesByConversationId[conversationId] = list;
+      }
+    });
+  }
+
   /// Keeps the expanded conversation row aligned to the top of the stream when
   /// the composer is focused or the keyboard opens/closes, so lower chats are
   /// not hidden behind the IME and layout recovers after dismiss.
@@ -2393,6 +2410,38 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               ),
 
               const SizedBox(height: 20),
+
+              // =============== PREMIUM ===============
+              _settingsSectionTitle('PREMIUM'),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.workspace_premium_rounded, color: Color(0xFFFFD700)),
+                title: Text(
+                  'PointChat Premium',
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                subtitle: Text(
+                  'Manage subscription & unlock AI features',
+                  style: GoogleFonts.inter(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white54),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AiSubscriptionScreen()),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 16),
 
               // =============== PRIVACY ===============
               _settingsSectionTitle('PRIVACY'),
@@ -3644,43 +3693,59 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       return;
     }
 
-    if (await _audioRecorder.hasPermission()) {
-      final path = kIsWeb
-          ? ''
-          : '${(await getTemporaryDirectory()).path}/temp_record_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    try {
+      if (await _audioRecorder.hasPermission()) {
+        final tempDir = await getTemporaryDirectory();
+        final path = kIsWeb
+            ? ''
+            : '${tempDir.path}/temp_record_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-      await _audioRecorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 64000,
-          sampleRate: 44100,
-          numChannels: 1,
-        ),
-        path: path,
-      );
-
-      _isRecordingNotifier.value = true;
-      _recordingSecondsNotifier.value = 0;
-      _recordingDragOffset = 0;
-      _recordingCancelled = false;
-
-      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!mounted) return;
-        _recordingSecondsNotifier.value++;
-        if (_recordingSecondsNotifier.value >= _recordingMaxSeconds) {
-          _stopAndSendRecording(showLimitReachedToast: true);
-        }
-      });
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Microphone permission denied.',
-            style: GoogleFonts.jetBrainsMono(),
+        await _audioRecorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.aacLc,
+            bitRate: 64000,
           ),
-        ),
-      );
+          path: path,
+        );
+
+        _isRecordingNotifier.value = true;
+        _recordingSecondsNotifier.value = 0;
+        _recordingDragOffset = 0;
+        _recordingCancelled = false;
+
+        _recordingTimer?.cancel();
+        _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (!mounted) return;
+          _recordingSecondsNotifier.value++;
+          if (_recordingSecondsNotifier.value >= _recordingMaxSeconds) {
+            _stopAndSendRecording(showLimitReachedToast: true);
+          }
+        });
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Microphone permission denied.',
+              style: GoogleFonts.jetBrainsMono(),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      _isRecordingNotifier.value = false;
+      _recordingTimer?.cancel();
+      _recordingTimer = null;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Microphone error: $e',
+              style: GoogleFonts.jetBrainsMono(),
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -3691,7 +3756,12 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     if (!_isRecordingNotifier.value) return;
     _recordingTimer?.cancel();
     _recordingTimer = null;
-    final path = await _audioRecorder.stop();
+
+    String? path;
+    try {
+      path = await _audioRecorder.stop();
+    } catch (_) {}
+
     final duration = _recordingSecondsNotifier.value;
     _isRecordingNotifier.value = false;
 
@@ -3857,6 +3927,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     int? audioDuration,
     double? latitude,
     double? longitude,
+    String? existingMessageId,
   }) async {
     final currentUserName = cachedUserName;
     final currentUserPhoto = cachedUserPhotoUrl;
@@ -3865,25 +3936,26 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       targetUser.uid,
     );
 
-    final messageId = ID.unique();
-    final optimisticMsg = MessageModel(
-      messageId: messageId,
-      chatId: chatId,
-      senderId: currentUserId,
-      senderName: currentUserName,
-      senderPhotoUrl: currentUserPhoto,
-      text: content,
-      type: type,
-      timestamp: DateTime.now(),
-      status: MessageStatus.sending,
-      fileName: fileName,
-      fileSize: fileSize,
-      audioDuration: audioDuration,
-      latitude: latitude,
-      longitude: longitude,
-    );
-
-    _addOptimisticMessageForConversation(chatId, optimisticMsg);
+    final messageId = existingMessageId ?? ID.unique();
+    if (existingMessageId == null) {
+      final optimisticMsg = MessageModel(
+        messageId: messageId,
+        chatId: chatId,
+        senderId: currentUserId,
+        senderName: currentUserName,
+        senderPhotoUrl: currentUserPhoto,
+        text: content,
+        type: type,
+        timestamp: DateTime.now(),
+        status: MessageStatus.sending,
+        fileName: fileName,
+        fileSize: fileSize,
+        audioDuration: audioDuration,
+        latitude: latitude,
+        longitude: longitude,
+      );
+      _addOptimisticMessageForConversation(chatId, optimisticMsg);
+    }
 
     await _chatService.sendMessage(
       messageId: messageId,
@@ -4031,6 +4103,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     bool sentAtLeastOne = false;
     var didSendGroupMessage = false;
     final dmTargetsSent = <String>{};
+    final sendFutures = <Future<void>>[];
 
     // Group handles for determining multi-target messaging
     for (var handle in handles) {
@@ -4051,7 +4124,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           if (!dmTargetsSent.add(targetUser.uid)) {
             continue;
           }
-          await _sendDirectMessageForCommand(
+
+          sendFutures.add(_sendDirectMessageForCommand(
             targetUser,
             content: content,
             type: type,
@@ -4060,7 +4134,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             audioDuration: audioDuration,
             latitude: latitude,
             longitude: longitude,
-          );
+          ));
           sentAtLeastOne = true;
         }
       } else if (handle.startsWith('#')) {
@@ -4184,7 +4258,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           );
           _addOptimisticMessageForConversation(targetGroupId, optimisticMsg);
 
-          await _groupService.sendGroupMessage(
+          sendFutures.add(_groupService.sendGroupMessage(
             messageId: messageId,
             groupId: targetGroupId,
             senderId: currentUserId,
@@ -4197,7 +4271,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             audioDuration: audioDuration,
             latitude: latitude,
             longitude: longitude,
-          );
+          ));
           didGroupAction = true;
           didSendGroupMessage = true;
         }
@@ -4213,7 +4287,8 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       for (final targetUser in mentionedUsersByHandle.values) {
         if (targetUser.uid == currentUserId) continue;
         if (!seenMentionDm.add(targetUser.uid)) continue;
-        await _sendDirectMessageForCommand(
+
+        sendFutures.add(_sendDirectMessageForCommand(
           targetUser,
           content: content,
           type: type,
@@ -4222,9 +4297,13 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           audioDuration: audioDuration,
           latitude: latitude,
           longitude: longitude,
-        );
+        ));
         sentAtLeastOne = true;
       }
+    }
+
+    if (sendFutures.isNotEmpty) {
+      await Future.wait(sendFutures);
     }
 
     if (!mounted) return;
@@ -4264,325 +4343,439 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     }
   }
 
-  void _sendCommand(String input) async {
-    if (_isSending) return;
-    if (input.trim().isEmpty && _forwardingMessage == null) return;
+  bool _isSummaryOrTaskRequest(String prompt) {
+    final lower = prompt.toLowerCase();
+    return lower.contains('summarize') ||
+        lower.contains('summary') ||
+        lower.contains('summarise') ||
+        lower.contains('task') ||
+        lower.contains('tasks') ||
+        lower.contains('important') ||
+        lower.contains('highlight') ||
+        lower.contains('الخص') ||
+        lower.contains('خص') ||
+        lower.contains('تلخيص') ||
+        lower.contains('المهام') ||
+        lower.contains('مهام') ||
+        lower.contains('المهم') ||
+        lower.contains('إيه الكلام') ||
+        lower.contains('المهمة');
+  }
 
+  Future<List<MessageModel>> _fetchChatHistoryForContext({
+    String? chatId,
+    String? groupId,
+    required bool isGroup,
+  }) async {
+    try {
+      final queryParam = isGroup
+          ? Query.equal('groupId', groupId!)
+          : Query.equal('chatId', chatId!);
+      final result = await appwriteTablesDB.listRows(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.messagesCollection,
+        queries: [
+          queryParam,
+          Query.orderDesc('\$createdAt'),
+          Query.limit(100),
+        ],
+      );
+      return result.rows
+          .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
+          .toList()
+          .reversed
+          .toList();
+    } catch (e) {
+      if (kDebugMode) debugPrint('Error fetching chat history for AI: $e');
+      return [];
+    }
+  }
+
+  String _buildSummaryPrompt(List<MessageModel> msgs, String userPrompt) {
+    if (msgs.isEmpty) {
+      return '$userPrompt\nNote: No prior saved message history was found for this conversation.';
+    }
+    final sb = StringBuffer();
+    sb.writeln('Recent conversation history (${msgs.length} messages):');
+    for (var m in msgs) {
+      sb.writeln('${m.senderName}: ${m.text}');
+    }
+    sb.writeln('\nUser request: $userPrompt');
+    sb.writeln(
+      'System Instruction: Analyze the conversation history above and provide a clear, structured response in the user\'s language (Arabic or English).\n'
+      'Structure the output cleanly using bullet points:\n'
+      '1. 📌 Key Summary / ملخص المحادثة\n'
+      '2. 💡 Important Highlights & Decisions / النقاط والقرارات المهمة\n'
+      '3. 🎯 Action Items & Assigned Tasks / المهام المطلوبة والمسندة للأشخاص\n'
+      'Format professionally without strange markdown artifacts before the text.',
+    );
+    return sb.toString();
+  }
+
+  void _processAiCommandAsync({
+    required String beforeSlash,
+    required String aiPrompt,
+  }) {
+    unawaited(() async {
+      final hasAccess = await _ensureAiAccess();
+      if (!hasAccess) {
+        return;
+      }
+
+      final words = beforeSlash
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+      final handles =
+          words.where((w) => w.startsWith('@') || w.startsWith('#')).toList();
+
+      if (handles.isEmpty && beforeSlash.toLowerCase().startsWith('@ai')) {
+        handles.add('@ai');
+      }
+
+      final isSummary = _isSummaryOrTaskRequest(aiPrompt);
+
+      for (final handle in handles) {
+        if (handle.toLowerCase() == '@ai') {
+          try {
+            final chatId = await _chatService.getOrCreateChat(
+              currentUserId,
+              currentUserId,
+            );
+
+            // 1. Optimistic User Prompt
+            final userMsgId = ID.unique();
+            final userMsg = MessageModel(
+              messageId: userMsgId,
+              chatId: chatId,
+              senderId: currentUserId,
+              senderName: cachedUserName,
+              senderPhotoUrl: cachedUserPhotoUrl,
+              text: aiPrompt,
+              type: MessageType.text,
+              timestamp: DateTime.now(),
+              status: MessageStatus.sending,
+            );
+            _addOptimisticMessageForConversation(chatId, userMsg);
+
+            unawaited(_chatService.sendMessage(
+              messageId: userMsgId,
+              chatId: chatId,
+              senderId: currentUserId,
+              senderName: cachedUserName,
+              senderPhotoUrl: cachedUserPhotoUrl,
+              text: aiPrompt,
+              type: MessageType.text,
+            ));
+
+            // 2. Optimistic AI Loading Message
+            final aiLoadingMsgId = ID.unique();
+            final loadingMsg = MessageModel(
+              messageId: aiLoadingMsgId,
+              chatId: chatId,
+              senderId: 'ai-system',
+              senderName: 'PointChat AI',
+              senderPhotoUrl: '',
+              text: '✨ PointChat AI is analyzing & generating response...',
+              type: MessageType.text,
+              timestamp: DateTime.now(),
+              status: MessageStatus.sending,
+            );
+            _addOptimisticMessageForConversation(chatId, loadingMsg);
+
+            String finalPrompt = aiPrompt;
+            if (isSummary) {
+              final msgs = await _fetchChatHistoryForContext(
+                chatId: chatId,
+                isGroup: false,
+              );
+              finalPrompt = _buildSummaryPrompt(msgs, aiPrompt);
+            }
+
+            final aiResponse = await _aiService.generateResponse(
+              finalPrompt,
+              systemPrompt:
+                  "You are PointChat's private AI assistant. Be helpful and structured.",
+              skipAccessCheck: true,
+            );
+
+            _removeOptimisticMessageForConversation(chatId, aiLoadingMsgId);
+
+            await _chatService.sendMessage(
+              chatId: chatId,
+              senderId: 'ai-system',
+              senderName: 'PointChat AI',
+              senderPhotoUrl: '',
+              text: aiResponse,
+              type: MessageType.text,
+            );
+          } catch (e) {
+            if (kDebugMode) debugPrint('Private AI Error: $e');
+          }
+        } else if (handle.startsWith('@')) {
+          try {
+            final tNorm = _normalizeHandleToken(handle.substring(1));
+            final targetUser = _normalizedUsersMap[tNorm];
+            if (targetUser == null) continue;
+
+            final chatId = await _chatService.getOrCreateChat(
+              currentUserId,
+              targetUser.uid,
+            );
+
+            final userMsgId = ID.unique();
+            final userMsg = MessageModel(
+              messageId: userMsgId,
+              chatId: chatId,
+              senderId: currentUserId,
+              senderName: cachedUserName,
+              senderPhotoUrl: cachedUserPhotoUrl,
+              text: 'Prompt: $aiPrompt',
+              type: MessageType.text,
+              timestamp: DateTime.now(),
+              status: MessageStatus.sending,
+            );
+            _addOptimisticMessageForConversation(chatId, userMsg);
+
+            unawaited(_chatService.sendMessage(
+              messageId: userMsgId,
+              chatId: chatId,
+              senderId: currentUserId,
+              senderName: cachedUserName,
+              senderPhotoUrl: cachedUserPhotoUrl,
+              text: 'Prompt: $aiPrompt',
+              type: MessageType.text,
+            ));
+
+            final aiLoadingMsgId = ID.unique();
+            final loadingMsg = MessageModel(
+              messageId: aiLoadingMsgId,
+              chatId: chatId,
+              senderId: 'ai-system',
+              senderName: 'PointChat AI',
+              senderPhotoUrl: '',
+              text: '✨ PointChat AI is analyzing & generating response...',
+              type: MessageType.text,
+              timestamp: DateTime.now(),
+              status: MessageStatus.sending,
+            );
+            _addOptimisticMessageForConversation(chatId, loadingMsg);
+
+            String finalPrompt = aiPrompt;
+            if (isSummary) {
+              final msgs = await _fetchChatHistoryForContext(
+                chatId: chatId,
+                isGroup: false,
+              );
+              finalPrompt = _buildSummaryPrompt(msgs, aiPrompt);
+            }
+
+            final aiResponse = await _aiService.generateResponse(
+              finalPrompt,
+              skipAccessCheck: true,
+            );
+
+            _removeOptimisticMessageForConversation(chatId, aiLoadingMsgId);
+
+            await _chatService.sendMessage(
+              chatId: chatId,
+              senderId: 'ai-system',
+              senderName: 'PointChat AI',
+              senderPhotoUrl: '',
+              text: aiResponse,
+              type: MessageType.text,
+            );
+          } catch (e) {
+            if (kDebugMode) debugPrint('DM AI Error: $e');
+          }
+        } else if (handle.startsWith('#')) {
+          try {
+            final targetGroup = await _resolveGroupForAiContext(handle);
+            if (targetGroup == null) continue;
+            final groupId = targetGroup.groupId;
+
+            final userMsgId = ID.unique();
+            final userMsg = MessageModel(
+              messageId: userMsgId,
+              groupId: groupId,
+              senderId: currentUserId,
+              senderName: cachedUserName,
+              senderPhotoUrl: cachedUserPhotoUrl,
+              text: 'Prompt: $aiPrompt',
+              type: MessageType.text,
+              timestamp: DateTime.now(),
+              status: MessageStatus.sending,
+            );
+            _addOptimisticMessageForConversation(groupId, userMsg);
+
+            unawaited(_groupService.sendGroupMessage(
+              messageId: userMsgId,
+              groupId: groupId,
+              senderId: currentUserId,
+              senderName: cachedUserName,
+              senderPhotoUrl: cachedUserPhotoUrl,
+              text: 'Prompt: $aiPrompt',
+              type: MessageType.text,
+            ));
+
+            final aiLoadingMsgId = ID.unique();
+            final loadingMsg = MessageModel(
+              messageId: aiLoadingMsgId,
+              groupId: groupId,
+              senderId: 'ai-system',
+              senderName: 'PointChat AI',
+              senderPhotoUrl: '',
+              text: '✨ PointChat AI is analyzing & generating response...',
+              type: MessageType.text,
+              timestamp: DateTime.now(),
+              status: MessageStatus.sending,
+            );
+            _addOptimisticMessageForConversation(groupId, loadingMsg);
+
+            String finalPrompt = aiPrompt;
+            if (isSummary) {
+              final msgs = await _fetchChatHistoryForContext(
+                groupId: groupId,
+                isGroup: true,
+              );
+              finalPrompt = _buildSummaryPrompt(msgs, aiPrompt);
+            }
+
+            final aiResponse = await _aiService.generateResponse(
+              finalPrompt,
+              skipAccessCheck: true,
+            );
+
+            _removeOptimisticMessageForConversation(groupId, aiLoadingMsgId);
+
+            await _groupService.sendGroupMessage(
+              groupId: groupId,
+              senderId: 'ai-system',
+              senderName: 'PointChat AI',
+              senderPhotoUrl: '',
+              text: aiResponse,
+              type: MessageType.text,
+            );
+          } catch (e) {
+            if (kDebugMode) debugPrint('Group AI Error: $e');
+          }
+        }
+      }
+    }());
+  }
+
+  void _sendCommand(String input) async {
+    final rawInput = input.trim();
+    if (rawInput.isEmpty && _forwardingMessage == null) return;
+
+    // Clear composer input immediately (0ms UI latency!)
+    _commandController.clear();
+    final forwardingMsg = _forwardingMessage;
     setState(() {
-      _isSending = true;
+      _replyingToMessage = null;
+      _forwardingMessage = null;
     });
 
-    try {
-      final normalizedInput = _applyFocusedHandle(input);
+    final normalizedInput = _applyFocusedHandle(input);
 
-      if (_forwardingMessage != null) {
-        await _forwardPendingMessage(input);
+    if (forwardingMsg != null) {
+      unawaited(_forwardPendingMessage(input));
+      return;
+    }
+
+    final trimmedCmd = normalizedInput.trim();
+
+    // Check for /newbot slash
+    final newBotSlash = RegExp(
+      r'^/newbot\s+(.+)$',
+      caseSensitive: false,
+    ).firstMatch(trimmedCmd);
+    if (newBotSlash != null) {
+      final botName = newBotSlash.group(1)!.trim();
+      if (botName.isNotEmpty) {
+        _showBotConfigDialog(botName);
         return;
-      }
-
-      final trimmedCmd = normalizedInput.trim();
-
-      final newBotSlash = RegExp(
-        r'^/newbot\s+(.+)$',
-        caseSensitive: false,
-      ).firstMatch(trimmedCmd);
-      if (newBotSlash != null) {
-        final botName = newBotSlash.group(1)!.trim();
-        if (botName.isNotEmpty) {
-          _showBotConfigDialog(botName);
-          _commandController.clear();
-          return;
-        }
-      }
-      if (RegExp(r'^/newbot\s*$', caseSensitive: false).hasMatch(trimmedCmd)) {
-        if (mounted) {
-          final cs = Theme.of(context).colorScheme;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Usage: /newbot AssistantName',
-                style: GoogleFonts.inter(
-                  color: cs.onInverseSurface,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              backgroundColor: cs.inverseSurface,
-            ),
-          );
-        }
-        _commandController.clear();
-        return;
-      }
-
-      // Private AI (notes thread): @ai …
-      final lowerCmd = normalizedInput.toLowerCase();
-      String? privateAiPrompt;
-      if (lowerCmd.startsWith('@ai ')) {
-        privateAiPrompt = normalizedInput.substring(4).trim();
-      }
-      if (privateAiPrompt != null && privateAiPrompt.isNotEmpty) {
-        _commandController.clear();
-        setState(() => _isAiLoading = true);
-        try {
-          final chatId = await _chatService.getOrCreateChat(
-            currentUserId,
-            currentUserId,
-          );
-
-          final messageId = ID.unique();
-          final optimisticMsg = MessageModel(
-            messageId: messageId,
-            chatId: chatId,
-            senderId: currentUserId,
-            senderName: cachedUserName,
-            senderPhotoUrl: cachedUserPhotoUrl,
-            text: privateAiPrompt,
-            type: MessageType.text,
-            timestamp: DateTime.now(),
-            status: MessageStatus.sending,
-          );
-          _addOptimisticMessageForConversation(chatId, optimisticMsg);
-
-          await _chatService.sendMessage(
-            messageId: messageId,
-            chatId: chatId,
-            senderId: currentUserId,
-            senderName: cachedUserName,
-            senderPhotoUrl: cachedUserPhotoUrl,
-            text: privateAiPrompt,
-            type: MessageType.text,
-          );
-
-          final aiResponse = await _aiService.generateResponse(
-            privateAiPrompt,
-            systemPrompt:
-                "You are PointChat's private AI assistant. Be helpful and concise.",
-          );
-
-          await _chatService.sendMessage(
-            chatId: chatId,
-            senderId: 'ai-system',
-            senderName: 'PointChat AI',
-            senderPhotoUrl: '',
-            text: aiResponse,
-            type: MessageType.text,
-          );
-        } catch (e) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'AI is temporarily unavailable.',
-                  style: GoogleFonts.inter(),
-                ),
-              ),
-            );
-          }
-        } finally {
-          if (mounted) setState(() => _isAiLoading = false);
-        }
-        return;
-      }
-
-      // Check for AI mode: if text contains /, extract the AI prompt
-      final slashIndex = normalizedInput.indexOf('/');
-      if (slashIndex >= 0) {
-        final beforeSlash = normalizedInput.substring(0, slashIndex).trim();
-        final aiPrompt = normalizedInput.substring(slashIndex + 1).trim();
-        final aiPromptLower = aiPrompt.toLowerCase();
-
-        if (aiPromptLower.startsWith('setting')) {
-          final targetHandle = beforeSlash
-              .split(RegExp(r'\s+'))
-              .where((word) => word.startsWith('@') || word.startsWith('#'))
-              .cast<String?>()
-              .firstWhere((word) => word != null, orElse: () => null);
-          _commandController.clear();
-          if (targetHandle != null && targetHandle.isNotEmpty) {
-            await _showSettingsOverlayForHandle(targetHandle);
-          } else {
-            await _showMySettingsOverlay();
-          }
-          return;
-        }
-
-        final newBotFromSlash = RegExp(
-          r'^newbot\s+(.+)$',
-          caseSensitive: false,
-        ).firstMatch(aiPrompt);
-        if (newBotFromSlash != null) {
-          _commandController.clear();
-          _showBotConfigDialog(newBotFromSlash.group(1)!.trim());
-          return;
-        }
-        if (aiPrompt.toLowerCase().trim() == 'newbot') {
-          if (mounted) {
-            final cs = Theme.of(context).colorScheme;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Usage: /newbot AssistantName',
-                  style: GoogleFonts.inter(
-                    color: cs.onInverseSurface,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                backgroundColor: cs.inverseSurface,
-              ),
-            );
-          }
-          _commandController.clear();
-          return;
-        }
-
-        // Ensure there are @user or #group targets before the /
-        final hasTarget = _hasExplicitTarget(beforeSlash);
-
-        if (hasTarget && aiPrompt.isNotEmpty) {
-          final hasAiAccess = await _ensureAiAccess();
-          if (!hasAiAccess) {
-            return;
-          }
-
-          setState(() => _isAiLoading = true);
-          _commandController.clear();
-
-          try {
-            String finalPrompt = aiPrompt;
-            final aiPromptLower = aiPrompt.toLowerCase();
-            final isSummaryRequest = aiPromptLower.contains('summarize') ||
-                aiPromptLower.contains('summary');
-
-            if (isSummaryRequest) {
-              final words = beforeSlash.split(' ');
-              final handles = words
-                  .where((w) => w.startsWith('@') || w.startsWith('#'))
-                  .toList();
-
-              String contextText = '';
-              final onlyUnread = aiPromptLower.contains('unread');
-
-              for (var handle in handles) {
-                if (handle.startsWith('@')) {
-                  final tNorm = _normalizeHandleToken(handle.substring(1));
-                  final targetUser = _normalizedUsersMap[tNorm];
-                  if (targetUser != null) {
-                    final chatId = await _chatService.getOrCreateChat(
-                      currentUserId,
-                      targetUser.uid,
-                    );
-                    List<MessageModel> msgs = [];
-                    if (onlyUnread) {
-                      msgs = await _chatService.getUnreadMessages(
-                        chatId,
-                        currentUserId,
-                      );
-                    } else {
-                      // Fetch last 50 messages for general summary
-                      final result = await appwriteTablesDB.listRows(
-                        databaseId: AppwriteConstants.databaseId,
-                        tableId: AppwriteConstants.messagesCollection,
-                        queries: [
-                          Query.equal('chatId', chatId),
-                          Query.orderDesc('\$createdAt'),
-                          Query.limit(50),
-                        ],
-                      );
-                      msgs = result.rows
-                          .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
-                          .toList();
-                    }
-
-                    if (msgs.isNotEmpty) {
-                      contextText +=
-                          '\nMessages with @${targetUser.displayName}:\n';
-                      for (var msg in msgs.reversed) {
-                        contextText += '${msg.senderName}: ${msg.text}\n';
-                      }
-                    }
-                  }
-                } else if (handle.startsWith('#')) {
-                  final targetGroup = await _resolveGroupForAiContext(handle);
-                  if (targetGroup != null) {
-                    List<MessageModel> msgs = [];
-                    if (onlyUnread) {
-                      msgs = await _groupService.getUnreadGroupMessages(
-                        targetGroup.groupId,
-                        currentUserId,
-                      );
-                    } else {
-                      // Fetch last 50 messages for general summary
-                      final result = await appwriteTablesDB.listRows(
-                        databaseId: AppwriteConstants.databaseId,
-                        tableId: AppwriteConstants.messagesCollection,
-                        queries: [
-                          Query.equal('groupId', targetGroup.groupId),
-                          Query.orderDesc('\$createdAt'),
-                          Query.limit(50),
-                        ],
-                      );
-                      msgs = result.rows
-                          .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
-                          .toList();
-                    }
-                    if (msgs.isNotEmpty) {
-                      contextText += '\nMessages in #${targetGroup.name}:\n';
-                      for (var msg in msgs.reversed) {
-                        contextText += '${msg.senderName}: ${msg.text}\n';
-                      }
-                    }
-                  }
-                }
-              }
-
-              if (contextText.isNotEmpty) {
-                finalPrompt =
-                    'Conversation context:\n$contextText\n\nTask: $aiPrompt\nWrite a clean summary using the provided messages only. Do not invent details.';
-              } else {
-                finalPrompt =
-                    '$aiPrompt\nNo saved messages were found for the selected conversation.';
-              }
-            } else {
-              // Normal prompt - tell AI not to use markers
-              finalPrompt =
-                  '$aiPrompt\nRespond professionally without any weird markers or asterisks before the text. Format cleanly.';
-            }
-
-            // Send the user's prompt as a message first
-            await _processCommand('$beforeSlash Prompt: $aiPrompt');
-
-            // Generate AI response
-            final aiResponse = await _aiService.generateResponse(finalPrompt);
-
-            // Send the AI response to the same targets without any markers
-            await _processCommand('$beforeSlash $aiResponse');
-          } catch (e) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'AI is temporarily unavailable. Please try again.',
-                    style: GoogleFonts.inter(),
-                  ),
-                ),
-              );
-            }
-          } finally {
-            if (mounted) setState(() => _isAiLoading = false);
-          }
-          return;
-        }
-      }
-
-      _commandController.clear();
-      await _processCommand(normalizedInput);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSending = false;
-        });
       }
     }
+    if (RegExp(r'^/newbot\s*$', caseSensitive: false).hasMatch(trimmedCmd)) {
+      if (mounted) {
+        final cs = Theme.of(context).colorScheme;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Usage: /newbot AssistantName',
+              style: GoogleFonts.inter(
+                color: cs.onInverseSurface,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            backgroundColor: cs.inverseSurface,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Private AI (notes thread): @ai …
+    final lowerCmd = normalizedInput.toLowerCase();
+    String? privateAiPrompt;
+    if (lowerCmd.startsWith('@ai ')) {
+      privateAiPrompt = normalizedInput.substring(4).trim();
+    } else if (lowerCmd == '@ai') {
+      privateAiPrompt = '';
+    }
+
+    if (privateAiPrompt != null) {
+      _processAiCommandAsync(
+        beforeSlash: '@ai',
+        aiPrompt: privateAiPrompt.isEmpty ? 'Hello!' : privateAiPrompt,
+      );
+      return;
+    }
+
+    // Check for AI mode: if text contains /, extract the AI prompt
+    final slashIndex = normalizedInput.indexOf('/');
+    if (slashIndex >= 0) {
+      final beforeSlash = normalizedInput.substring(0, slashIndex).trim();
+      final aiPrompt = normalizedInput.substring(slashIndex + 1).trim();
+      final aiPromptLower = aiPrompt.toLowerCase();
+
+      if (aiPromptLower.startsWith('setting')) {
+        final targetHandle = beforeSlash
+            .split(RegExp(r'\s+'))
+            .where((word) => word.startsWith('@') || word.startsWith('#'))
+            .cast<String?>()
+            .firstWhere((word) => word != null, orElse: () => null);
+        if (targetHandle != null && targetHandle.isNotEmpty) {
+          await _showSettingsOverlayForHandle(targetHandle);
+        } else {
+          await _showMySettingsOverlay();
+        }
+        return;
+      }
+
+      final newBotFromSlash = RegExp(
+        r'^newbot\s+(.+)$',
+        caseSensitive: false,
+      ).firstMatch(aiPrompt);
+      if (newBotFromSlash != null) {
+        _showBotConfigDialog(newBotFromSlash.group(1)!.trim());
+        return;
+      }
+
+      final hasTarget = _hasExplicitTarget(beforeSlash);
+
+      if (hasTarget && aiPrompt.isNotEmpty) {
+        _processAiCommandAsync(
+          beforeSlash: beforeSlash,
+          aiPrompt: aiPrompt,
+        );
+        return;
+      }
+    }
+
+    // Send regular message asynchronously (non-blocking, WhatsApp speed)
+    unawaited(_processCommand(normalizedInput));
   }
 
   @override
@@ -4615,76 +4808,111 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                             ),
                           ),
                           title: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Row(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.zero,
-                                    child: Image.asset(
-                                      'assets/icon.png',
-                                      width: 26,
-                                      height: 26,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    'PointChat',
-                                    style: GoogleFonts.inter(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: -0.3,
-                                    ),
-                                  ),
-                                ],
+                              ClipRRect(
+                                borderRadius: BorderRadius.zero,
+                                child: Image.asset(
+                                  'assets/icon.png',
+                                  width: 26,
+                                  height: 26,
+                                  fit: BoxFit.cover,
+                                ),
                               ),
-                              Row(
-                                children: [
-                                  Consumer(
-                                    builder: (context, ref, child) {
-                                      final themeMode = ref.watch(
-                                        themeModeProvider,
-                                      );
-                                      final isDark =
-                                          themeMode == ThemeMode.dark;
-                                      return IconButton(
-                                        icon: Icon(
-                                          isDark
-                                              ? Icons.light_mode
-                                              : Icons.dark_mode,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                          size: 20,
-                                        ),
-                                        onPressed: () {
-                                          ref
-                                              .read(themeModeProvider.notifier)
-                                              .toggle();
-                                        },
-                                      );
-                                    },
-                                  ),
-                                  IconButton(
-                                    icon: Icon(
-                                      Icons.logout_rounded,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                      size: 20,
-                                    ),
-                                    onPressed: () => AuthService().signOut(),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                ],
+                              const SizedBox(width: 10),
+                              Text(
+                                'PointChat',
+                                style: GoogleFonts.inter(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                ),
                               ),
                             ],
                           ),
+                          actions: [
+                            Center(
+                              child: GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const AiSubscriptionScreen(),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(right: 8),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+                                    ),
+                                    borderRadius: BorderRadius.circular(20),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFFFFD700).withValues(alpha: 0.3),
+                                        blurRadius: 6,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.workspace_premium_rounded, size: 14, color: Colors.black),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Premium',
+                                        style: GoogleFonts.inter(
+                                          color: Colors.black,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Consumer(
+                              builder: (context, ref, child) {
+                                final themeMode = ref.watch(
+                                  themeModeProvider,
+                                );
+                                final isDark =
+                                    themeMode == ThemeMode.dark;
+                                return IconButton(
+                                  icon: Icon(
+                                    isDark
+                                        ? Icons.light_mode
+                                        : Icons.dark_mode,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    size: 20,
+                                  ),
+                                  onPressed: () {
+                                    ref
+                                        .read(themeModeProvider.notifier)
+                                        .toggle();
+                                  },
+                                );
+                              },
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.logout_rounded,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                                size: 20,
+                              ),
+                              onPressed: () => AuthService().signOut(),
+                            ),
+                          ],
                         ),
                       ];
                     },
@@ -5374,310 +5602,321 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             );
           },
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onHorizontalDragUpdate: (details) {
-                    if (details.primaryDelta! < -5) {
-                      setState(() => _showActions = true);
-                    } else if (details.primaryDelta! > 5) {
-                      setState(() {
-                        _showActions = false;
-                      });
-                    }
-                  },
-                  child: Container(
-                    height: 54,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface,
-                      borderRadius: BorderRadius.zero,
-                      border: Border.all(color: Colors.transparent, width: 0),
-                      boxShadow: isFocusModeActive
-                          ? [
-                              BoxShadow(
-                                color: AppTheme.focusBlue.withValues(
-                                  alpha: 0.16,
-                                ),
-                                blurRadius: 18,
-                                spreadRadius: 0,
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Stack(
-                      children: [
-                        // The normal text input field (always in tree to maintain keyboard focus)
-                        Row(
-                          children: [
-                            ValueListenableBuilder<bool>(
-                              valueListenable:
-                                  ComposerPreferences.tipsHiddenListenable,
-                              builder: (context, tipsHidden, _) {
-                                if (tipsHidden) return const SizedBox.shrink();
-                                return IconButton(
-                                  tooltip: 'Commands & tips',
-                                  icon: Icon(
-                                    Icons.tips_and_updates_outlined,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                    size: 22,
+        SafeArea(
+          top: false,
+          bottom: true,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onHorizontalDragUpdate: (details) {
+                      if (details.primaryDelta! < -5) {
+                        setState(() => _showActions = true);
+                      } else if (details.primaryDelta! > 5) {
+                        setState(() {
+                          _showActions = false;
+                        });
+                      }
+                    },
+                    child: Container(
+                      height: 54,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(26),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outline
+                              .withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                        boxShadow: isFocusModeActive
+                            ? [
+                                BoxShadow(
+                                  color: AppTheme.focusBlue.withValues(
+                                    alpha: 0.16,
                                   ),
-                                  onPressed: _showCommandHelpSheet,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 40,
-                                    minHeight: 40,
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: TextField(
-                                controller: _commandController,
-                                focusNode: _commandFocusNode,
-                                style: GoogleFonts.inter(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
-                                  fontSize: 15,
+                                  blurRadius: 18,
+                                  spreadRadius: 0,
                                 ),
-                                decoration: InputDecoration(
-                                  hintText: _isAiMode
-                                      ? 'Ask the AI…'
-                                      : (isFocusModeActive
-                                          ? 'Message $_focusedHandle…'
-                                          : 'Message · @ name  # group'),
-                                  hintStyle: GoogleFonts.inter(
-                                    color: _isAiMode
-                                        ? AppTheme.focusBlue.withValues(
-                                            alpha: 0.85,
-                                          )
-                                        : (isFocusModeActive
-                                            ? AppTheme.focusBlue.withValues(
-                                                alpha: 0.85,
-                                              )
-                                            : Theme.of(context)
-                                                .colorScheme
-                                                .onSurfaceVariant
-                                                .withValues(alpha: 0.65)),
-                                    fontSize: 15,
-                                  ),
-                                  border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
-                                  contentPadding: EdgeInsets.zero,
-                                  fillColor: Colors.transparent,
-                                ),
-                                cursorColor: AppTheme.focusBlue,
-                                onSubmitted: _sendCommand,
-                              ),
-                            ),
-                            if (_showActions) ...[
-                              IconButton(
-                                icon: Icon(
-                                  Icons.add_photo_alternate_outlined,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                  size: 24,
-                                ),
-                                onPressed: _pickAndSendImage,
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.attach_file_outlined,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                  size: 24,
-                                ),
-                                onPressed: _pickAndSendFile,
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.location_on_outlined,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                  size: 24,
-                                ),
-                                onPressed: _sendLocation,
-                              ),
-                            ],
-                            if (!_showActions)
-                              ValueListenableBuilder<TextEditingValue>(
-                                valueListenable: _commandController,
-                                builder: (context, value, child) {
-                                  final hasText = value.text.trim().isNotEmpty;
-                                  final canSend =
-                                      hasText || _forwardingMessage != null;
-                                  return Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (_isAiLoading)
-                                        const Padding(
-                                          padding: EdgeInsets.only(right: 12),
-                                          child: SizedBox(
-                                            width: 22,
-                                            height: 22,
-                                            child: CircularProgressIndicator(
-                                              color: AppTheme.focusBlue,
-                                              strokeWidth: 2,
-                                            ),
-                                          ),
-                                        )
-                                      else if (canSend)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            right: 4,
-                                          ),
-                                          child: IconButton(
-                                            icon: Icon(
-                                              _isAiMode
-                                                  ? Icons.auto_awesome_rounded
-                                                  : (_forwardingMessage != null
-                                                      ? Icons.forward_rounded
-                                                      : Icons
-                                                          .arrow_forward_rounded),
-                                              color: isFocusModeActive
-                                                  ? AppTheme.focusBlue
-                                                  : AppTheme.focusBlue,
-                                              size: 26,
-                                            ),
-                                            onPressed: () => _sendCommand(
-                                              _commandController.text,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
+                              ]
+                            : null,
+                      ),
+                      child: Stack(
+                        children: [
+                          // The normal text input field (always in tree to maintain keyboard focus)
+                          Row(
+                            children: [
+                              ValueListenableBuilder<bool>(
+                                valueListenable:
+                                    ComposerPreferences.tipsHiddenListenable,
+                                builder: (context, tipsHidden, _) {
+                                  if (tipsHidden) return const SizedBox.shrink();
+                                  return IconButton(
+                                    tooltip: 'Commands & tips',
+                                    icon: Icon(
+                                      Icons.tips_and_updates_outlined,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                      size: 22,
+                                    ),
+                                    onPressed: _showCommandHelpSheet,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(
+                                      minWidth: 40,
+                                      minHeight: 40,
+                                    ),
                                   );
                                 },
                               ),
-                          ],
-                        ),
-                        // The recording overlay (covers text field while recording)
-                        ValueListenableBuilder<bool>(
-                          valueListenable: _isRecordingNotifier,
-                          builder: (context, isRecording, _) {
-                            if (!isRecording) return const SizedBox.shrink();
-                            return Container(
-                              color: Theme.of(context).colorScheme.surface,
-                              child: Row(
-                                children: [
-                                  const SizedBox(width: 14),
-                                  AnimatedContainer(
-                                    duration: const Duration(milliseconds: 300),
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.red.withValues(
-                                        alpha: 0.2,
-                                      ),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      Icons.mic,
-                                      color: AppTheme.red,
-                                      size: 24,
-                                    ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: TextField(
+                                  controller: _commandController,
+                                  focusNode: _commandFocusNode,
+                                  style: GoogleFonts.inter(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
+                                    fontSize: 15,
                                   ),
-                                  const SizedBox(width: 8),
-                                  ValueListenableBuilder<int>(
-                                    valueListenable: _recordingSecondsNotifier,
-                                    builder: (context, seconds, _) {
-                                      return Text(
-                                        '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}',
-                                        style: GoogleFonts.inter(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurface,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
+                                  decoration: InputDecoration(
+                                    hintText: _isAiMode
+                                        ? 'Ask the AI…'
+                                        : (isFocusModeActive
+                                            ? 'Message $_focusedHandle…'
+                                            : 'Message · @ name  # group'),
+                                    hintStyle: GoogleFonts.inter(
+                                      color: _isAiMode
+                                          ? AppTheme.focusBlue.withValues(
+                                              alpha: 0.85,
+                                            )
+                                          : (isFocusModeActive
+                                              ? AppTheme.focusBlue.withValues(
+                                                  alpha: 0.85,
+                                                )
+                                              : Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurfaceVariant
+                                                  .withValues(alpha: 0.65)),
+                                      fontSize: 15,
+                                    ),
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    contentPadding: EdgeInsets.zero,
+                                    fillColor: Colors.transparent,
+                                  ),
+                                  cursorColor: AppTheme.focusBlue,
+                                  onSubmitted: _sendCommand,
+                                ),
+                              ),
+                              if (_showActions) ...[
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.add_photo_alternate_outlined,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    size: 24,
+                                  ),
+                                  onPressed: _pickAndSendImage,
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.attach_file_outlined,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    size: 24,
+                                  ),
+                                  onPressed: _pickAndSendFile,
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    Icons.location_on_outlined,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    size: 24,
+                                  ),
+                                  onPressed: _sendLocation,
+                                ),
+                              ],
+                              if (!_showActions)
+                                ValueListenableBuilder<TextEditingValue>(
+                                  valueListenable: _commandController,
+                                  builder: (context, value, child) {
+                                    final hasText = value.text.trim().isNotEmpty;
+                                    final canSend =
+                                        hasText || _forwardingMessage != null;
+                                    return Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (canSend)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              right: 4,
+                                            ),
+                                            child: IconButton(
+                                              icon: Icon(
+                                                _isAiMode
+                                                    ? Icons.auto_awesome_rounded
+                                                    : (_forwardingMessage != null
+                                                        ? Icons.forward_rounded
+                                                        : Icons
+                                                            .arrow_forward_rounded),
+                                                color: isFocusModeActive
+                                                    ? AppTheme.focusBlue
+                                                    : AppTheme.focusBlue,
+                                                size: 26,
+                                              ),
+                                              onPressed: () => _sendCommand(
+                                                _commandController.text,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                            ],
+                          ),
+                          // The recording overlay (covers text field while recording)
+                          ValueListenableBuilder<bool>(
+                            valueListenable: _isRecordingNotifier,
+                            builder: (context, isRecording, _) {
+                              if (!isRecording) return const SizedBox.shrink();
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.surface,
+                                  borderRadius: BorderRadius.circular(26),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const SizedBox(width: 14),
+                                    AnimatedContainer(
+                                      duration: const Duration(milliseconds: 300),
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.red.withValues(
+                                          alpha: 0.2,
                                         ),
-                                      );
-                                    },
-                                  ),
-                                  Expanded(
-                                    child: Transform.translate(
-                                      offset: Offset(
-                                        _recordingDragOffset.clamp(-100.0, 0.0),
-                                        0,
+                                        shape: BoxShape.circle,
                                       ),
-                                      child: Center(
-                                        child: Text(
-                                          '< Slide to cancel',
-                                          style: TextStyle(
+                                      child: Icon(
+                                        Icons.mic,
+                                        color: AppTheme.red,
+                                        size: 24,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ValueListenableBuilder<int>(
+                                      valueListenable: _recordingSecondsNotifier,
+                                      builder: (context, seconds, _) {
+                                        return Text(
+                                          '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}',
+                                          style: GoogleFonts.inter(
                                             color: Theme.of(
                                               context,
-                                            ).colorScheme.onSurfaceVariant,
-                                            fontSize: 14,
+                                            ).colorScheme.onSurface,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    Expanded(
+                                      child: Transform.translate(
+                                        offset: Offset(
+                                          _recordingDragOffset.clamp(-100.0, 0.0),
+                                          0,
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            '< Slide to cancel',
+                                            style: TextStyle(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                              fontSize: 14,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    child: AnimatedScale(
-                                      scale: _recordingDragOffset < -50
-                                          ? 1.4
-                                          : 1.0,
-                                      duration: const Duration(
-                                        milliseconds: 150,
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
                                       ),
-                                      child: Icon(
-                                        Icons.delete_outline_rounded,
-                                        color: _recordingDragOffset < -50
-                                            ? AppTheme.red
-                                            : Theme.of(
-                                                context,
-                                              ).colorScheme.onSurfaceVariant,
-                                        size: 26,
+                                      child: AnimatedScale(
+                                        scale: _recordingDragOffset < -50
+                                            ? 1.4
+                                            : 1.0,
+                                        duration: const Duration(
+                                          milliseconds: 150,
+                                        ),
+                                        child: Icon(
+                                          Icons.delete_outline_rounded,
+                                          color: _recordingDragOffset < -50
+                                              ? AppTheme.red
+                                              : Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                          size: 26,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (!_showActions)
+                  GestureDetector(
+                    onLongPressStart: (_) => _startRecording(),
+                    onLongPressMoveUpdate: (details) {
+                      setState(() {
+                        _recordingDragOffset = details.localOffsetFromOrigin.dx;
+                      });
+                      if (_recordingDragOffset < -80) {
+                        _cancelRecording();
+                      }
+                    },
+                    onLongPressEnd: (_) => _stopAndSendRecording(),
+                    child: Container(
+                      height: 54,
+                      width: 54,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outline
+                              .withValues(alpha: 0.3),
+                          width: 1,
                         ),
-                      ],
+                      ),
+                      child: Icon(
+                        Icons.mic,
+                        color: Theme.of(context).colorScheme.onSurface,
+                        size: 24,
+                      ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (!_showActions)
-                GestureDetector(
-                  onLongPressStart: (_) => _startRecording(),
-                  onLongPressMoveUpdate: (details) {
-                    setState(() {
-                      _recordingDragOffset = details.localOffsetFromOrigin.dx;
-                    });
-                    if (_recordingDragOffset < -80) {
-                      _cancelRecording();
-                    }
-                  },
-                  onLongPressEnd: (_) => _stopAndSendRecording(),
-                  child: Container(
-                    height: 54,
-                    width: 54,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F5F5),
-                      borderRadius: BorderRadius.zero,
-                      border: Border.all(color: Colors.white, width: 1.5),
-                    ),
-                    child: const Icon(Icons.mic, color: Colors.black, size: 24),
-                  ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
@@ -5773,7 +6012,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                   if (instructions.isEmpty) return;
 
                   Navigator.pop(context);
-                  setState(() => _isAiLoading = true);
 
                   try {
                     late final BotModel bot;
@@ -5848,8 +6086,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                         ),
                       );
                     }
-                  } finally {
-                    if (mounted) setState(() => _isAiLoading = false);
                   }
                 },
                 child: Text(existingBot == null ? 'CREATE' : 'SAVE'),
@@ -6264,6 +6500,40 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     return text;
   }
 
+  Widget _buildPreviewStatusIcon(MessageStatus? status) {
+    if (status == null) return const SizedBox.shrink();
+    const double size = 13;
+    switch (status) {
+      case MessageStatus.sending:
+        return const Padding(
+          padding: EdgeInsets.only(right: 4),
+          child: SizedBox(
+            width: 10,
+            height: 10,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: Color(0xFF8E8E93),
+            ),
+          ),
+        );
+      case MessageStatus.sent:
+        return const Padding(
+          padding: EdgeInsets.only(right: 4),
+          child: Icon(Icons.check_rounded, size: size, color: Color(0xFF8E8E93)),
+        );
+      case MessageStatus.delivered:
+        return const Padding(
+          padding: EdgeInsets.only(right: 4),
+          child: Icon(Icons.done_all_rounded, size: size, color: Color(0xFF8E8E93)),
+        );
+      case MessageStatus.read:
+        return const Padding(
+          padding: EdgeInsets.only(right: 4),
+          child: Icon(Icons.done_all_rounded, size: size, color: Color(0xFF34C759)),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isUnread = widget.item['isUnread'] ?? false;
@@ -6302,6 +6572,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     String previewSender;
     String previewTime;
     bool previewIsImage;
+    MessageStatus? previewStatus;
     if (latestOptimistic != null) {
       var line = _previewTextFromOptimistic(latestOptimistic);
       if (isGroup && latestOptimistic.type == MessageType.text) {
@@ -6315,11 +6586,17 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
           ? DateFormat('HH:mm').format(latestOptimistic.timestamp!)
           : (widget.item['time'] as String? ?? '');
       previewIsImage = _optimisticPreviewIsImage(latestOptimistic);
+      if (latestOptimistic.senderId == widget.currentUserId) {
+        previewStatus = latestOptimistic.status;
+      }
     } else {
       previewContent = widget.item['content'] as String? ?? '';
       previewSender = widget.item['sender'] as String? ?? '';
       previewTime = widget.item['time'] as String? ?? '';
       previewIsImage = isImage;
+      if (previewSender == 'me') {
+        previewStatus = MessageStatus.sent;
+      }
     }
 
     return AnimatedContainer(
@@ -6446,7 +6723,12 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
                                     height: 1.4,
                                   ),
                                   children: [
-                                    if (isGroup)
+                                    if (previewSender == 'me' && previewStatus != null)
+                                      WidgetSpan(
+                                        alignment: PlaceholderAlignment.middle,
+                                        child: _buildPreviewStatusIcon(previewStatus),
+                                      ),
+                                    if (isGroup && previewSender != 'me' && previewSender.isNotEmpty)
                                       TextSpan(
                                         text: '$previewSender  ',
                                         style: TextStyle(
@@ -7629,45 +7911,58 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
               }
             }
           },
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppTheme.red.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.zero,
-                ),
-                child: const Icon(
-                  Icons.location_on,
-                  color: AppTheme.red,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '📍 Location',
-                    style: GoogleFonts.inter(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.red.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.red.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: const BoxDecoration(
+                    color: AppTheme.red,
+                    shape: BoxShape.circle,
                   ),
-                  Text(
-                    'Tap to open in Maps',
-                    style: GoogleFonts.inter(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 10,
-                    ),
+                  child: const Icon(
+                    Icons.location_on,
+                    color: Colors.white,
+                    size: 16,
                   ),
-                ],
-              ),
-              const SizedBox(width: 6),
-              Icon(Icons.open_in_new, color: iconColor, size: 14),
-            ],
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Shared Location',
+                      style: GoogleFonts.inter(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '${msg.latitude?.toStringAsFixed(4) ?? '0.0000'}, ${msg.longitude?.toStringAsFixed(4) ?? '0.0000'}',
+                      style: GoogleFonts.inter(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.open_in_new_rounded,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  size: 14,
+                ),
+              ],
+            ),
           ),
         );
 

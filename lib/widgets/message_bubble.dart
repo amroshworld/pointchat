@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/message_model.dart';
@@ -29,6 +30,18 @@ class MessageBubble extends StatelessWidget {
     this.showSenderName = false,
   });
 
+  ui.TextDirection _detectTextDirection(String text) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return ui.TextDirection.ltr;
+    final codeUnit = trimmed.codeUnitAt(0);
+    if ((codeUnit >= 0x0590 && codeUnit <= 0x08FF) ||
+        (codeUnit >= 0xFB1D && codeUnit <= 0xFDFF) ||
+        (codeUnit >= 0xFE70 && codeUnit <= 0xFEFF)) {
+      return ui.TextDirection.rtl;
+    }
+    return ui.TextDirection.ltr;
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -36,6 +49,8 @@ class MessageBubble extends StatelessWidget {
     if (isSystem) {
       return _buildSystemMessage(context);
     }
+
+    final textDir = _detectTextDirection(message);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -52,7 +67,7 @@ class MessageBubble extends StatelessWidget {
             color: isMe
                 ? colorScheme.primaryContainer
                 : colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.zero,
+            borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
                 color: colorScheme.shadow.withValues(alpha: 0.05),
@@ -61,7 +76,7 @@ class MessageBubble extends StatelessWidget {
               ),
             ],
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Column(
             crossAxisAlignment:
                 isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -84,13 +99,13 @@ class MessageBubble extends StatelessWidget {
               // Message Content
               if (type == MessageType.audio)
                 VoiceMessagePlayer(
-                  audioUrl:
-                      message, // assuming message contains the URL for the audio
+                  audioUrl: message,
                   isMe: isMe,
                 )
               else
                 Text(
                   message,
+                  textDirection: textDir,
                   style: TextStyle(
                     color: isMe
                         ? colorScheme.onPrimaryContainer
@@ -150,7 +165,7 @@ class MessageBubble extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.zero,
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
             message,
@@ -198,7 +213,7 @@ class DateSeparator extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.zero,
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
             text,

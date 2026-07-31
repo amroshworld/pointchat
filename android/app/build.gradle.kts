@@ -16,7 +16,7 @@ if (hasReleaseKeystore) {
 
 android {
     namespace = "com.amrosh.Pointchat"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 35
     ndkVersion = "29.0.14033849"
 
     compileOptions {
@@ -31,8 +31,8 @@ android {
 
     defaultConfig {
         applicationId = "com.amrosh.Pointchat"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = 24
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         multiDexEnabled = true
@@ -43,7 +43,7 @@ android {
             if (hasReleaseKeystore) {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
             }
         }

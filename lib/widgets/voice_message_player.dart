@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'dart:async';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/cache_service.dart';
 
-/// Voice bubble: tap waveform to jump, −1s / +1s buttons, optional speed (1×–2×),
-/// horizontal fling skips ~1s per strong fling.
+/// Modern Voice Message Player with dynamic waveform, speed controls (1x-2x),
+/// smooth progress ring, and robust audio loading fallback.
 class VoiceMessagePlayer extends StatefulWidget {
   final String audioUrl;
   final bool isMe;
@@ -22,6 +23,7 @@ class VoiceMessagePlayer extends StatefulWidget {
 class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
+  bool _isLoading = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   StreamSubscription? _durationSubscription;
@@ -51,7 +53,8 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
       if (mounted) setState(() => _position = position);
     });
 
-    _playerCompleteSubscription = _audioPlayer.onPlayerComplete.listen((event) {
+    _playerCompleteSubscription =
+        _audioPlayer.onPlayerComplete.listen((event) {
       if (mounted) {
         setState(() {
           _isPlaying = false;
@@ -62,9 +65,8 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
       }
     });
 
-    _playerStateChangeSubscription = _audioPlayer.onPlayerStateChanged.listen((
-      state,
-    ) {
+    _playerStateChangeSubscription =
+        _audioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) {
         setState(() {
           _isPlaying = state == PlayerState.playing;
@@ -78,12 +80,9 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
       );
       if (mounted) {
         _localAudioPath = fileInfo.file.path;
-        await _audioPlayer.setSourceDeviceFile(_localAudioPath!);
       }
-    } catch (e) {
-      if (mounted) {
-        await _audioPlayer.setSourceUrl(widget.audioUrl);
-      }
+    } catch (_) {
+      // Fallback directly to URL source if caching fails
     }
   }
 
@@ -98,24 +97,28 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
   }
 
   Future<void> _togglePlay() async {
-    if (_isPlaying) {
-      await _audioPlayer.pause();
-    } else {
-      await _audioPlayer.setPlaybackRate(_playbackRate);
-      if (_localAudioPath != null) {
-        await _audioPlayer.play(DeviceFileSource(_localAudioPath!));
+    if (_isLoading) return;
+    try {
+      if (_isPlaying) {
+        await _audioPlayer.pause();
       } else {
-        await _audioPlayer.play(UrlSource(widget.audioUrl));
-      }
-    }
-  }
+        setState(() => _isLoading = true);
+        await _audioPlayer.setPlaybackRate(_playbackRate);
 
-  Future<void> _seekBy(int deltaMs) async {
-    if (_duration == Duration.zero) return;
-    var ms = _position.inMilliseconds + deltaMs;
-    if (ms < 0) ms = 0;
-    if (ms > _duration.inMilliseconds) ms = _duration.inMilliseconds;
-    await _audioPlayer.seek(Duration(milliseconds: ms));
+        if (_localAudioPath != null) {
+          await _audioPlayer.play(DeviceFileSource(_localAudioPath!));
+        } else {
+          await _audioPlayer.play(UrlSource(widget.audioUrl));
+        }
+      }
+    } catch (e) {
+      // Fallback try UrlSource
+      try {
+        await _audioPlayer.play(UrlSource(widget.audioUrl));
+      } catch (_) {}
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   void _seekToFraction(double fraction) {
@@ -136,147 +139,176 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
 
   String _formatDuration(Duration d) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
-    String twoDigitMinutes = twoDigits(d.inMinutes.remainder(60));
-    String twoDigitSeconds = twoDigits(d.inSeconds.remainder(60));
-    return '$twoDigitMinutes:$twoDigitSeconds';
+    String minutes = twoDigits(d.inMinutes.remainder(60));
+    String seconds = twoDigits(d.inSeconds.remainder(60));
+    return '$minutes:$seconds';
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final fgColor =
-        widget.isMe ? colorScheme.onPrimaryContainer : colorScheme.onSurface;
+    final activeColor = widget.isMe
+        ? colorScheme.primary
+        : const Color(0xFF007AFF);
+    final fgColor = widget.isMe
+        ? colorScheme.onPrimaryContainer
+        : colorScheme.onSurface;
 
-    return GestureDetector(
-      onHorizontalDragEnd: (details) {
-        final v = details.primaryVelocity ?? 0;
-        if (v > 700) {
-          unawaited(_seekBy(1000));
-        } else if (v < -700) {
-          unawaited(_seekBy(-1000));
-        }
-      },
-      child: SizedBox(
-        width: 260,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                GestureDetector(
-                  onLongPress: _cycleSpeed,
-                  onTap: _togglePlay,
-                  child: Icon(
-                    _isPlaying
-                        ? Icons.pause_circle_filled
-                        : Icons.play_circle_fill,
-                    color: fgColor,
-                    size: 36,
+    final progress = _duration.inMilliseconds == 0
+        ? 0.0
+        : (_position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0);
+
+    return Container(
+      width: 250,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: widget.isMe
+            ? activeColor.withValues(alpha: 0.12)
+            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: activeColor.withValues(alpha: 0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Play/Pause button with circular progress ring
+              GestureDetector(
+                onTap: _togglePlay,
+                child: SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CircularProgressIndicator(
+                        value: progress,
+                        strokeWidth: 2.5,
+                        backgroundColor: activeColor.withValues(alpha: 0.2),
+                        valueColor: AlwaysStoppedAnimation<Color>(activeColor),
+                      ),
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: activeColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: _isLoading
+                            ? const Padding(
+                                padding: EdgeInsets.all(7.0),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Icon(
+                                _isPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 4),
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                  icon: Icon(Icons.replay_5_rounded, color: fgColor, size: 22),
-                  onPressed: () => _seekBy(-1000),
-                ),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTapDown: (details) {
-                          final w = constraints.maxWidth;
-                          if (w <= 0) return;
-                          _seekToFraction(details.localPosition.dx / w);
-                        },
-                        child: SizedBox(
-                          height: 36,
-                          child: CustomPaint(
-                            painter: _WaveformPainter(
-                              progress: _duration.inMilliseconds == 0
-                                  ? 0.0
-                                  : _position.inMilliseconds /
-                                      _duration.inMilliseconds,
-                              color: fgColor.withValues(alpha: 0.3),
-                              progressColor: fgColor,
-                            ),
+              ),
+
+              const SizedBox(width: 10),
+
+              // Dynamic Waveform
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (details) {
+                        final w = constraints.maxWidth;
+                        if (w <= 0) return;
+                        _seekToFraction(details.localPosition.dx / w);
+                      },
+                      onHorizontalDragUpdate: (details) {
+                        final w = constraints.maxWidth;
+                        if (w <= 0) return;
+                        _seekToFraction(details.localPosition.dx / w);
+                      },
+                      child: SizedBox(
+                        height: 32,
+                        child: CustomPaint(
+                          painter: _ModernWaveformPainter(
+                            progress: progress,
+                            color: fgColor.withValues(alpha: 0.3),
+                            progressColor: activeColor,
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                  icon: Icon(Icons.forward_5_rounded, color: fgColor, size: 22),
-                  onPressed: () => _seekBy(1000),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  _formatDuration(
-                    _position.inMilliseconds > 0 ? _position : _duration,
+              ),
+
+              const SizedBox(width: 8),
+
+              // Playback Speed Button
+              GestureDetector(
+                onTap: _cycleSpeed,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3,
                   ),
-                  style: TextStyle(
-                    color: fgColor.withValues(alpha: 0.8),
-                    fontSize: 11,
+                  decoration: BoxDecoration(
+                    color: activeColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.only(left: 40, top: 2),
-              child: Row(
-                children: [
-                  Text(
-                    'Tap bar to jump · fling ↔ ±1s',
-                    style: TextStyle(
-                      color: fgColor.withValues(alpha: 0.45),
-                      fontSize: 9,
+                  child: Text(
+                    '${_playbackRate == 1.0 || _playbackRate == 2.0 ? _playbackRate.toStringAsFixed(0) : _playbackRate}x',
+                    style: GoogleFonts.inter(
+                      color: activeColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: _cycleSpeed,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: fgColor.withValues(alpha: 0.35),
-                        ),
-                      ),
-                      child: Text(
-                        '${_playbackRate == 1.0 || _playbackRate == 2.0 ? _playbackRate.toStringAsFixed(0) : _playbackRate}x',
-                        style: TextStyle(
-                          color: fgColor.withValues(alpha: 0.85),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 4),
+
+          // Duration Text
+          Padding(
+            padding: const EdgeInsets.only(left: 48),
+            child: Text(
+              _isPlaying || _position.inMilliseconds > 0
+                  ? '${_formatDuration(_position)} / ${_formatDuration(_duration)}'
+                  : _formatDuration(_duration),
+              style: GoogleFonts.inter(
+                color: fgColor.withValues(alpha: 0.6),
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _WaveformPainter extends CustomPainter {
+class _ModernWaveformPainter extends CustomPainter {
   final double progress;
   final Color color;
   final Color progressColor;
 
-  _WaveformPainter({
+  _ModernWaveformPainter({
     required this.progress,
     required this.color,
     required this.progressColor,
@@ -285,48 +317,23 @@ class _WaveformPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..strokeWidth = 3
+      ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round;
 
-    final barCount = 30;
+    const barCount = 28;
     final spacing = size.width / barCount;
 
+    // Organic waveform height pattern
     final heights = [
-      0.3,
-      0.5,
-      0.8,
-      0.4,
-      0.6,
-      0.9,
-      0.7,
-      0.5,
-      0.3,
-      0.4,
-      0.6,
-      0.8,
-      1.0,
-      0.7,
-      0.5,
-      0.4,
-      0.6,
-      0.8,
-      0.5,
-      0.3,
-      0.4,
-      0.6,
-      0.7,
-      0.5,
-      0.4,
-      0.3,
-      0.5,
-      0.7,
-      0.4,
-      0.3,
+      0.35, 0.55, 0.85, 0.45, 0.65, 0.95, 0.75, 0.50,
+      0.30, 0.45, 0.65, 0.85, 1.00, 0.70, 0.55, 0.40,
+      0.60, 0.80, 0.50, 0.35, 0.45, 0.65, 0.75, 0.55,
+      0.40, 0.30, 0.50, 0.70,
     ];
 
     for (int i = 0; i < barCount; i++) {
       final x = i * spacing + (spacing / 2);
-      final height = size.height * heights[i % heights.length];
+      final height = (size.height * heights[i % heights.length]).clamp(4.0, size.height);
       final yOffset = (size.height - height) / 2;
 
       final isPast = (i / barCount) <= progress;
@@ -337,7 +344,7 @@ class _WaveformPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
+  bool shouldRepaint(covariant _ModernWaveformPainter oldDelegate) {
     return oldDelegate.progress != progress ||
         oldDelegate.color != color ||
         oldDelegate.progressColor != progressColor;

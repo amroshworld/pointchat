@@ -401,44 +401,59 @@ class ChatService {
 
   // Mark messages as read
   Future<void> markMessagesAsRead(String chatId, String userId) async {
-    final result = await _databases.listRows(
-      databaseId: AppwriteConstants.databaseId,
-      tableId: AppwriteConstants.messagesCollection,
-      queries: [
-        Query.equal('chatId', chatId),
-        Query.notEqual('senderId', userId),
-        Query.equal('isRead', false),
-        Query.limit(100),
-      ],
-    );
-
-    for (final doc in result.rows) {
-      final readBy = _decodeJsonMap(doc.data['readBy']);
-      readBy[userId] = true;
-
-      await _databases.updateRow(
+    try {
+      final chatDoc = await _databases.getRow(
         databaseId: AppwriteConstants.databaseId,
-        tableId: AppwriteConstants.messagesCollection,
-        rowId: doc.$id,
-        data: {'isRead': true, 'readBy': jsonEncode(readBy)},
+        tableId: AppwriteConstants.chatsCollection,
+        rowId: chatId,
       );
+
+      final seenEnabledMap = _decodeJsonMap(chatDoc.data['seenEnabled']);
+      final mySeenEnabled = seenEnabledMap[userId] ?? true;
+
+      if (mySeenEnabled) {
+        final result = await _databases.listRows(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.messagesCollection,
+          queries: [
+            Query.equal('chatId', chatId),
+            Query.notEqual('senderId', userId),
+            Query.equal('isRead', false),
+            Query.limit(100),
+          ],
+        );
+
+        for (final doc in result.rows) {
+          final readBy = _decodeJsonMap(doc.data['readBy']);
+          readBy[userId] = true;
+
+          await _databases.updateRow(
+            databaseId: AppwriteConstants.databaseId,
+            tableId: AppwriteConstants.messagesCollection,
+            rowId: doc.$id,
+            data: {
+              'isRead': true,
+              'readBy': jsonEncode(readBy),
+              'status': MessageStatus.read.name,
+            },
+          );
+        }
+      }
+
+      // Reset unread count for user
+      final unreadCount = _decodeJsonMap(chatDoc.data['unreadCount']);
+      if ((unreadCount[userId] ?? 0) != 0) {
+        unreadCount[userId] = 0;
+        await _databases.updateRow(
+          databaseId: AppwriteConstants.databaseId,
+          tableId: AppwriteConstants.chatsCollection,
+          rowId: chatId,
+          data: {'unreadCount': jsonEncode(unreadCount)},
+        );
+      }
+    } catch (e) {
+      debugPrint('markMessagesAsRead error: $e');
     }
-
-    // Reset unread count for user
-    final chatDoc = await _databases.getRow(
-      databaseId: AppwriteConstants.databaseId,
-      tableId: AppwriteConstants.chatsCollection,
-      rowId: chatId,
-    );
-    final unreadCount = _decodeJsonMap(chatDoc.data['unreadCount']);
-    unreadCount[userId] = 0;
-
-    await _databases.updateRow(
-      databaseId: AppwriteConstants.databaseId,
-      tableId: AppwriteConstants.chatsCollection,
-      rowId: chatId,
-      data: {'unreadCount': jsonEncode(unreadCount)},
-    );
   }
 
   // ── Seen Status Management ──
