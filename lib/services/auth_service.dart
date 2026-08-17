@@ -10,7 +10,6 @@ import '../appwrite_client.dart';
 import '../models/user_model.dart';
 import '../utils/chat_privacy_preferences.dart';
 import 'notification_service.dart';
-import 'subscription_service.dart';
 
 class AuthService {
   final Account _account = appwriteAccount;
@@ -52,7 +51,6 @@ class AuthService {
     final user = await _account.get();
     await _saveUserToDatabase(user);
     _cacheCurrentUser(user);
-    await SubscriptionService.instance.logIn(user.$id);
   }
 
   // Sign in with Google (requires Google OAuth provider in Appwrite console)
@@ -77,7 +75,6 @@ class AuthService {
     final user = await _waitForOAuthSessionUser();
     await _saveUserToDatabase(user);
     _cacheCurrentUser(user);
-    await SubscriptionService.instance.logIn(user.$id);
   }
 
   Future<void> _signInWithGoogleMobile() async {
@@ -116,7 +113,6 @@ class AuthService {
     final user = await _account.get();
     await _saveUserToDatabase(user);
     _cacheCurrentUser(user);
-    await SubscriptionService.instance.logIn(user.$id);
   }
 
   Future<models.User> _waitForOAuthSessionUser() async {
@@ -147,8 +143,7 @@ class AuthService {
       final user = await _account.get();
       _cacheCurrentUser(user);
       await _saveUserToDatabase(user);
-      await SubscriptionService.instance.logIn(user.$id);
-
+  
       // Also load photoUrl from database
       try {
         final doc = await _databases.getRow(
@@ -298,7 +293,6 @@ class AuthService {
     cachedUserPhotoUrl = '';
     cachedUserEmail = '';
     await ChatPrivacyPreferences.clearAll();
-    await SubscriptionService.instance.logOut();
     await NotificationService.instance.unbind();
   }
 
@@ -392,7 +386,6 @@ class AuthService {
     cachedUserPhotoUrl = '';
     cachedUserEmail = '';
     await ChatPrivacyPreferences.clearAll();
-    await SubscriptionService.instance.logOut();
     await NotificationService.instance.unbind();
   }
 }

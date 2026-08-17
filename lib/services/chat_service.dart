@@ -290,36 +290,6 @@ class ChatService {
     return controller.stream;
   }
 
-  // Get recent unread messages for AI summary
-  Future<List<MessageModel>> getUnreadMessages(
-    String chatId,
-    String userId,
-  ) async {
-    try {
-      final result = await _databases.listRows(
-        databaseId: AppwriteConstants.databaseId,
-        tableId: AppwriteConstants.messagesCollection,
-        queries: [
-          Query.equal('chatId', chatId),
-          Query.orderDesc('\$createdAt'),
-          Query.limit(50),
-        ],
-      );
-
-      final allMessages = result.rows
-          .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
-          .toList();
-
-      // Filter out messages that the user has already read
-      return allMessages.where((msg) {
-        final readBy = msg.readBy;
-        return !(readBy[userId] ?? false);
-      }).toList();
-    } catch (e) {
-      return [];
-    }
-  }
-
   // Send a message
   Future<void> sendMessage({
     String? messageId,
@@ -381,8 +351,12 @@ class ChatService {
       final participants =
           List<String>.from(chatDoc.data['participants'] ?? []);
 
-      for (final participantId in participants) {
-        unreadCount[participantId] = 0;
+      for (final participantId in participants.toSet()) {
+        if (participantId == lastMessageSenderId) {
+          unreadCount[participantId] = 0;
+        } else {
+          unreadCount[participantId] = (unreadCount[participantId] ?? 0) + 1;
+        }
       }
 
       await _databases.updateRow(
@@ -673,22 +647,26 @@ class ChatService {
 
   // Delete a chat
   Future<void> deleteChat(String chatId, List<String> participants) async {
-    // Delete all messages for this chat
-    final messages = await _databases.listRows(
-      databaseId: AppwriteConstants.databaseId,
-      tableId: AppwriteConstants.messagesCollection,
-      queries: [Query.equal('chatId', chatId), Query.limit(500)],
-    );
+    // Delete all messages for this chat (in batches of 500)
+    while (true) {
+      final messages = await _databases.listRows(
+        databaseId: AppwriteConstants.databaseId,
+        tableId: AppwriteConstants.messagesCollection,
+        queries: [Query.equal('chatId', chatId), Query.limit(500)],
+      );
+      if (messages.rows.isEmpty) break;
 
-    await Future.wait(
-      messages.rows.map(
-        (doc) => _databases.deleteRow(
-          databaseId: AppwriteConstants.databaseId,
-          tableId: AppwriteConstants.messagesCollection,
-          rowId: doc.$id,
+      await Future.wait(
+        messages.rows.map(
+          (doc) => _databases.deleteRow(
+            databaseId: AppwriteConstants.databaseId,
+            tableId: AppwriteConstants.messagesCollection,
+            rowId: doc.$id,
+          ),
         ),
-      ),
-    );
+      );
+      if (messages.rows.length < 500) break;
+    }
 
     // Delete chat document
     await _databases.deleteRow(

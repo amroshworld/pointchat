@@ -323,35 +323,46 @@ class _ChatListScreenState extends State<ChatListScreen> {
     try {
       if (_isSelectionMode && _selectedChatIds.isNotEmpty) {
         _messageController.clear();
+        final targetIds = _selectedChatIds.toList();
+        final failedIds = <String>[];
         await Future.wait(
-          _selectedChatIds.map(
-            (chatId) {
-              final messageId = ID.unique();
-              final optimisticMsg = MessageModel(
+          targetIds.map((chatId) async {
+            final messageId = ID.unique();
+            final optimisticMsg = MessageModel(
+              messageId: messageId,
+              chatId: chatId,
+              senderId: widget.currentUserId,
+              senderName: senderName,
+              senderPhotoUrl: senderPhoto,
+              text: text,
+              type: MessageType.text,
+              timestamp: DateTime.now(),
+              status: MessageStatus.sending,
+            );
+            setState(() {
+              _optimisticMessages.add(optimisticMsg);
+            });
+            try {
+              await _chatService.sendMessage(
                 messageId: messageId,
                 chatId: chatId,
                 senderId: widget.currentUserId,
                 senderName: senderName,
                 senderPhotoUrl: senderPhoto,
                 text: text,
-                type: MessageType.text,
-                timestamp: DateTime.now(),
-                status: MessageStatus.sending,
               );
-              setState(() {
-                _optimisticMessages.add(optimisticMsg);
-              });
-              return _chatService.sendMessage(
-                messageId: messageId,
-                chatId: chatId,
-                senderId: widget.currentUserId,
-                senderName: senderName,
-                senderPhotoUrl: senderPhoto,
-                text: text,
-              );
-            },
-          ),
+            } catch (_) {
+              failedIds.add(messageId);
+            }
+          }),
         );
+        if (failedIds.isNotEmpty && mounted) {
+          setState(() {
+            _optimisticMessages.removeWhere(
+              (m) => failedIds.contains(m.messageId),
+            );
+          });
+        }
         _clearSelection();
       } else if (_expandedChatId != null) {
         final messageId = ID.unique();
@@ -370,14 +381,23 @@ class _ChatListScreenState extends State<ChatListScreen> {
           _optimisticMessages.add(optimisticMsg);
         });
         _messageController.clear();
-        await _chatService.sendMessage(
-          messageId: messageId,
-          chatId: _expandedChatId!,
-          senderId: widget.currentUserId,
-          senderName: senderName,
-          senderPhotoUrl: senderPhoto,
-          text: text,
-        );
+        try {
+          await _chatService.sendMessage(
+            messageId: messageId,
+            chatId: _expandedChatId!,
+            senderId: widget.currentUserId,
+            senderName: senderName,
+            senderPhotoUrl: senderPhoto,
+            text: text,
+          );
+        } catch (_) {
+          if (mounted) {
+            setState(() {
+              _optimisticMessages
+                  .removeWhere((m) => m.messageId == messageId);
+            });
+          }
+        }
       }
     } finally {
       if (mounted) {

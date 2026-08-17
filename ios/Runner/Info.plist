@@ -79,5 +79,19 @@
 	</array>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock protected chats with Face ID.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>PointChat needs microphone access to record voice messages.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>PointChat needs access to your photo library to send photos in chats.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>PointChat needs permission to save photos to your library.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>PointChat needs camera access to take photos to send in chats.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>PointChat needs your location to share it in chats.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>PointChat needs your location to share live location with friends in chats.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

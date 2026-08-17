@@ -77,14 +77,23 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
       _messageController.clear();
 
-      await _groupService.sendGroupMessage(
-        messageId: messageId,
-        groupId: widget.groupId,
-        senderId: widget.currentUserId,
-        senderName: cachedUserName,
-        senderPhotoUrl: cachedUserPhotoUrl,
-        text: text,
-      );
+      try {
+        await _groupService.sendGroupMessage(
+          messageId: messageId,
+          groupId: widget.groupId,
+          senderId: widget.currentUserId,
+          senderName: cachedUserName,
+          senderPhotoUrl: cachedUserPhotoUrl,
+          text: text,
+        );
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _optimisticMessages
+                .removeWhere((m) => m.messageId == messageId);
+          });
+        }
+      }
     } finally {
       if (mounted) {
         setState(() {

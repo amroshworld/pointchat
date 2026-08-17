@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:appwrite/appwrite.dart';
 import '../../appwrite_client.dart';
@@ -42,11 +44,24 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isRecording = false;
   bool _isBlockedUser = false;
   final List<MessageModel> _optimisticMessages = [];
+  late final Stream<List<MessageModel>> _messagesStream;
+  StreamSubscription<List<MessageModel>>? _messagesSub;
 
   @override
   void initState() {
     super.initState();
-    _chatService.markMessagesAsRead(widget.chatId, widget.currentUserId);
+    _messagesStream =
+        _chatService.getChatMessages(widget.chatId).asBroadcastStream();
+    _messagesSub = _messagesStream.listen((messages) {
+      final hasUnreadFromOthers = messages.any(
+        (m) =>
+            m.senderId != widget.currentUserId &&
+            !(m.readBy[widget.currentUserId] ?? false),
+      );
+      if (hasUnreadFromOthers) {
+        _chatService.markMessagesAsRead(widget.chatId, widget.currentUserId);
+      }
+    });
     _bootstrapModeration();
     _messageController.addListener(() {
       setState(() {
@@ -187,6 +202,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _messagesSub?.cancel();
     _moderationService.blockedUserIdsListenable.removeListener(
       _onBlockedUsersChanged,
     );
@@ -332,7 +348,7 @@ class _ChatScreenState extends State<ChatScreen> {
           // Messages List
           Expanded(
             child: StreamBuilder<List<MessageModel>>(
-              stream: _chatService.getChatMessages(widget.chatId),
+              stream: _messagesStream,
               builder: (context, snapshot) {
                 final serverMessages = snapshot.data ?? [];
                 final serverMessageIds =
@@ -355,12 +371,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (messages.isEmpty) {
                   return _buildEmptyChat();
                 }
-
-                // Mark messages as read
-                _chatService.markMessagesAsRead(
-                  widget.chatId,
-                  widget.currentUserId,
-                );
 
                 return ListView.builder(
                   controller: _scrollController,

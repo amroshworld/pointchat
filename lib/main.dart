@@ -5,7 +5,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'services/auth_service.dart';
 import 'utils/chat_privacy_preferences.dart';
 import 'services/notification_service.dart';
-import 'services/subscription_service.dart';
 import 'services/analytics_service.dart';
 import 'appwrite_client.dart';
 import 'app.dart';
@@ -23,10 +22,14 @@ void main() async {
   }
 
   // Hide the native Android bottom navigation bar
-  SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.manual,
-    overlays: [SystemUiOverlay.top],
-  );
+  try {
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: [SystemUiOverlay.top],
+    );
+  } catch (e) {
+    debugPrint('SystemUiMode notice: $e');
+  }
 
   // Ping Appwrite server to verify setup
   try {
@@ -36,12 +39,24 @@ void main() async {
     debugPrint('Appwrite Ping Error: $e');
   }
 
-  await SubscriptionService.instance.initialize();
-
   // Load cached user info if session exists
-  await AuthService().loadCurrentUser();
-  await NotificationService.instance.initialize();
-  await ChatPrivacyPreferences.syncAppLockListenable();
+  try {
+    await AuthService().loadCurrentUser();
+  } catch (e) {
+    debugPrint('AuthService loadCurrentUser error: $e');
+  }
+
+  try {
+    await NotificationService.instance.initialize();
+  } catch (e) {
+    debugPrint('NotificationService initialization error: $e');
+  }
+
+  try {
+    await ChatPrivacyPreferences.syncAppLockListenable();
+  } catch (e) {
+    debugPrint('ChatPrivacyPreferences sync error: $e');
+  }
 
   runApp(const ProviderScope(child: FocusChatApp()));
 }

@@ -1,0 +1,10 @@
+# Appfile - Fastlane Project Configuration
+# Set your App Identifiers and Developer Team IDs
+
+app_identifier(ENV['APP_IDENTIFIER'] || "com.amrosh.Pointchat")
+apple_id(ENV['APPLE_ID'] || "amrosh.world@gmail.com")
+itc_team_id(ENV['FASTLANE_ITC_TEAM_ID'] || "KGY5RUQ34C")
+team_id(ENV['FASTLANE_TEAM_ID'] || "KGY5RUQ34C")
+
+# Android Package Name
+package_name(ENV['PACKAGE_NAME'] || "com.amrosh.Pointchat")

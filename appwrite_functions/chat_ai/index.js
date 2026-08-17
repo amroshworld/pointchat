@@ -1,7 +1,8 @@
 const { GoogleGenAI, ThinkingLevel } = require('@google/genai');
 
 const MODEL_NAME = 'gemini-3.6-flash';
-const DEFAULT_SYSTEM_PROMPT = 'You are a helpful AI assistant for PointChat.';
+const DEFAULT_SYSTEM_PROMPT =
+  'You are a helpful AI assistant for PointChat. Provide concise, direct answers. Never quote, repeat, or echo the user\'s prompt or message at the start of your response.';
 
 function parseBody(req, log) {
   if (!req.body) {

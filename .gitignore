@@ -49,3 +49,10 @@ app.*.map.json
 # iOS signing files may be committed on purpose in this private repo.
 # See ios/ci/README.md for the supported filenames used by CI.
 
+
+# Fastlane secrets
+fastlane/.env
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output

@@ -75,11 +75,12 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
     });
 
     try {
-      final fileInfo = await MediaCacheManager.instance.downloadFile(
+      final localPath = await MediaCacheManager.downloadWithExtension(
         widget.audioUrl,
+        'm4a',
       );
-      if (mounted) {
-        _localAudioPath = fileInfo.file.path;
+      if (mounted && localPath != null) {
+        _localAudioPath = localPath;
       }
     } catch (_) {
       // Fallback directly to URL source if caching fails
@@ -115,7 +116,15 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
       // Fallback try UrlSource
       try {
         await _audioPlayer.play(UrlSource(widget.audioUrl));
-      } catch (_) {}
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not play this voice message.'),
+            ),
+          );
+        }
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -179,44 +188,49 @@ class _VoiceMessagePlayerState extends State<VoiceMessagePlayer> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Play/Pause button with circular progress ring
-              GestureDetector(
-                onTap: _togglePlay,
-                child: SizedBox(
-                  width: 38,
-                  height: 38,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      CircularProgressIndicator(
-                        value: progress,
-                        strokeWidth: 2.5,
-                        backgroundColor: activeColor.withValues(alpha: 0.2),
-                        valueColor: AlwaysStoppedAnimation<Color>(activeColor),
-                      ),
-                      Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: activeColor,
-                          shape: BoxShape.circle,
+              Semantics(
+                button: true,
+                label: _isPlaying ? 'Pause voice message' : 'Play voice message',
+                child: GestureDetector(
+                  onTap: _togglePlay,
+                  child: SizedBox(
+                    width: 38,
+                    height: 38,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                          value: progress,
+                          strokeWidth: 2.5,
+                          backgroundColor: activeColor.withValues(alpha: 0.2),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(activeColor),
                         ),
-                        child: _isLoading
-                            ? const Padding(
-                                padding: EdgeInsets.all(7.0),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                        Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: activeColor,
+                            shape: BoxShape.circle,
+                          ),
+                          child: _isLoading
+                              ? const Padding(
+                                  padding: EdgeInsets.all(7.0),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Icon(
+                                  _isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
                                   color: Colors.white,
+                                  size: 20,
                                 ),
-                              )
-                            : Icon(
-                                _isPlaying
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

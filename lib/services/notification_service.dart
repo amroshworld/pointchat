@@ -28,24 +28,47 @@ class NotificationService {
   RealtimeSubscription? _inviteSubscription;
   String? _currentUserId;
   bool _initialized = false;
+  int _notificationId = 0;
 
   Future<void> initialize() async {
     if (_initialized) {
       return;
     }
 
-    const settings = InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/launcher_icon'),
-    );
+    try {
+      const settings = InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/launcher_icon'),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        ),
+        macOS: DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        ),
+      );
 
-    await _plugin.initialize(settings);
+      await _plugin.initialize(settings);
 
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.createNotificationChannel(_channel);
-    await androidPlugin?.requestNotificationsPermission();
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.createNotificationChannel(_channel);
+      await androidPlugin?.requestNotificationsPermission();
 
-    _initialized = true;
+      final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
+      await iosPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      _initialized = true;
+    } catch (e) {
+      debugPrint('NotificationService initialization error: $e');
+    }
   }
 
   Future<void> bindToUser(String userId) async {
@@ -111,7 +134,7 @@ class NotificationService {
         } catch (_) {}
 
         await _plugin.show(
-          DateTime.now().millisecondsSinceEpoch.remainder(1 << 31) + 1,
+          _nextNotificationId(),
           title,
           'Open PointChat to accept or decline.',
           NotificationDetails(
@@ -121,6 +144,11 @@ class NotificationService {
               channelDescription: _channel.description,
               importance: Importance.high,
               priority: Priority.high,
+            ),
+            iOS: const DarwinNotificationDetails(
+              presentAlert: true,
+              presentBadge: true,
+              presentSound: true,
             ),
           ),
         );
@@ -136,6 +164,11 @@ class NotificationService {
     _inviteSubscription?.close();
     _inviteSubscription = null;
     _currentUserId = null;
+  }
+
+  int _nextNotificationId() {
+    _notificationId = (_notificationId + 1) % (1 << 31);
+    return _notificationId;
   }
 
   Future<void> _handleIncomingMessage(
@@ -155,7 +188,7 @@ class NotificationService {
     }
 
     await _plugin.show(
-      DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+      _nextNotificationId(),
       target.title,
       _previewFor(message),
       NotificationDetails(
@@ -165,6 +198,11 @@ class NotificationService {
           channelDescription: _channel.description,
           importance: Importance.high,
           priority: Priority.high,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
         ),
       ),
     );

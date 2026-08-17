@@ -3,12 +3,11 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show ImageFilter;
 import 'dart:math' as math;
-import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/theme_provider.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:appwrite/appwrite.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -17,9 +16,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../appwrite_client.dart';
 import '../../services/auth_service.dart';
 import '../../services/cache_service.dart';
-import '../../services/ai_service.dart';
 import '../../services/notification_service.dart';
-import '../../services/subscription_service.dart';
 import '../../services/moderation_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
@@ -37,13 +34,10 @@ import '../../services/group_service.dart';
 import '../../services/invite_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/user_service.dart';
-import '../../services/bot_service.dart';
 import '../../models/group_model.dart';
-import '../../models/bot_model.dart';
 import '../../models/chat_model.dart';
 import '../../models/user_model.dart';
 import '../../models/message_model.dart';
-import '../subscription/ai_subscription_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/voice_message_player.dart';
 import '../../utils/pointchat_tips.dart';
@@ -54,26 +48,7 @@ import '../../utils/chat_privacy_preferences.dart';
 import '../../widgets/four_digit_pin_entry.dart';
 import '../settings/blocked_users_screen.dart';
 import '../settings/chat_security_panel.dart';
-
-/// Shown when typing `@` so features like `@ai` are discoverable.
-class _AtCommandSuggestion {
-  final String insertStem;
-  final String label;
-  final String hint;
-  const _AtCommandSuggestion({
-    required this.insertStem,
-    required this.label,
-    required this.hint,
-  });
-}
-
-const _kAtCommandHints = <_AtCommandSuggestion>[
-  _AtCommandSuggestion(
-    insertStem: 'ai ',
-    label: '@ai',
-    hint: 'PointChat AI — private notes thread (use /newbot for custom bots)',
-  ),
-];
+import '../settings/pin_setup_screen.dart';
 
 class UnifiedStreamScreen extends ConsumerStatefulWidget {
   final String currentUserId;
@@ -110,7 +85,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
   final _groupService = GroupService();
   final _inviteService = InviteService();
   final _userService = UserService();
-  final _botService = BotService();
   final _authService = AuthService();
   final _moderationService = ModerationService.instance;
   late final String currentUserId = widget.currentUserId;
@@ -142,10 +116,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
   Timer? _mentionSearchDebounce;
   StreamSubscription<Set<String>>? _participantIdsSub;
   StreamSubscription<List<Map<String, dynamic>>>? _recentOrderSub;
-
-  // AI state
-  bool _isAiMode = false;
-  final AiService _aiService = AiService();
+  StreamSubscription<UserModel?>? _currentUserSub;
+  StreamSubscription<List<UserModel>>? _allUsersSub;
+  StreamSubscription<List<GroupModel>>? _groupsSub;
 
   bool _showActions = false;
   final ValueNotifier<bool> _isRecordingNotifier = ValueNotifier<bool>(false);
@@ -261,19 +234,48 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         if (authed) return true;
       }
     } catch (_) {}
-    final storedPin = await ChatPrivacyPreferences.getPrivacyPin();
+    var storedPin = await ChatPrivacyPreferences.getPrivacyPin();
     if (storedPin.isEmpty) {
-      if (mounted) {
+      if (!mounted) return false;
+      final shouldSet = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('PIN not set'),
+          content: Text(
+            'This chat is locked but no PIN is set on this device. '
+            'Set a 4-digit PIN now to open it.',
+            style: GoogleFonts.inter(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Set PIN'),
+            ),
+          ],
+        ),
+      );
+      if (shouldSet != true || !mounted) return false;
+      await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => const PinSetupScreen()),
+      );
+      if (!mounted) return false;
+      storedPin = await ChatPrivacyPreferences.getPrivacyPin();
+      if (storedPin.isEmpty) {
+        if (!mounted) return false;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Set a backup PIN under Settings (@you) → Chats & lock.',
+              'PIN was not set — chat stays locked.',
               style: GoogleFonts.inter(),
             ),
           ),
         );
+        return false;
       }
-      return false;
     }
     if (!mounted) return false;
 
@@ -547,43 +549,34 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           if (_blockedUserIds.contains(otherUserId)) {
             continue;
           }
-          final isAiSelfChat = chat.isSelfParticipantChat;
-          final otherUser = isAiSelfChat ? null : usersMap[otherUserId];
-          final isBotDm = otherUser?.isBot ?? false;
-          // Hide empty DMs except AI thread and custom bots (newly created bots
-          // have no lastMessage yet and would otherwise never appear).
-          if (chat.lastMessage.isEmpty && !isAiSelfChat && !isBotDm) {
+          // AI feature removed: hide self AI threads and bot conversations.
+          if (chat.isSelfParticipantChat) {
+            continue;
+          }
+          final otherUser = usersMap[otherUserId];
+          if (otherUser == null || otherUser.isBot) {
+            continue;
+          }
+          if (chat.lastMessage.isEmpty) {
             continue;
           }
 
-          final isOnline = otherUser?.isOnline ?? false;
-          final photoUrl = otherUser?.photoUrl;
-          final emptyDmHint = isAiSelfChat
-              ? 'Tap to chat with AI'
-              : (isBotDm ? 'Tap to open bot' : '');
+          final isOnline = otherUser.isOnline;
+          final photoUrl = otherUser.photoUrl;
 
           merged.add({
             'type': 'dm',
             'id': chat.chatId,
             'otherUserId': otherUserId,
             'timeRaw': chat.lastMessageTime ?? DateTime.now(),
-            'conversationTitle': isAiSelfChat
-                ? 'PointChat AI'
-                : (otherUser?.displayName ?? 'Chat'),
-            'handle': isAiSelfChat
-                ? '@ai'
-                : (otherUser != null
-                    ? _formatHandle(otherUser.displayName)
-                    : '@unknown'),
-            'isAiSelfChat': isAiSelfChat,
-            'isBotDm': isBotDm,
+            'conversationTitle': otherUser.displayName,
+            'handle': _formatHandle(otherUser.displayName),
             'sender': chat.lastMessage.isEmpty
                 ? ''
                 : (chat.lastMessageSenderId == currentUserId
                     ? 'me'
-                    : (isAiSelfChat ? 'AI' : (otherUser?.displayName ?? ''))),
-            'content':
-                chat.lastMessage.isEmpty ? emptyDmHint : chat.lastMessage,
+                    : otherUser.displayName),
+            'content': chat.lastMessage,
             'time': chat.lastMessageTime != null
                 ? DateFormat('HH:mm').format(chat.lastMessageTime!)
                 : '',
@@ -663,7 +656,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       },
     ).asBroadcastStream();
 
-    _allUsersStream.listen((users) {
+    _allUsersSub = _allUsersStream.listen((users) {
       if (mounted) {
         setState(() {
           _allUsers = users;
@@ -675,7 +668,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       }
     });
 
-    _userService.getUserStream(currentUserId).listen((user) {
+    _currentUserSub = _userService.getUserStream(currentUserId).listen((user) {
       if (mounted) {
         setState(() {
           _currentUserModel = user;
@@ -683,7 +676,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       }
     });
 
-    _groupsStream.listen((groups) {
+    _groupsSub = _groupsStream.listen((groups) {
       if (mounted) {
         setState(() {
           _allGroups = groups
@@ -883,16 +876,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
               ),
               _helpRow(
                 ctx,
-                '@ai',
-                'PointChat AI — messages go only to your private AI thread',
-              ),
-              _helpRow(
-                ctx,
-                '/newbot Name',
-                'Create a custom bot (type after the command)',
-              ),
-              _helpRow(
-                ctx,
                 '/setting',
                 'Open Settings: account, privacy, PIN & app lock, appearance',
               ),
@@ -950,39 +933,10 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     final lastSlash = textBeforeCursor.lastIndexOf('/');
     final lastSpace = textBeforeCursor.lastIndexOf(' ');
 
-    // Detect /ai mode — check if text contains /
-    /* AI FEATURE TEMPORARILY HIDDEN
-    final slashIndex = text.indexOf('/');
-    if (slashIndex >= 0) {
-      // Check if there's at least one target before the /
-      final beforeSlash = text.substring(0, slashIndex).trim();
-      final hasTarget =
-          _hasExplicitTarget(beforeSlash) || _focusedHandle != null;
-      setState(() {
-        _isAiMode = hasTarget;
-      });
-    } else {
-      setState(() {
-        _isAiMode = false;
-      });
-    }
-    */
-    setState(() {
-      _isAiMode = false;
-    });
-
     if (lastAt > lastSpace && lastAt >= 0) {
       final rawAfterAt = textBeforeCursor.substring(lastAt + 1);
       final query = _normalizeHandleToken(rawAfterAt);
       final rawTrim = rawAfterAt.trim();
-
-      final cmdMatches = <_AtCommandSuggestion>[];
-      for (final c in _kAtCommandHints) {
-        final stemNorm = _normalizeHandleToken(c.insertStem);
-        if (query.isEmpty || stemNorm.startsWith(query)) {
-          cmdMatches.add(c);
-        }
-      }
 
       if (_mentionScopeEveryone && rawTrim.length >= 2) {
         _scheduleMentionGlobalSearch(rawTrim);
@@ -1036,7 +990,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       setState(() {
         _isMentioning = true;
         _activeMentionKind = '@';
-        _mentionSuggestions = [...cmdMatches, ...userMatches];
+        _mentionSuggestions = userMatches;
       });
     } else if (lastHash > lastSpace && lastHash >= 0) {
       _mentionSearchDebounce?.cancel();
@@ -1064,11 +1018,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       final query = textBeforeCursor.substring(lastSlash + 1).toLowerCase();
       final slashOptions = <String>[
         '/setting',
-        '/newbot',
-        // AI commands hidden for now
-        // '/summarize',
-        // '/summarize unread',
-        // '/summarize conversation',
       ];
       setState(() {
         _isMentioning = true;
@@ -1104,6 +1053,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     _stopHeartbeat();
     _participantIdsSub?.cancel();
     _recentOrderSub?.cancel();
+    _currentUserSub?.cancel();
+    _allUsersSub?.cancel();
+    _groupsSub?.cancel();
     _mentionSearchDebounce?.cancel();
     _composerTipTimer?.cancel();
     _commandController.removeListener(_onCommandChanged);
@@ -1225,26 +1177,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     );
   }
 
-  Future<GroupModel?> _resolveGroupForAiContext(String handleWithHash) async {
-    final parsed = GroupHandleResolver.parseAfterHash(
-      handleWithHash.substring(1),
-    );
-    final matches = GroupHandleResolver.matchingByName(
-      _allGroups,
-      parsed.nameToken,
-    );
-    if (matches.isEmpty) {
-      return null;
-    }
-    if (parsed.idSuffix != null && parsed.idSuffix!.isNotEmpty) {
-      return GroupHandleResolver.pickByIdSuffix(matches, parsed.idSuffix!);
-    }
-    if (matches.length == 1) {
-      return matches.first;
-    }
-    return _pickGroupWhenAmbiguous(matches);
-  }
-
   String _formatHandle(String name) {
     return '@${name.replaceAll(' ', '').toLowerCase()}';
   }
@@ -1267,8 +1199,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
     if (_focusedHandle == null ||
         _hasExplicitTarget(trimmed) ||
-        trimmed.startsWith('/') ||
-        trimmed.toLowerCase().startsWith('@ai ')) {
+        trimmed.startsWith('/')) {
       return trimmed;
     }
 
@@ -1345,6 +1276,55 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
     final currentLocked =
         (await ChatPrivacyPreferences.getLockedChatIds()).contains(itemId);
+
+    // Locking requires a PIN: alert the user when none is set and offer to set one.
+    if (!currentLocked) {
+      final storedPin = await ChatPrivacyPreferences.getPrivacyPin();
+      if (storedPin.isEmpty) {
+        if (!mounted) return;
+        final shouldSet = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('PIN required'),
+            content: Text(
+              'You need a 4-digit PIN before you can lock chats. '
+              'Set one now?',
+              style: GoogleFonts.inter(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Set PIN'),
+              ),
+            ],
+          ),
+        );
+        if (shouldSet != true || !mounted) return;
+
+        await Navigator.of(context).push<bool>(
+          MaterialPageRoute(builder: (_) => const PinSetupScreen()),
+        );
+        if (!mounted) return;
+        final pinAfter = await ChatPrivacyPreferences.getPrivacyPin();
+        if (pinAfter.isEmpty) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'PIN was not set — chat was not locked.',
+                style: GoogleFonts.inter(),
+              ),
+            ),
+          );
+          return;
+        }
+      }
+    }
+
     await ChatPrivacyPreferences.toggleLocked(itemId, !currentLocked);
     await ChatPrivacyPreferences.syncLockedListenable();
 
@@ -2411,38 +2391,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
               const SizedBox(height: 20),
 
-              // =============== PREMIUM ===============
-              _settingsSectionTitle('PREMIUM'),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.workspace_premium_rounded, color: Color(0xFFFFD700)),
-                title: Text(
-                  'PointChat Premium',
-                  style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                subtitle: Text(
-                  'Manage subscription & unlock AI features',
-                  style: GoogleFonts.inter(
-                    color: Colors.white54,
-                    fontSize: 12,
-                  ),
-                ),
-                trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white54),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AiSubscriptionScreen()),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 16),
-
               // =============== PRIVACY ===============
               _settingsSectionTitle('PRIVACY'),
               _settingsToggle(
@@ -2539,37 +2487,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                     await ComposerPreferences.setTipsHidden(v);
                     if (mounted) setState(() {});
                   },
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // =============== AI ===============
-              _settingsSectionTitle('AI'),
-              _settingsInfoRow(
-                icon: Icons.auto_awesome,
-                title: 'AI subscription',
-                trailing: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: SubscriptionService.instance.state.value.hasAiAccess
-                        ? AppTheme.green.withValues(alpha: 0.2)
-                        : Colors.white10,
-                  ),
-                  child: Text(
-                    SubscriptionService.instance.state.value.hasAiAccess
-                        ? 'Active'
-                        : 'Inactive',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color:
-                          SubscriptionService.instance.state.value.hasAiAccess
-                              ? AppTheme.green
-                              : Colors.white54,
-                    ),
-                  ),
                 ),
               ),
 
@@ -2820,33 +2737,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     );
   }
 
-  Widget _settingsInfoRow(
-      {required IconData icon,
-      required String title,
-      required Widget trailing}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      margin: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white54, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(title,
-                style: GoogleFonts.inter(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600)),
-          ),
-          trailing,
-        ],
-      ),
-    );
-  }
-
   Widget _editableAvatar({
     required String imageUrl,
     required String initialsSource,
@@ -3002,19 +2892,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         ),
       );
     }
-  }
-
-  Future<bool> _ensureAiAccess() async {
-    final service = SubscriptionService.instance;
-    final hasAccess = await service.ensureAiAccess();
-    if (hasAccess || !mounted) {
-      return hasAccess;
-    }
-
-    final unlocked = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(builder: (_) => const AiSubscriptionScreen()),
-    );
-    return unlocked == true || service.hasAiAccess;
   }
 
   Future<void> _editMyStatus(String currentStatus) async {
@@ -3532,7 +3409,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         file: InputFile.fromPath(
           path: croppedFile.path,
           filename: '$fileName.jpg',
+          contentType: 'image/jpeg',
         ),
+        permissions: publicReadPermissions(),
       );
       final downloadUrl =
           '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${file.$id}/view?project=${AppwriteConstants.projectId}';
@@ -3589,7 +3468,12 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       final uploadedFile = await appwriteStorage.createFile(
         bucketId: AppwriteConstants.chatFilesBucket,
         fileId: ID.unique(),
-        file: InputFile.fromBytes(bytes: bytes, filename: '$fileId.$ext'),
+        file: InputFile.fromBytes(
+          bytes: bytes,
+          filename: '$fileId.$ext',
+          contentType: _contentTypeForExtension(ext),
+        ),
+        permissions: publicReadPermissions(),
       );
       final downloadUrl =
           '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${uploadedFile.$id}/view?project=${AppwriteConstants.projectId}';
@@ -3620,6 +3504,54 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
   }
 
   Timer? _recordingTimer;
+
+  String? _contentTypeForExtension(String ext) {
+    switch (ext.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'heic':
+        return 'image/heic';
+      case 'mp4':
+      case 'm4v':
+        return 'video/mp4';
+      case 'm4a':
+      case 'aac':
+        return 'audio/mp4';
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'wav':
+        return 'audio/wav';
+      case 'ogg':
+        return 'audio/ogg';
+      case 'pdf':
+        return 'application/pdf';
+      case 'txt':
+        return 'text/plain';
+      case 'zip':
+        return 'application/zip';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xls':
+        return 'application/vnd.ms-excel';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'ppt':
+        return 'application/vnd.ms-powerpoint';
+      case 'pptx':
+        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      default:
+        return 'application/octet-stream';
+    }
+  }
 
   Future<String?> _promptImageNote() async {
     final controller = TextEditingController();
@@ -3802,7 +3734,12 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       final uploadedAudio = await appwriteStorage.createFile(
         bucketId: AppwriteConstants.chatFilesBucket,
         fileId: ID.unique(),
-        file: InputFile.fromBytes(bytes: audioBytes, filename: '$audioId.m4a'),
+        file: InputFile.fromBytes(
+          bytes: audioBytes,
+          filename: '$audioId.m4a',
+          contentType: 'audio/mp4',
+        ),
+        permissions: publicReadPermissions(),
       );
       final downloadUrl =
           '${AppwriteConstants.endpoint}/storage/buckets/${AppwriteConstants.chatFilesBucket}/files/${uploadedAudio.$id}/view?project=${AppwriteConstants.projectId}';
@@ -3957,68 +3894,23 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       _addOptimisticMessageForConversation(chatId, optimisticMsg);
     }
 
-    await _chatService.sendMessage(
-      messageId: messageId,
-      chatId: chatId,
-      senderId: currentUserId,
-      senderName: currentUserName,
-      senderPhotoUrl: currentUserPhoto,
-      text: content,
-      type: type,
-      fileName: fileName,
-      fileSize: fileSize,
-      audioDuration: audioDuration,
-      latitude: latitude,
-      longitude: longitude,
-    );
-
-    if (targetUser.isBot && type == MessageType.text) {
-      final hasAiAccess = await _ensureAiAccess();
-      if (!hasAiAccess) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'AI access is required to chat with bots.',
-                style: GoogleFonts.inter(),
-              ),
-            ),
-          );
-        }
-        return;
-      }
-
-      final botConfig = await _botService.getBotByName(
-        targetUser.displayName,
+    try {
+      await _chatService.sendMessage(
+        messageId: messageId,
+        chatId: chatId,
+        senderId: currentUserId,
+        senderName: currentUserName,
+        senderPhotoUrl: currentUserPhoto,
+        text: content,
+        type: type,
+        fileName: fileName,
+        fileSize: fileSize,
+        audioDuration: audioDuration,
+        latitude: latitude,
+        longitude: longitude,
       );
-      if (botConfig != null) {
-        String botPrompt = content;
-        String systemPrompt = botConfig.instructions;
-
-        if (currentUserId == botConfig.ownerId &&
-            content.toLowerCase().contains('summarize')) {
-          final history = await _chatService.getUnreadMessages(
-            chatId,
-            currentUserId,
-          );
-          if (history.isNotEmpty) {
-            botPrompt =
-                'Context of recent messages:\n${history.reversed.map((m) => '${m.senderName}: ${m.text}').join('\n')}\n\nPrompt: $content';
-          }
-        }
-
-        _aiService
-            .generateResponse(botPrompt, systemPrompt: systemPrompt)
-            .then((reply) {
-          _chatService.sendMessage(
-            chatId: chatId,
-            senderId: targetUser.uid,
-            senderName: targetUser.displayName,
-            senderPhotoUrl: targetUser.photoUrl,
-            text: reply,
-          );
-        });
-      }
+    } finally {
+      _removeOptimisticMessageForConversation(chatId, messageId);
     }
   }
 
@@ -4258,20 +4150,26 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           );
           _addOptimisticMessageForConversation(targetGroupId, optimisticMsg);
 
-          sendFutures.add(_groupService.sendGroupMessage(
-            messageId: messageId,
-            groupId: targetGroupId,
-            senderId: currentUserId,
-            senderName: currentUserName,
-            senderPhotoUrl: currentUserPhoto,
-            text: content,
-            type: type,
-            fileName: fileName,
-            fileSize: fileSize,
-            audioDuration: audioDuration,
-            latitude: latitude,
-            longitude: longitude,
-          ));
+          sendFutures.add(() async {
+            try {
+              await _groupService.sendGroupMessage(
+                messageId: messageId,
+                groupId: targetGroupId,
+                senderId: currentUserId,
+                senderName: currentUserName,
+                senderPhotoUrl: currentUserPhoto,
+                text: content,
+                type: type,
+                fileName: fileName,
+                fileSize: fileSize,
+                audioDuration: audioDuration,
+                latitude: latitude,
+                longitude: longitude,
+              );
+            } finally {
+              _removeOptimisticMessageForConversation(targetGroupId, messageId);
+            }
+          }());
           didGroupAction = true;
           didSendGroupMessage = true;
         }
@@ -4343,327 +4241,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     }
   }
 
-  bool _isSummaryOrTaskRequest(String prompt) {
-    final lower = prompt.toLowerCase();
-    return lower.contains('summarize') ||
-        lower.contains('summary') ||
-        lower.contains('summarise') ||
-        lower.contains('task') ||
-        lower.contains('tasks') ||
-        lower.contains('important') ||
-        lower.contains('highlight') ||
-        lower.contains('الخص') ||
-        lower.contains('خص') ||
-        lower.contains('تلخيص') ||
-        lower.contains('المهام') ||
-        lower.contains('مهام') ||
-        lower.contains('المهم') ||
-        lower.contains('إيه الكلام') ||
-        lower.contains('المهمة');
-  }
-
-  Future<List<MessageModel>> _fetchChatHistoryForContext({
-    String? chatId,
-    String? groupId,
-    required bool isGroup,
-  }) async {
-    try {
-      final queryParam = isGroup
-          ? Query.equal('groupId', groupId!)
-          : Query.equal('chatId', chatId!);
-      final result = await appwriteTablesDB.listRows(
-        databaseId: AppwriteConstants.databaseId,
-        tableId: AppwriteConstants.messagesCollection,
-        queries: [
-          queryParam,
-          Query.orderDesc('\$createdAt'),
-          Query.limit(100),
-        ],
-      );
-      return result.rows
-          .map((doc) => MessageModel.fromMap(doc.data, doc.$id))
-          .toList()
-          .reversed
-          .toList();
-    } catch (e) {
-      if (kDebugMode) debugPrint('Error fetching chat history for AI: $e');
-      return [];
-    }
-  }
-
-  String _buildSummaryPrompt(List<MessageModel> msgs, String userPrompt) {
-    if (msgs.isEmpty) {
-      return '$userPrompt\nNote: No prior saved message history was found for this conversation.';
-    }
-    final sb = StringBuffer();
-    sb.writeln('Recent conversation history (${msgs.length} messages):');
-    for (var m in msgs) {
-      sb.writeln('${m.senderName}: ${m.text}');
-    }
-    sb.writeln('\nUser request: $userPrompt');
-    sb.writeln(
-      'System Instruction: Analyze the conversation history above and provide a clear, structured response in the user\'s language (Arabic or English).\n'
-      'Structure the output cleanly using bullet points:\n'
-      '1. 📌 Key Summary / ملخص المحادثة\n'
-      '2. 💡 Important Highlights & Decisions / النقاط والقرارات المهمة\n'
-      '3. 🎯 Action Items & Assigned Tasks / المهام المطلوبة والمسندة للأشخاص\n'
-      'Format professionally without strange markdown artifacts before the text.',
-    );
-    return sb.toString();
-  }
-
-  void _processAiCommandAsync({
-    required String beforeSlash,
-    required String aiPrompt,
-  }) {
-    unawaited(() async {
-      final hasAccess = await _ensureAiAccess();
-      if (!hasAccess) {
-        return;
-      }
-
-      final words = beforeSlash
-          .split(RegExp(r'\s+'))
-          .where((w) => w.isNotEmpty)
-          .toList();
-      final handles =
-          words.where((w) => w.startsWith('@') || w.startsWith('#')).toList();
-
-      if (handles.isEmpty && beforeSlash.toLowerCase().startsWith('@ai')) {
-        handles.add('@ai');
-      }
-
-      final isSummary = _isSummaryOrTaskRequest(aiPrompt);
-
-      for (final handle in handles) {
-        if (handle.toLowerCase() == '@ai') {
-          try {
-            final chatId = await _chatService.getOrCreateChat(
-              currentUserId,
-              currentUserId,
-            );
-
-            // 1. Optimistic User Prompt
-            final userMsgId = ID.unique();
-            final userMsg = MessageModel(
-              messageId: userMsgId,
-              chatId: chatId,
-              senderId: currentUserId,
-              senderName: cachedUserName,
-              senderPhotoUrl: cachedUserPhotoUrl,
-              text: aiPrompt,
-              type: MessageType.text,
-              timestamp: DateTime.now(),
-              status: MessageStatus.sending,
-            );
-            _addOptimisticMessageForConversation(chatId, userMsg);
-
-            unawaited(_chatService.sendMessage(
-              messageId: userMsgId,
-              chatId: chatId,
-              senderId: currentUserId,
-              senderName: cachedUserName,
-              senderPhotoUrl: cachedUserPhotoUrl,
-              text: aiPrompt,
-              type: MessageType.text,
-            ));
-
-            // 2. Optimistic AI Loading Message
-            final aiLoadingMsgId = ID.unique();
-            final loadingMsg = MessageModel(
-              messageId: aiLoadingMsgId,
-              chatId: chatId,
-              senderId: 'ai-system',
-              senderName: 'PointChat AI',
-              senderPhotoUrl: '',
-              text: '✨ PointChat AI is analyzing & generating response...',
-              type: MessageType.text,
-              timestamp: DateTime.now(),
-              status: MessageStatus.sending,
-            );
-            _addOptimisticMessageForConversation(chatId, loadingMsg);
-
-            String finalPrompt = aiPrompt;
-            if (isSummary) {
-              final msgs = await _fetchChatHistoryForContext(
-                chatId: chatId,
-                isGroup: false,
-              );
-              finalPrompt = _buildSummaryPrompt(msgs, aiPrompt);
-            }
-
-            final aiResponse = await _aiService.generateResponse(
-              finalPrompt,
-              systemPrompt:
-                  "You are PointChat's private AI assistant. Be helpful and structured.",
-              skipAccessCheck: true,
-            );
-
-            _removeOptimisticMessageForConversation(chatId, aiLoadingMsgId);
-
-            await _chatService.sendMessage(
-              chatId: chatId,
-              senderId: 'ai-system',
-              senderName: 'PointChat AI',
-              senderPhotoUrl: '',
-              text: aiResponse,
-              type: MessageType.text,
-            );
-          } catch (e) {
-            if (kDebugMode) debugPrint('Private AI Error: $e');
-          }
-        } else if (handle.startsWith('@')) {
-          try {
-            final tNorm = _normalizeHandleToken(handle.substring(1));
-            final targetUser = _normalizedUsersMap[tNorm];
-            if (targetUser == null) continue;
-
-            final chatId = await _chatService.getOrCreateChat(
-              currentUserId,
-              targetUser.uid,
-            );
-
-            final userMsgId = ID.unique();
-            final userMsg = MessageModel(
-              messageId: userMsgId,
-              chatId: chatId,
-              senderId: currentUserId,
-              senderName: cachedUserName,
-              senderPhotoUrl: cachedUserPhotoUrl,
-              text: 'Prompt: $aiPrompt',
-              type: MessageType.text,
-              timestamp: DateTime.now(),
-              status: MessageStatus.sending,
-            );
-            _addOptimisticMessageForConversation(chatId, userMsg);
-
-            unawaited(_chatService.sendMessage(
-              messageId: userMsgId,
-              chatId: chatId,
-              senderId: currentUserId,
-              senderName: cachedUserName,
-              senderPhotoUrl: cachedUserPhotoUrl,
-              text: 'Prompt: $aiPrompt',
-              type: MessageType.text,
-            ));
-
-            final aiLoadingMsgId = ID.unique();
-            final loadingMsg = MessageModel(
-              messageId: aiLoadingMsgId,
-              chatId: chatId,
-              senderId: 'ai-system',
-              senderName: 'PointChat AI',
-              senderPhotoUrl: '',
-              text: '✨ PointChat AI is analyzing & generating response...',
-              type: MessageType.text,
-              timestamp: DateTime.now(),
-              status: MessageStatus.sending,
-            );
-            _addOptimisticMessageForConversation(chatId, loadingMsg);
-
-            String finalPrompt = aiPrompt;
-            if (isSummary) {
-              final msgs = await _fetchChatHistoryForContext(
-                chatId: chatId,
-                isGroup: false,
-              );
-              finalPrompt = _buildSummaryPrompt(msgs, aiPrompt);
-            }
-
-            final aiResponse = await _aiService.generateResponse(
-              finalPrompt,
-              skipAccessCheck: true,
-            );
-
-            _removeOptimisticMessageForConversation(chatId, aiLoadingMsgId);
-
-            await _chatService.sendMessage(
-              chatId: chatId,
-              senderId: 'ai-system',
-              senderName: 'PointChat AI',
-              senderPhotoUrl: '',
-              text: aiResponse,
-              type: MessageType.text,
-            );
-          } catch (e) {
-            if (kDebugMode) debugPrint('DM AI Error: $e');
-          }
-        } else if (handle.startsWith('#')) {
-          try {
-            final targetGroup = await _resolveGroupForAiContext(handle);
-            if (targetGroup == null) continue;
-            final groupId = targetGroup.groupId;
-
-            final userMsgId = ID.unique();
-            final userMsg = MessageModel(
-              messageId: userMsgId,
-              groupId: groupId,
-              senderId: currentUserId,
-              senderName: cachedUserName,
-              senderPhotoUrl: cachedUserPhotoUrl,
-              text: 'Prompt: $aiPrompt',
-              type: MessageType.text,
-              timestamp: DateTime.now(),
-              status: MessageStatus.sending,
-            );
-            _addOptimisticMessageForConversation(groupId, userMsg);
-
-            unawaited(_groupService.sendGroupMessage(
-              messageId: userMsgId,
-              groupId: groupId,
-              senderId: currentUserId,
-              senderName: cachedUserName,
-              senderPhotoUrl: cachedUserPhotoUrl,
-              text: 'Prompt: $aiPrompt',
-              type: MessageType.text,
-            ));
-
-            final aiLoadingMsgId = ID.unique();
-            final loadingMsg = MessageModel(
-              messageId: aiLoadingMsgId,
-              groupId: groupId,
-              senderId: 'ai-system',
-              senderName: 'PointChat AI',
-              senderPhotoUrl: '',
-              text: '✨ PointChat AI is analyzing & generating response...',
-              type: MessageType.text,
-              timestamp: DateTime.now(),
-              status: MessageStatus.sending,
-            );
-            _addOptimisticMessageForConversation(groupId, loadingMsg);
-
-            String finalPrompt = aiPrompt;
-            if (isSummary) {
-              final msgs = await _fetchChatHistoryForContext(
-                groupId: groupId,
-                isGroup: true,
-              );
-              finalPrompt = _buildSummaryPrompt(msgs, aiPrompt);
-            }
-
-            final aiResponse = await _aiService.generateResponse(
-              finalPrompt,
-              skipAccessCheck: true,
-            );
-
-            _removeOptimisticMessageForConversation(groupId, aiLoadingMsgId);
-
-            await _groupService.sendGroupMessage(
-              groupId: groupId,
-              senderId: 'ai-system',
-              senderName: 'PointChat AI',
-              senderPhotoUrl: '',
-              text: aiResponse,
-              type: MessageType.text,
-            );
-          } catch (e) {
-            if (kDebugMode) debugPrint('Group AI Error: $e');
-          }
-        }
-      }
-    }());
-  }
-
   void _sendCommand(String input) async {
     final rawInput = input.trim();
     if (rawInput.isEmpty && _forwardingMessage == null) return;
@@ -4683,57 +4260,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       return;
     }
 
-    final trimmedCmd = normalizedInput.trim();
-
-    // Check for /newbot slash
-    final newBotSlash = RegExp(
-      r'^/newbot\s+(.+)$',
-      caseSensitive: false,
-    ).firstMatch(trimmedCmd);
-    if (newBotSlash != null) {
-      final botName = newBotSlash.group(1)!.trim();
-      if (botName.isNotEmpty) {
-        _showBotConfigDialog(botName);
-        return;
-      }
-    }
-    if (RegExp(r'^/newbot\s*$', caseSensitive: false).hasMatch(trimmedCmd)) {
-      if (mounted) {
-        final cs = Theme.of(context).colorScheme;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Usage: /newbot AssistantName',
-              style: GoogleFonts.inter(
-                color: cs.onInverseSurface,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: cs.inverseSurface,
-          ),
-        );
-      }
-      return;
-    }
-
-    // Private AI (notes thread): @ai …
-    final lowerCmd = normalizedInput.toLowerCase();
-    String? privateAiPrompt;
-    if (lowerCmd.startsWith('@ai ')) {
-      privateAiPrompt = normalizedInput.substring(4).trim();
-    } else if (lowerCmd == '@ai') {
-      privateAiPrompt = '';
-    }
-
-    if (privateAiPrompt != null) {
-      _processAiCommandAsync(
-        beforeSlash: '@ai',
-        aiPrompt: privateAiPrompt.isEmpty ? 'Hello!' : privateAiPrompt,
-      );
-      return;
-    }
-
-    // Check for AI mode: if text contains /, extract the AI prompt
+    // /setting slash command
     final slashIndex = normalizedInput.indexOf('/');
     if (slashIndex >= 0) {
       final beforeSlash = normalizedInput.substring(0, slashIndex).trim();
@@ -4751,25 +4278,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         } else {
           await _showMySettingsOverlay();
         }
-        return;
-      }
-
-      final newBotFromSlash = RegExp(
-        r'^newbot\s+(.+)$',
-        caseSensitive: false,
-      ).firstMatch(aiPrompt);
-      if (newBotFromSlash != null) {
-        _showBotConfigDialog(newBotFromSlash.group(1)!.trim());
-        return;
-      }
-
-      final hasTarget = _hasExplicitTarget(beforeSlash);
-
-      if (hasTarget && aiPrompt.isNotEmpty) {
-        _processAiCommandAsync(
-          beforeSlash: beforeSlash,
-          aiPrompt: aiPrompt,
-        );
         return;
       }
     }
@@ -4833,50 +4341,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                             ],
                           ),
                           actions: [
-                            Center(
-                              child: GestureDetector(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const AiSubscriptionScreen(),
-                                    ),
-                                  );
-                                },
-                                child: Container(
-                                  margin: const EdgeInsets.only(right: 8),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
-                                    ),
-                                    borderRadius: BorderRadius.circular(20),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: const Color(0xFFFFD700).withValues(alpha: 0.3),
-                                        blurRadius: 6,
-                                        spreadRadius: 1,
-                                      ),
-                                    ],
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.workspace_premium_rounded, size: 14, color: Colors.black),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Premium',
-                                        style: GoogleFonts.inter(
-                                          color: Colors.black,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
                             Consumer(
                               builder: (context, ref, child) {
                                 final themeMode = ref.watch(
@@ -5359,7 +4823,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                           final isGroup = suggestion is GroupModel;
                           final isCreateGroup =
                               suggestion is _CreateGroupSuggestion;
-                          final isAtCmd = suggestion is _AtCommandSuggestion;
                           final isAction = suggestion is String;
                           final isSlashCommand =
                               isAction && suggestion.startsWith('/');
@@ -5369,9 +4832,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                   ? suggestion.name
                                   : isCreateGroup
                                       ? suggestion.token
-                                      : isAtCmd
-                                          ? suggestion.label
-                                          : suggestion.toString();
+                                      : suggestion.toString();
                           GroupModel? groupPick;
                           if (isGroup) {
                             groupPick = suggestion;
@@ -5385,9 +4846,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                     )
                                   : isCreateGroup
                                       ? '#${suggestion.token}'
-                                      : isAtCmd
-                                          ? suggestion.label
-                                          : name;
+                                      : name;
 
                           return ListTile(
                             dense: true,
@@ -5398,22 +4857,18 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                       ? Icons.groups_2_outlined
                                       : isCreateGroup
                                           ? Icons.group_add_outlined
-                                          : isAtCmd
-                                              ? Icons.smart_toy_outlined
-                                              : isSlashCommand
-                                                  ? Icons.bolt_rounded
-                                                  : Icons.location_on_outlined,
+                                          : isSlashCommand
+                                              ? Icons.bolt_rounded
+                                              : Icons.location_on_outlined,
                               color: isUser
                                   ? AppTheme.focusBlue
                                   : isGroup
                                       ? AppTheme.green
                                       : isCreateGroup
                                           ? AppTheme.focusBlue
-                                          : isAtCmd
+                                          : isSlashCommand
                                               ? AppTheme.focusBlue
-                                              : isSlashCommand
-                                                  ? AppTheme.focusBlue
-                                                  : scheme.primary,
+                                              : scheme.primary,
                               size: 20,
                             ),
                             title: Text(
@@ -5425,59 +4880,18 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                 fontSize: 14,
                               ),
                             ),
-                            subtitle: suggestion is _AtCommandSuggestion
+                            subtitle: groupPick != null
                                 ? Text(
-                                    suggestion.hint,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
+                                    groupPick.groupId.length <= 10
+                                        ? groupPick.groupId
+                                        : '${groupPick.groupId.substring(0, 10)}…',
+                                    style: GoogleFonts.jetBrainsMono(
+                                      fontSize: 10,
                                       color: scheme.onSurfaceVariant,
                                     ),
                                   )
-                                : groupPick != null
-                                    ? Text(
-                                        groupPick.groupId.length <= 10
-                                            ? groupPick.groupId
-                                            : '${groupPick.groupId.substring(0, 10)}…',
-                                        style: GoogleFonts.jetBrainsMono(
-                                          fontSize: 10,
-                                          color: scheme.onSurfaceVariant,
-                                        ),
-                                      )
-                                    : null,
+                                : null,
                             onTap: () {
-                              if (isAtCmd) {
-                                final text = _commandController.text;
-                                final selection = _commandController.selection;
-                                final textBeforeCursor = text.substring(
-                                  0,
-                                  selection.baseOffset,
-                                );
-                                final textAfterCursor = text.substring(
-                                  selection.baseOffset,
-                                );
-                                final lastAt =
-                                    textBeforeCursor.lastIndexOf('@');
-                                if (lastAt < 0) {
-                                  return;
-                                }
-                                final newText =
-                                    '${textBeforeCursor.substring(0, lastAt + 1)}${suggestion.insertStem}$textAfterCursor';
-                                final newOffset =
-                                    lastAt + 1 + suggestion.insertStem.length;
-                                _commandController.value = TextEditingValue(
-                                  text: newText,
-                                  selection: TextSelection.collapsed(
-                                    offset: newOffset,
-                                  ),
-                                );
-                                setState(() {
-                                  _isMentioning = false;
-                                  _mentionSuggestions = [];
-                                });
-                                _focusComposerAfterFrame();
-                                return;
-                              }
-
                               if (isAction) {
                                 if (isSlashCommand) {
                                   setState(() {
@@ -5537,7 +4951,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             if (tipsHidden ||
                 !_composerTipsLoaded ||
                 PointchatTips.instance.rotatingTips.isEmpty ||
-                _isAiMode ||
                 _replyingToMessage != null ||
                 _forwardingMessage != null) {
               return const SizedBox.shrink();
@@ -5685,24 +5098,18 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                     fontSize: 15,
                                   ),
                                   decoration: InputDecoration(
-                                    hintText: _isAiMode
-                                        ? 'Ask the AI…'
-                                        : (isFocusModeActive
-                                            ? 'Message $_focusedHandle…'
-                                            : 'Message · @ name  # group'),
+                                    hintText: isFocusModeActive
+                                        ? 'Message $_focusedHandle…'
+                                        : 'Message · @ name  # group',
                                     hintStyle: GoogleFonts.inter(
-                                      color: _isAiMode
+                                      color: isFocusModeActive
                                           ? AppTheme.focusBlue.withValues(
                                               alpha: 0.85,
                                             )
-                                          : (isFocusModeActive
-                                              ? AppTheme.focusBlue.withValues(
-                                                  alpha: 0.85,
-                                                )
-                                              : Theme.of(context)
-                                                  .colorScheme
-                                                  .onSurfaceVariant
-                                                  .withValues(alpha: 0.65)),
+                                          : Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant
+                                              .withValues(alpha: 0.65),
                                       fontSize: 15,
                                     ),
                                     border: InputBorder.none,
@@ -5764,12 +5171,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                             ),
                                             child: IconButton(
                                               icon: Icon(
-                                                _isAiMode
-                                                    ? Icons.auto_awesome_rounded
-                                                    : (_forwardingMessage != null
-                                                        ? Icons.forward_rounded
-                                                        : Icons
-                                                            .arrow_forward_rounded),
+                                                _forwardingMessage != null
+                                                    ? Icons.forward_rounded
+                                                    : Icons.arrow_forward_rounded,
                                                 color: isFocusModeActive
                                                     ? AppTheme.focusBlue
                                                     : AppTheme.focusBlue,
@@ -5920,181 +5324,6 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           ),
         ),
       ],
-    );
-  }
-
-  void _showBotConfigDialog(String botName) async {
-    final existingBot = await _botService.getBotByName(botName);
-    final isOwner = existingBot == null || existingBot.ownerId == currentUserId;
-
-    if (!isOwner) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'You are not the owner of this bot.',
-              style: GoogleFonts.inter(
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-          ),
-        );
-      }
-      return;
-    }
-
-    final instructionsController = TextEditingController(
-      text: existingBot?.instructions ?? '',
-    );
-
-    if (!mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-          left: 20,
-          right: 20,
-          top: 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  existingBot == null ? 'CREATE BOT' : 'EDIT BOT',
-                  style: GoogleFonts.outfit(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    Icons.close,
-                    color: Theme.of(context).colorScheme.secondary,
-                  ),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '@$botName',
-              style:
-                  GoogleFonts.outfit(color: AppTheme.focusBlue, fontSize: 16),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: instructionsController,
-              maxLines: 5,
-              style: GoogleFonts.inter(
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Instructions / System Prompt',
-                hintText:
-                    'e.g. You are a business assistant for Dr. Amrh. Help users schedule appointments...',
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () async {
-                  final instructions = instructionsController.text.trim();
-                  if (instructions.isEmpty) return;
-
-                  Navigator.pop(context);
-
-                  try {
-                    late final BotModel bot;
-                    if (existingBot == null) {
-                      bot = await _botService.createBot(
-                        name: botName,
-                        ownerId: currentUserId,
-                        instructions: instructions,
-                      );
-                    } else {
-                      bot = existingBot;
-                      await _botService.updateBot(existingBot.botId, {
-                        'instructions': instructions,
-                      });
-                    }
-                    await _chatService.getOrCreateChat(
-                      currentUserId,
-                      bot.botId,
-                    );
-                    if (mounted) {
-                      setState(() {
-                        if (!_allUsers.any((user) => user.uid == bot.botId)) {
-                          _allUsers = [
-                            ..._allUsers,
-                            UserModel(
-                              uid: bot.botId,
-                              displayName: botName,
-                              email: 'bot-${bot.botId}@pointchat.ai',
-                              isBot: true,
-                              status: 'Custom AI Bot',
-                            ),
-                          ];
-                          _normalizedUsersMap.clear();
-                          for (final u in _allUsers) {
-                            _normalizedUsersMap[
-                                _normalizeHandleToken(u.displayName)] = u;
-                          }
-                        }
-                        _focusedHandle = _formatHandle(botName);
-                      });
-                    }
-                    _commandController.clear();
-                    _commandFocusNode.requestFocus();
-                    if (context.mounted) {
-                      final cs = Theme.of(context).colorScheme;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          backgroundColor: cs.inverseSurface,
-                          content: Text(
-                            'Bot @$botName is ready — open it from the list.',
-                            style: GoogleFonts.inter(
-                              color: cs.onInverseSurface,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      final cs = Theme.of(context).colorScheme;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          backgroundColor: cs.errorContainer,
-                          content: Text(
-                            'Could not save your bot. Please try again.',
-                            style: GoogleFonts.inter(
-                              color: cs.onErrorContainer,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-                  }
-                },
-                child: Text(existingBot == null ? 'CREATE' : 'SAVE'),
-              ),
-            ),
-            const SizedBox(height: 30),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -6297,8 +5526,6 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     final isGroup = item['type'] == 'group' || handleText.startsWith('#');
     final double percentage = _presencePct(item['onlinePercentage']);
     final String photoUrl = _safePhotoUrl(item['photoUrl']);
-    final bool isAiSelfChat = item['isAiSelfChat'] == true;
-    final bool isBotDm = item['isBotDm'] == true;
     final titleForInitial =
         (item['conversationTitle'] as String?)?.trim() ?? '';
     final fromHandle = handleText.replaceAll(RegExp(r'[@#]'), '').trim();
@@ -6309,30 +5536,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
         : '?';
 
     Widget innerAvatar;
-    if (isAiSelfChat || isBotDm) {
-      innerAvatar = Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: [
-              AppTheme.focusBlue,
-              AppTheme.focusBlue.withValues(alpha: 0.65),
-            ],
-          ),
-          border: Border.all(
-            color: AppTheme.focusBlue.withValues(alpha: 0.5),
-            width: 1.5,
-          ),
-        ),
-        child: Icon(
-          Icons.smart_toy_rounded,
-          color: Colors.white,
-          size: 20,
-        ),
-      );
-    } else if (photoUrl.isNotEmpty) {
+    if (photoUrl.isNotEmpty) {
       innerAvatar = ClipOval(
         child: CachedNetworkImage(
           imageUrl: photoUrl,
@@ -6657,11 +5861,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
                                         Icon(
                                           isGroup
                                               ? Icons.groups_2_outlined
-                                              : (widget.item['isAiSelfChat'] ==
-                                                      true
-                                                  ? Icons.smart_toy_outlined
-                                                  : Icons
-                                                      .person_outline_rounded),
+                                              : Icons.person_outline_rounded,
                                           size: 14,
                                           color: handlePrefixColor,
                                         ),
@@ -8004,24 +7204,16 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
                 ),
               ),
               if (rest.isNotEmpty)
-                MarkdownBody(
-                  data: rest,
-                  styleSheet: MarkdownStyleSheet(
-                    p: textStyle,
-                    listBullet: textStyle,
-                    strong: textStyle.copyWith(fontWeight: FontWeight.bold),
-                  ),
+                Text(
+                  rest,
+                  style: textStyle,
                 ),
             ],
           );
         }
-        return MarkdownBody(
-          data: msg.text,
-          styleSheet: MarkdownStyleSheet(
-            p: textStyle,
-            listBullet: textStyle,
-            strong: textStyle.copyWith(fontWeight: FontWeight.bold),
-          ),
+        return Text(
+          msg.text,
+          style: textStyle,
         );
     }
   }
