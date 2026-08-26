@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PointChat</string>
+    <string name="ime_name">PointChat Keyboard</string>
+    <string name="subtype_generic">English (PointChat)</string>
+</resources>

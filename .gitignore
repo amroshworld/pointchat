@@ -43,6 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+# Android build
+android/build/
+.vscode/
+image.png
 
 # Passwords only — you may commit *.jks in a private repo if you accept the risk.
 

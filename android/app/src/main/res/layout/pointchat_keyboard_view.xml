@@ -1,0 +1,423 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Full-Width Clean Native Keyboard with Expandable Top PointChat Bar -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/keyboard_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/glass_keyboard_container_bg"
+    android:clipChildren="false"
+    android:paddingStart="4dp"
+    android:paddingEnd="4dp"
+    android:paddingTop="3dp"
+    android:paddingBottom="0dp">
+
+    <!-- EXPANDABLE CHAT POPUP (Opens above keypad when a contact is selected) -->
+    <FrameLayout
+        android:id="@+id/popup_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:background="@drawable/glass_bg"
+        android:clipChildren="false"
+        android:padding="8dp"
+        android:layout_marginBottom="4dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- Popup Header: live status + centered title, dismiss X -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="38dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/glass_topbar_bg"
+                android:paddingStart="12dp"
+                android:paddingEnd="8dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <View
+                        android:id="@+id/popup_online_dot"
+                        android:layout_width="8dp"
+                        android:layout_height="8dp"
+                        android:layout_marginEnd="7dp"
+                        android:background="@drawable/online_dot_green" />
+
+                    <TextView
+                        android:id="@+id/popup_title"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Chat"
+                        android:textColor="#1C1C1E"
+                        android:textStyle="bold"
+                        android:textSize="14.5sp"
+                        android:ellipsize="end"
+                        android:maxLines="1" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/popup_close"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:text="✕"
+                    android:textSize="14sp"
+                    android:textColor="#8E8E93"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
+
+            <!-- Messages Stream (Full Width) -->
+            <ScrollView
+                android:id="@+id/popup_messages_scroll"
+                android:layout_width="match_parent"
+                android:layout_height="180dp"
+                android:layout_marginTop="5dp"
+                android:scrollbars="none"
+                android:overScrollMode="never">
+
+                <LinearLayout
+                    android:id="@+id/popup_messages_stack"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="3dp"
+                    android:paddingBottom="3dp" />
+            </ScrollView>
+
+            <!-- In-Keyboard Composer Row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="5dp">
+
+                <EditText
+                    android:id="@+id/popup_input"
+                    android:layout_width="0dp"
+                    android:layout_height="40dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/glass_topbar_bg"
+                    android:hint="Type a direct message..."
+                    android:textColor="#000000"
+                    android:textColorHint="#8E8E93"
+                    android:textSize="14sp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:singleLine="true"
+                    android:imeOptions="actionSend"
+                    android:inputType="text|textCapSentences|textAutoCorrect" />
+
+                <TextView
+                    android:id="@+id/popup_mic"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginStart="4dp"
+                    android:text="🎤"
+                    android:textSize="16sp"
+                    android:gravity="center" />
+
+                <Button
+                    android:id="@+id/popup_send"
+                    android:layout_width="wrap_content"
+                    android:layout_height="38dp"
+                    android:layout_marginStart="4dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:text="Send"
+                    android:textSize="13.5sp"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold"
+                    android:background="@drawable/send_pill_bg"
+                    android:stateListAnimator="@null" />
+            </LinearLayout>
+
+            <!-- Hidden compatibility containers -->
+            <LinearLayout
+                android:id="@+id/popup_rail_container"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone">
+                <LinearLayout android:id="@+id/popup_rail_contacts" android:layout_width="0dp" android:layout_height="0dp" />
+                <LinearLayout android:id="@+id/popup_rail_globe_slot" android:layout_width="0dp" android:layout_height="0dp" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- TOP TOOLBAR: Horizontal PointChat Contacts Dock (Replacing Gboard tools) -->
+    <LinearLayout
+        android:id="@+id/top_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp"
+        android:layout_marginBottom="2dp">
+
+        <!-- PointChat Brand / Quick Toggle Icon -->
+        <FrameLayout
+            android:id="@+id/top_brand_button"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/keyboard_key_bg_light"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:text="💬"
+                android:textSize="16sp"
+                android:gravity="center" />
+        </FrameLayout>
+
+        <!-- Horizontal Scrollable Contacts List -->
+        <HorizontalScrollView
+            android:id="@+id/top_contacts_scroll"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:scrollbars="none"
+            android:overScrollMode="never">
+
+            <LinearLayout
+                android:id="@+id/top_contacts_container"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical" />
+        </HorizontalScrollView>
+
+        <!-- Quick Switch / Globe Button -->
+        <FrameLayout
+            android:id="@+id/top_globe_button"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/keyboard_key_bg_light"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:text="🌐"
+                android:textSize="16sp"
+                android:gravity="center" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- FULL-WIDTH KEYPAD -->
+    <LinearLayout
+        android:id="@+id/main_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/keyboard_main_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/keypad_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- Row 1: Q W E R T Y U I O P (10 keys spanning full width) -->
+                <LinearLayout
+                    android:id="@+id/row1"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:orientation="horizontal"
+                    android:weightSum="10" />
+
+                <!-- Row 2: A S D F G H J K L (9 keys staggered) -->
+                <LinearLayout
+                    android:id="@+id/row2"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="5dp"
+                    android:orientation="horizontal"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:weightSum="9" />
+
+                <!-- Row 3: Shift + Z X C V B N M + Backspace -->
+                <LinearLayout
+                    android:id="@+id/row3"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="5dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/key_shift"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1.4"
+                        android:text="⇧"
+                        android:textSize="18sp"
+                        android:textColor="#1C1C1E"
+                        android:background="@drawable/keyboard_key_shift_bg"
+                        android:stateListAnimator="@null"
+                        android:layout_marginEnd="3dp" />
+
+                    <LinearLayout
+                        android:id="@+id/row3_letters"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="7.2"
+                        android:orientation="horizontal"
+                        android:weightSum="7" />
+
+                    <Button
+                        android:id="@+id/key_backspace"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1.4"
+                        android:text="⌫"
+                        android:textSize="17sp"
+                        android:textColor="#1C1C1E"
+                        android:background="@drawable/keyboard_key_bg_light"
+                        android:stateListAnimator="@null"
+                        android:layout_marginStart="3dp" />
+                </LinearLayout>
+
+                <!-- Row 4: ?123 + , + Emoji/Lang + Space + . + Return -->
+                <LinearLayout
+                    android:id="@+id/row4"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:layout_marginTop="5dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/key_symbols"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1.3"
+                        android:text="\?123"
+                        android:textSize="13.5sp"
+                        android:textColor="#1C1C1E"
+                        android:textStyle="bold"
+                        android:background="@drawable/keyboard_key_bg_light"
+                        android:stateListAnimator="@null"
+                        android:layout_marginEnd="3dp" />
+
+                    <Button
+                        android:id="@+id/key_comma"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="0.9"
+                        android:text=","
+                        android:textSize="18sp"
+                        android:textColor="#1C1C1E"
+                        android:background="@drawable/keyboard_key_bg_light"
+                        android:stateListAnimator="@null"
+                        android:layout_marginEnd="3dp" />
+
+                    <Button
+                        android:id="@+id/key_lang"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="0.9"
+                        android:text="☺"
+                        android:textSize="17sp"
+                        android:textColor="#1C1C1E"
+                        android:background="@drawable/keyboard_key_bg_light"
+                        android:stateListAnimator="@null"
+                        android:layout_marginEnd="3dp" />
+
+                    <Button
+                        android:id="@+id/key_space"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="4.1"
+                        android:text=""
+                        android:textSize="13sp"
+                        android:textColor="#3C3C43"
+                        android:background="@drawable/glass_key_cap"
+                        android:stateListAnimator="@null"
+                        android:layout_marginEnd="3dp" />
+
+                    <Button
+                        android:id="@+id/key_period"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="0.9"
+                        android:text="."
+                        android:textSize="18sp"
+                        android:textColor="#1C1C1E"
+                        android:background="@drawable/keyboard_key_bg_light"
+                        android:stateListAnimator="@null"
+                        android:layout_marginEnd="3dp" />
+
+                    <Button
+                        android:id="@+id/key_enter"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1.6"
+                        android:text="↵"
+                        android:textSize="16sp"
+                        android:textColor="#FFFFFF"
+                        android:textStyle="bold"
+                        android:background="@drawable/keyboard_action_bg"
+                        android:stateListAnimator="@null" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Hidden legacy elements for full backwards compatibility -->
+            <LinearLayout
+                android:id="@+id/chat_drawer_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:orientation="vertical">
+
+                <TextView android:id="@+id/chat_drawer_title" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
+                <TextView android:id="@+id/chat_drawer_status" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
+                <TextView android:id="@+id/chat_drawer_close" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
+                <TextView android:id="@+id/chat_drawer_last_message" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
+                <EditText android:id="@+id/composer_input" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
+                <Button android:id="@+id/btn_send_direct" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
+                <TextView android:id="@+id/composer_hint" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Hidden legacy rail container for backwards compatibility -->
+        <LinearLayout
+            android:id="@+id/idle_rail_container"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone">
+            <LinearLayout android:id="@+id/idle_rail_contacts" android:layout_width="0dp" android:layout_height="0dp" />
+            <LinearLayout android:id="@+id/idle_rail_globe_slot" android:layout_width="0dp" android:layout_height="0dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Bottom navigation bar clearance -->
+    <View
+        android:id="@+id/inset_footer"
+        android:layout_width="match_parent"
+        android:layout_height="28dp"
+        android:background="@android:color/transparent" />
+
+</LinearLayout>

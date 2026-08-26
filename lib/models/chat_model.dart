@@ -105,4 +105,10 @@ class ChatModel {
     if (participants.length != 2) return false;
     return participants[0] == participants[1];
   }
+
+  /// True when this chat represents a group conversation (more than 2 participants).
+  bool get isGroup => participants.length > 2;
+
+  /// Returns unread count for a given user ID.
+  int getUnreadFor(String userId) => unreadCount[userId] ?? 0;
 }

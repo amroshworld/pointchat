@@ -34,6 +34,7 @@ import '../../services/group_service.dart';
 import '../../services/invite_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/user_service.dart';
+import '../../services/keyboard_bridge_service.dart';
 import '../../models/group_model.dart';
 import '../../models/chat_model.dart';
 import '../../models/user_model.dart';
@@ -49,6 +50,7 @@ import '../../widgets/four_digit_pin_entry.dart';
 import '../settings/blocked_users_screen.dart';
 import '../settings/chat_security_panel.dart';
 import '../settings/pin_setup_screen.dart';
+import '../settings/keyboard_setup_screen.dart';
 
 class UnifiedStreamScreen extends ConsumerStatefulWidget {
   final String currentUserId;
@@ -364,20 +366,28 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                 builder: (ctx2) => AlertDialog(
                   title: Text('Forgot PIN?', style: GoogleFonts.inter()),
                   content: Text(
-                      'Logging out will reset your PIN and locked chats. You will need to log back in.',
+                      'This will unlock all locked chats. Your messages will stay, but you will need to set a new PIN to lock again.',
                       style: GoogleFonts.inter()),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx2),
                       child: const Text('Cancel'),
                     ),
-                    TextButton(
+                    FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: AppTheme.red),
                       onPressed: () async {
                         Navigator.pop(ctx2);
-                        await AuthService().signOut();
+                        // Clear only the locked status, keep account and messages.
+                        await ChatPrivacyPreferences.setLockedChatIds({});
+                        await ChatPrivacyPreferences.syncLockedListenable();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('All locked chats unlocked.', style: GoogleFonts.inter())),
+                          );
+                          Navigator.pop(ctx, true);
+                        }
                       },
-                      child: const Text('Log Out',
-                          style: TextStyle(color: Colors.redAccent)),
+                      child: const Text('Unlock All'),
                     ),
                   ],
                 ),
@@ -543,6 +553,13 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         }
 
         final usersMap = {for (var u in users.cast<UserModel>()) u.uid: u};
+        unawaited(
+          KeyboardBridgeService.instance.syncRecentChats(
+            chats.cast<ChatModel>(),
+            usersMap,
+            currentUserId,
+          ),
+        );
 
         for (var chat in chats) {
           final otherUserId = chat.getOtherUserId(currentUserId);
@@ -589,9 +606,9 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         }
 
         for (var group in groups) {
-          if (_normalizeHandleToken(group.name).isEmpty) {
-            // Skip malformed rows (e.g. accidental empty-name groups) in stream UI.
-            continue;
+          // Show all groups, even if name is temporarily empty (e.g. cache), with placeholder.
+          if (_normalizeHandleToken(group.name).isEmpty && group.name.trim().isEmpty) {
+            // Still add but will display as Unnamed Group below.
           }
           final pendingInviteIds =
               pendingByGroup[group.groupId] ?? const <String>[];
@@ -623,7 +640,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
             'type': 'group',
             'id': group.groupId,
             'timeRaw': group.lastMessageTime ?? DateTime.now(),
-            'conversationTitle': group.name,
+            'conversationTitle': group.name.trim().isEmpty ? 'Unnamed Group' : group.name,
             'handle': _formatGroupHandle(group.name),
             'sender': hasPreview
                 ? (group.lastMessageSenderId == currentUserId
@@ -879,6 +896,11 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                 '/setting',
                 'Open Settings: account, privacy, PIN & app lock, appearance',
               ),
+              _helpRow(
+                ctx,
+                '/keyboard',
+                'PointChat Keyboard: setup, sandbox testing & quick replies',
+              ),
             ],
           ),
         ),
@@ -1018,6 +1040,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
       final query = textBeforeCursor.substring(lastSlash + 1).toLowerCase();
       final slashOptions = <String>[
         '/setting',
+        '/keyboard',
       ];
       setState(() {
         _isMentioning = true;
@@ -2458,6 +2481,36 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                   icon: const Icon(Icons.block_outlined),
                   label: Text(
                     'Blocked users',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // =============== KEYBOARD ===============
+              _settingsSectionTitle('POINTCHAT KEYBOARD'),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Chat with contacts from any app using the system-wide keyboard.',
+                  style: GoogleFonts.inter(fontSize: 11, color: Colors.white30),
+                ),
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const KeyboardSetupScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.keyboard_outlined),
+                  label: Text(
+                    'Configure & Test Keyboard',
                     style: GoogleFonts.inter(fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -4280,6 +4333,16 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
         }
         return;
       }
+
+      if (aiPromptLower.startsWith('keyboard')) {
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => const KeyboardSetupScreen(),
+          ),
+        );
+        return;
+      }
     }
 
     // Send regular message asynchronously (non-blocking, WhatsApp speed)
@@ -5353,16 +5416,21 @@ Widget _wrapStreamTileDismissible({
   required VoidCallback onSwipeRight,
   required Widget child,
 }) {
-  if (isExpanded) {
-    return child;
-  }
+  // Keep swipe active even when expanded so pin/lock works via swipe.
+  // Use a slightly larger threshold when expanded to avoid conflict with inner scroll.
+  final thresholds = isExpanded
+      ? const <DismissDirection, double>{
+          DismissDirection.startToEnd: 0.32,
+          DismissDirection.endToStart: 0.32,
+        }
+      : const <DismissDirection, double>{
+          DismissDirection.startToEnd: 0.22,
+          DismissDirection.endToStart: 0.22,
+        };
   return Dismissible(
     key: key,
     direction: DismissDirection.horizontal,
-    dismissThresholds: {
-      DismissDirection.startToEnd: 0.22,
-      DismissDirection.endToStart: 0.22,
-    },
+    dismissThresholds: thresholds,
     background: Container(
       alignment: Alignment.centerLeft,
       color: AppTheme.red,
@@ -5478,6 +5546,7 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     with SingleTickerProviderStateMixin {
   bool _showInfo = false;
   late AnimationController _swipeController;
+  late ScrollController _expandedScrollController;
 
   double _presencePct(dynamic raw) {
     if (raw is num) {
@@ -5505,11 +5574,13 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
     _swipeController.addListener(() {
       setState(() {});
     });
+    _expandedScrollController = ScrollController();
   }
 
   @override
   void dispose() {
     _swipeController.dispose();
+    _expandedScrollController.dispose();
     super.dispose();
   }
 
@@ -6641,9 +6712,15 @@ class _StreamItemWidgetState extends State<StreamItemWidget>
         if (allMessages.isEmpty) return Container();
 
         return ListView.builder(
-          reverse: true,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          itemCount: allMessages.length,
+            controller: _expandedScrollController,
+            primary: false,
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            reverse: true,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            itemCount: allMessages.length,
           itemBuilder: (context, index) {
             final msg = allMessages[index];
             final isMe = msg.senderId == widget.currentUserId;

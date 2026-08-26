@@ -10,6 +10,7 @@ import '../appwrite_client.dart';
 import '../models/user_model.dart';
 import '../utils/chat_privacy_preferences.dart';
 import 'notification_service.dart';
+import 'keyboard_bridge_service.dart';
 
 class AuthService {
   final Account _account = appwriteAccount;
@@ -130,11 +131,17 @@ class AuthService {
         AppwriteException('Google sign-in failed to create a session.');
   }
 
-  // Cache the current user info in globals
+  // Cache the current user info in globals and sync to native keyboard
   void _cacheCurrentUser(models.User user) {
     cachedUserId = user.$id;
     cachedUserName = user.name.isNotEmpty ? user.name : 'User';
     cachedUserEmail = user.email;
+    KeyboardBridgeService.instance.syncSession(
+      userId: cachedUserId,
+      userName: cachedUserName,
+      userEmail: cachedUserEmail,
+      userPhotoUrl: cachedUserPhotoUrl,
+    );
   }
 
   // Load cached user info (call on app start when session exists)
@@ -143,7 +150,7 @@ class AuthService {
       final user = await _account.get();
       _cacheCurrentUser(user);
       await _saveUserToDatabase(user);
-  
+
       // Also load photoUrl from database
       try {
         final doc = await _databases.getRow(
@@ -152,6 +159,12 @@ class AuthService {
           rowId: user.$id,
         );
         cachedUserPhotoUrl = doc.data['photoUrl'] ?? '';
+        KeyboardBridgeService.instance.syncSession(
+          userId: cachedUserId,
+          userName: cachedUserName,
+          userEmail: cachedUserEmail,
+          userPhotoUrl: cachedUserPhotoUrl,
+        );
       } catch (_) {}
     } catch (_) {}
   }
@@ -292,6 +305,7 @@ class AuthService {
     cachedUserName = '';
     cachedUserPhotoUrl = '';
     cachedUserEmail = '';
+    await KeyboardBridgeService.instance.clearSession();
     await ChatPrivacyPreferences.clearAll();
     await NotificationService.instance.unbind();
   }

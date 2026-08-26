@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Pressed state -->
+    <item android:state_pressed="true">
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="18dp" />
+                    <solid android:color="#004C99" />
+                </shape>
+            </item>
+            <item android:bottom="1dp">
+                <shape android:shape="rectangle">
+                    <corners android:radius="18dp" />
+                    <solid android:color="#005EC4" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+
+    <!-- Normal state: iOS Blue action button with drop shadow -->
+    <item>
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="18dp" />
+                    <solid android:color="#004C99" />
+                </shape>
+            </item>
+            <item android:bottom="1.2dp">
+                <shape android:shape="rectangle">
+                    <corners android:radius="18dp" />
+                    <gradient
+                        android:angle="270"
+                        android:startColor="#0A84FF"
+                        android:endColor="#007AFF" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+</selector>
