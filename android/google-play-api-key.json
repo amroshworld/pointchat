@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "amrosh-os",
+  "private_key_id": "d8802c8d918fce659943951e4c32898f9bda81ed",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC7nTiwg7DFXZRS\nk+9eJXjWh88+o09j8lJ1zEk1R4oOuU+ZtceaA6O866n4gVJflZ4hspKxL9IUezPv\nFkAVs5w7BmDbXKiTqDj+RKMfc992bqD9NpHEw5rYa0Z87rwFCnxb5lCb8BW+8Aqb\n8+otCrLxjtyjNmq0THLWMHdZpGXhzNRaN0XrR6FXKags/BvptM2F8euO1Qg9haOJ\nC7gy6F+ViHFL5Dh7j7bVhwGTubliPgxqKzrbIPjS1MP+IQik6VzKjaaukxTJ9hqI\nQ5E+4zC71jmyR/L0EjGSAo3HDpxJpgqhzeFwC0CU+6cq3m/+5LkyUUC0AnDKmcsc\nvKsVnPnJAgMBAAECggEARqdESJEneoQtzdVhUSKqeZwGi4/D359Lt4n5zeNFlhrq\nY7gF1bXmLUjQp0HIbC+zr/wIa0rXghgNrE3ET4fm34Gc6y9fWtAAupzNk5Q3BOpP\nnVw2FBQX1cW8c2MSkpFq2M8I71jAT7olPKrkNxcu4XJMG/jrwT+DBa+V2r/jEF/F\nYGMYQ3GHchbvy8IJPh6ClcnaoXIAmWLTl1K7VIKGFI3k/QIkmEobT5r9CWuiXroi\n+xXm1CBpy0L4/Nd7hY9zs/BNS4aQgAjVfZzqkTj//Gnh47wA4Tm6uPCMIT5sy1+C\nHHRxdQwEoUyNyOniiWlxHovMhmZ/Lu16l8hUZ2MoKwKBgQDzqGKCzxrucUtgEkjx\nm1fAy3JXxS+fZGz39Z9OGzGZi9htf9ae6J7U8f9kwkbmSDh0CQm2TumKkwd1pqx0\nF01LIT3gr8FKiwk2QNlDOCsJHnKkJDpylQOswmToBS9df/UQRS+GolfdR06Kz6uG\nmC4/NbcusmKerZhjtmtSLHY7xwKBgQDFHhhSf/yaNxYvjjyDdjukjHCLCQq2dOnr\n27eGlreU6vLgPFsBCn41HbN+AeWhWzVJPq3/2z9sbVG24NMgqk+QPSbUm1+/pjJA\ntZvvhTjwNJoALa1ct+wpBGty4c8AXi00gsCy/GdIV4M/CYiwKY/ECrBJod/9X3NP\nWnZ1WZ197wKBgAMV+NlrQg4PBUNcN+xHaV8ZtIMEDkxYe0DQrYnRslkdeko4ukEc\n9RYBUpi2FSvJcl2V17elXDPTFN8ak0iNGv9+lkgIMcx94kn7nETLq0/cQNtvUgYt\nePRxKdH+btEiU7o3BhkQaUh2JLqBUszLlJpcVcuTmsgjrrBkmQtbYMv1AoGAXhNk\n7ErlFfzge8XYn61X/cqBE/o2wKm/0q9EQdnAuDQBwn9Lt414eoU4WxUwsPfE0LY3\nePr8pBTwgOWAHgDqhB6LX8Dfy6nYJgYG7COa7xlLvnYOXUfyUAkp9uRKVRSdYohc\ny4+nA2Gw4+7664iKcrffNuUo79YURHUaQBuLDMUCgYBL5gbUGVemGhhAY9ulDuel\n7qsHfz521yMAiDvOZdhu3FHxJuj3RY5i9ZkopyPTyogo3G4SHhEwc3rMSmiPsvBz\n/4b/o5+RgOirbgoe2Ad7vWp/mzx/zMRfh9lya/nZwoCTI/Vvv27MRv4aCHyRo/jQ\neZo+6NBuze6yGgK3JQ8Ltw==\n-----END PRIVATE KEY-----\n",
+  "client_email": "play-store-mcp@amrosh-os.iam.gserviceaccount.com",
+  "client_id": "115964817066830744247",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/play-store-mcp%40amrosh-os.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
