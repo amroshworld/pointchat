@@ -54,6 +54,42 @@ class AuthService {
     _cacheCurrentUser(user);
   }
 
+  // Register a new user account with email, password, and name.
+  Future<void> createAccountWithEmailPassword({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final normalizedEmail = email.trim();
+    final normalizedName = name.trim();
+    if (normalizedEmail.isEmpty || password.isEmpty) {
+      throw AppwriteException('Email and password are required.');
+    }
+    if (password.length < 8) {
+      throw AppwriteException('Password must be at least 8 characters.');
+    }
+
+    try {
+      await _account.deleteSession(sessionId: 'current');
+    } catch (_) {}
+
+    await _account.create(
+      userId: ID.unique(),
+      email: normalizedEmail,
+      password: password,
+      name: normalizedName.isNotEmpty ? normalizedName : null,
+    );
+
+    await _account.createEmailPasswordSession(
+      email: normalizedEmail,
+      password: password,
+    );
+
+    final user = await _account.get();
+    await _saveUserToDatabase(user);
+    _cacheCurrentUser(user);
+  }
+
   // Sign in with Google (requires Google OAuth provider in Appwrite console)
   Future<void> signInWithGoogle() async {
     try {

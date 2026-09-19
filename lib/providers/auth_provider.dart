@@ -126,6 +126,43 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
+  Future<bool> createAccountWithEmailPassword({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final normalizedEmail = email.trim();
+    if (normalizedEmail.isEmpty || password.isEmpty) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Please enter both email and password.',
+      );
+      return false;
+    }
+    if (password.length < 8) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Password must be at least 8 characters.',
+      );
+      return false;
+    }
+
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      await _authService.createAccountWithEmailPassword(
+        name: name,
+        email: normalizedEmail,
+        password: password,
+      );
+      ref.invalidate(authStateProvider);
+      state = state.copyWith(isLoading: false);
+      return true;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: _friendlyAuthError(e));
+      return false;
+    }
+  }
+
   Future<bool> signInWithGoogle() async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {

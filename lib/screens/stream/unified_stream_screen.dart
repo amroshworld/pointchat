@@ -2545,6 +2545,42 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
               const SizedBox(height: 16),
 
+              // =============== LEGAL ===============
+              _settingsSectionTitle('LEGAL'),
+              _settingsLegalTile(
+                icon: Icons.privacy_tip_outlined,
+                title: 'Privacy Policy',
+                subtitle: 'How we handle your data',
+                url: 'https://github.com/amroshworld/pointchat/blob/main/PRIVACY_POLICY.md',
+              ),
+              _settingsLegalTile(
+                icon: Icons.description_outlined,
+                title: 'Terms of Use (EULA)',
+                subtitle: 'Apple Standard EULA',
+                url: 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/',
+              ),
+              _settingsLegalTile(
+                icon: Icons.help_outline_rounded,
+                title: 'Support',
+                subtitle: 'GitHub • amrosh.world@gmail.com',
+                url: 'https://github.com/amroshworld/pointchat',
+              ),
+              _settingsLegalTile(
+                icon: Icons.delete_outline_rounded,
+                title: 'Account Deletion Info',
+                subtitle: 'How to delete your data',
+                url: 'https://69d90bb2700499328634.appwrite.network',
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 8, top: 4),
+                child: Text(
+                  'PointChat uses Apple Standard EULA and provides in-app account deletion (Settings → Delete account). User-generated content can be reported via Report user and blocked via Block user (available in chat and user settings).',
+                  style: GoogleFonts.inter(color: Colors.white30, fontSize: 11, height: 1.4),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
               // =============== INFO ===============
               _settingsSectionTitle('INFO'),
               Padding(
@@ -2790,11 +2826,61 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
     );
   }
 
+  Widget _settingsLegalTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String url,
+  }) {
+    return InkWell(
+      onTap: () async {
+        final uri = Uri.parse(url);
+        try {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } catch (_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Could not open $title')),
+            );
+          }
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        margin: const EdgeInsets.only(bottom: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white54, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+                  Text(subtitle,
+                      style: GoogleFonts.inter(color: Colors.white38, fontSize: 11)),
+                ],
+              ),
+            ),
+            const Icon(Icons.open_in_new_rounded, color: Colors.white30, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _editableAvatar({
-    required String imageUrl,
-    required String initialsSource,
-    required Color accent,
-    VoidCallback? onTap,
+      required String imageUrl,
+      required String initialsSource,
+      required Color accent,
+      VoidCallback? onTap,
   }) {
     final initials =
         initialsSource.isEmpty ? '?' : initialsSource[0].toUpperCase();
@@ -3847,28 +3933,11 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
 
   // ── Send location ──
   Future<void> _sendLocation([String? composerSnapshot]) async {
-    final text = _applyFocusedHandle(
-      composerSnapshot ?? _commandController.text,
-    );
-    if (!_hasExplicitTarget(text)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Please select a target (@user or #group) before sharing location',
-              style: GoogleFonts.jetBrainsMono(),
-            ),
-          ),
-        );
-      }
-      return;
-    }
-
     setState(() => _isUploading = true);
 
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) throw Exception('Location services are disabled.');
+      if (!serviceEnabled) throw Exception('Location services are disabled. Please enable GPS.');
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -3886,6 +3955,23 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
           accuracy: LocationAccuracy.high,
         ),
       );
+
+      final text = _applyFocusedHandle(
+        composerSnapshot ?? _commandController.text,
+      );
+      if (!_hasExplicitTarget(text)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Location access granted! Please select a recipient (@user or #group) to share your location.',
+                style: GoogleFonts.jetBrainsMono(),
+              ),
+            ),
+          );
+        }
+        return;
+      }
 
       await _processCommand(
         text,
@@ -5187,6 +5273,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                               ),
                               if (_showActions) ...[
                                 IconButton(
+                                  tooltip: 'Send Photo',
                                   icon: Icon(
                                     Icons.add_photo_alternate_outlined,
                                     color: Theme.of(
@@ -5197,6 +5284,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                   onPressed: _pickAndSendImage,
                                 ),
                                 IconButton(
+                                  tooltip: 'Send File',
                                   icon: Icon(
                                     Icons.attach_file_outlined,
                                     color: Theme.of(
@@ -5207,6 +5295,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                   onPressed: _pickAndSendFile,
                                 ),
                                 IconButton(
+                                  tooltip: 'Share Location',
                                   icon: Icon(
                                     Icons.location_on_outlined,
                                     color: Theme.of(
@@ -5215,6 +5304,18 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                     size: 24,
                                   ),
                                   onPressed: _sendLocation,
+                                ),
+                                IconButton(
+                                  tooltip: 'Close Actions',
+                                  icon: Icon(
+                                    Icons.close_rounded,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    size: 22,
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _showActions = false),
                                 ),
                               ],
                               if (!_showActions)
@@ -5233,6 +5334,7 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                               right: 4,
                                             ),
                                             child: IconButton(
+                                              tooltip: 'Send Message',
                                               icon: Icon(
                                                 _forwardingMessage != null
                                                     ? Icons.forward_rounded
@@ -5245,6 +5347,24 @@ class _UnifiedStreamScreenState extends ConsumerState<UnifiedStreamScreen>
                                               onPressed: () => _sendCommand(
                                                 _commandController.text,
                                               ),
+                                            ),
+                                          )
+                                        else
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              right: 4,
+                                            ),
+                                            child: IconButton(
+                                              tooltip: 'Add Attachment or Share Location',
+                                              icon: Icon(
+                                                Icons.add_circle_outline_rounded,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                                size: 24,
+                                              ),
+                                              onPressed: () =>
+                                                  setState(() => _showActions = true),
                                             ),
                                           ),
                                       ],

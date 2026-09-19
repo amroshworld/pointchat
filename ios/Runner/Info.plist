@@ -88,9 +88,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>PointChat needs camera access to take photos to send in chats.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>PointChat needs your location to share it in chats.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>PointChat needs your location to share live location with friends in chats.</string>
+	<string>PointChat needs access to your location when you choose to share your location with contacts in chat.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
